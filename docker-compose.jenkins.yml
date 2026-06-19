@@ -1,0 +1,17 @@
+services:
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins
+    ports:
+      - "8080:8080"    # Jenkins-UI
+      - "50000:50000"  # Agent-Port (fuer spaetere Build-Agents)
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "0"
+    restart: unless-stopped
+
+volumes:
+  jenkins_data:

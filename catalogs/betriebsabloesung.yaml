@@ -1,0 +1,116 @@
+# =====================================================================
+# Referenzkatalog: Betriebsablösung / Migration
+#                  (Altsystem-Migration, Rechenzentrumswechsel)
+# =====================================================================
+# Kein direktes PIA-Korpus für diesen Typ vorhanden.
+# Katalog aus HERMES-Erfahrungswissen und Mustern verwandter Projekttypen
+# (infrastruktur_erneuerung, e_government_portal) abgeleitet.
+# Beim naechsten Mnemosyne-Lauf wird dieser Katalog ergaenzt.
+#
+# 'salience' >= 0.8 => Methodos fragt nach wenn der Eintrag fehlt.
+
+project_type:
+  id: betriebsabloesung
+  name: "Betriebsablösung / Migration"
+  description: >
+    Migration von Applikationen, Daten oder Betrieb von einem Altsystem
+    oder Rechenzentrum zu einer neuen Umgebung.
+  applies_to_method: hermes_pia
+
+# ---------------------------------------------------------------------
+# Typische ZIELE (Abschnitt 2.1)
+# ---------------------------------------------------------------------
+ziele:
+  - id: z_migration_abgeschlossen
+    kategorie: "Systemziel"
+    beschreibung: "Alle Daten und Funktionen sind vollständig auf die neue Umgebung migriert, das Altsystem abgestellt."
+    messgroesse: "Abschalttermin Altsystem, Datenvalidierungsprotokoll"
+    salience: 0.95
+  - id: z_stabiler_betrieb
+    kategorie: "Vorgehensziel"
+    beschreibung: "Der Betrieb in der neuen Umgebung ist stabil und erfüllt die vereinbarten SLAs."
+    messgroesse: "Verfügbarkeit in % nach 30 Tagen Produktivbetrieb"
+    salience: 0.85
+
+# ---------------------------------------------------------------------
+# Typische LIEFERERGEBNISSE der Initialisierung (Abschnitt 4.1)
+# ---------------------------------------------------------------------
+lieferergebnisse:
+  - { id: le_migrationsplan,   name: "Migrationsplan / Übergangskonzept",  salience: 0.95 }
+  - { id: le_isds,             name: "Schutzbedarfsanalyse (ISDS)",        salience: 0.9 }
+  - { id: le_studie,           name: "Studie (mit Variantenvergleich)",    salience: 0.85 }
+  - { id: le_rollbackkonzept,  name: "Rollback-Konzept",                   salience: 0.85 }
+  - { id: le_datenmapping,     name: "Datenmapping / Konvertierungskonzept", salience: 0.8 }
+
+# ---------------------------------------------------------------------
+# Typische RISIKEN (Abschnitt 7)
+# Eintraege mit salience >= 0.8 loesen eine Nachfrage aus.
+# ---------------------------------------------------------------------
+risiken:
+  - id: r_datenmigration
+    beschreibung: "Datenmigration schlägt fehl oder Datenqualität ist nach der Migration unzureichend"
+    kategorie: "Daten / Qualität"
+    salience: 0.95
+    nachfrage: >
+      Datenmigration ist bei Betriebsablösungen das häufigste und kritischste Risiko.
+      Sind Datenqualität, Konvertierung und Validierung als Risiko erfasst?
+    schlagworte: ["datenmigration", "datenqualität", "migration", "konvertierung",
+                  "daten", "validierung", "vollständigkeit", "historien"]
+
+  - id: r_parallelbetrieb
+    beschreibung: "Parallelbetrieb von Alt- und Neusystem verursacht Doppelaufwände und ist zeitlich nicht nachhaltig"
+    kategorie: "Betrieb / Übergangsstrategie"
+    salience: 0.9
+    nachfrage: >
+      Ein unkontrollierter Parallelbetrieb kostet doppelt und erhöht die Fehleranfälligkeit.
+      Ist die Übergangsstrategie (Cutover-Datum, Parallelbetriebsdauer) definiert?
+    schlagworte: ["parallelbetrieb", "cutover", "übergangsstrategie", "übergang",
+                  "altsystem", "abschaltung", "coexistenz", "betrieb"]
+
+  - id: r_rollback
+    beschreibung: "Fehlende oder ungetestete Rollback-Strategie bei Migrationsproblemen"
+    kategorie: "Risikominderung / Rückfall"
+    salience: 0.85
+    nachfrage: >
+      Ohne erprobten Rollback-Plan kann ein Migrationsabbruch den Betrieb
+      gefährden. Ist eine Rückfallstrategie explizit geplant?
+    schlagworte: ["rollback", "rückfall", "fallback", "notfall", "wiederherstellung",
+                  "backup", "rückkehr", "abbruch"]
+
+  - id: r_schnittstellen
+    beschreibung: "Abhängige Systeme und Schnittstellen werden nicht rechtzeitig auf die neue Umgebung angepasst"
+    kategorie: "Technisch / Abhängigkeiten"
+    salience: 0.85
+    nachfrage: >
+      Migrationsprojekte scheitern oft an vergessenen oder spät angepassten
+      Drittsystemen. Sind alle abhängigen Schnittstellen inventarisiert?
+    schlagworte: ["schnittstelle", "abhängigkeit", "drittsystem", "anbindung",
+                  "integration", "consumer", "downstream", "fachapplikation"]
+
+  - id: r_knowhow_verlust
+    beschreibung: "Know-how über das Altsystem geht verloren (Pensionierungen, Personalwechsel)"
+    kategorie: "Wissen / Ressourcen"
+    salience: 0.85
+    nachfrage: >
+      Altsysteme werden oft nur von wenigen Personen beherrscht. Ist das Risiko
+      von Know-how-Verlust beim Altsystem-Team adressiert?
+    schlagworte: ["know-how", "wissen", "altsystem", "dokumentation", "schlüsselperson",
+                  "pensionierung", "personalwechsel", "expertise"]
+
+  - id: r_testabdeckung
+    beschreibung: "Unzureichende Testabdeckung der migrierten Funktionen und Daten vor dem Cutover"
+    kategorie: "Qualität / Testing"
+    salience: 0.8
+    nachfrage: >
+      Eine unvollständige Testphase vor der Produktivmigration ist ein häufiger
+      Grund für Störungen nach dem Cutover. Ist das Testrisiko berücksichtigt?
+    schlagworte: ["test", "testing", "qualität", "abnahme", "cutover", "produktiv",
+                  "validierung", "abdeckung", "regressionstest"]
+
+# ---------------------------------------------------------------------
+# Typische RAHMENBEDINGUNGEN (Abschnitt 2.2)
+# ---------------------------------------------------------------------
+rahmenbedingungen:
+  - { id: rb_hermes, vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022", salience: 0.99 }
+  - { id: rb_betrieb, vorgaben: "Betriebskontinuität", beschreibung: "Kein ungeplanter Ausfall produktiver Systeme während der Migration", salience: 0.95 }
+  - { id: rb_isds, vorgaben: "Informationssicherheit und Datenschutz", beschreibung: "ISDS-Vorgaben der Stammorganisation", salience: 0.85 }

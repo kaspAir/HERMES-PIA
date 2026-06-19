@@ -1,1 +1,5 @@
+# Test-Abhaengigkeiten: App-Deps + Test-Werkzeuge.
+# Das Docker-Image installiert nur ../requirements.txt (schlank, ohne pytest);
+# die CI-Pipeline installiert diese Datei.
 -r ../requirements.txt
+pytest==8.3.3

@@ -1,0 +1,19 @@
+# Mnemosyne – Offline-Pseudonymisierung + Wissensextraktion
+# Getrennt von den App-Dependencies
+
+# NLP (offline, kein Cloud-Aufruf)
+spacy>=3.7.0
+# Modell separat laden: python -m spacy download de_core_news_lg
+
+# Dokument-Verarbeitung
+python-docx>=1.1.0
+pdfplumber>=0.11.0
+
+# Extraktion via Claude API (nur auf pseudonymisierten Daten!)
+anthropic>=0.49.0
+
+# YAML-Ausgabe
+PyYAML>=6.0.1
+
+# .env-Support
+python-dotenv>=1.0.0

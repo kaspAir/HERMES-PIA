@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Versionsstand – {{ session.project_name }}{% endblock %}
+
+{% block content %}
+<div class="version-bump-page">
+
+  <div class="vb-header">
+    <h1>{{ session.project_name }}</h1>
+    <p class="vb-subtitle">PIA herunterladen &mdash; Versionsstand bestätigen</p>
+  </div>
+
+  <form method="post" class="vb-form">
+
+    <div class="vb-section">
+      <h2>Aktuelle Version: <strong>{{ info.current_version }}</strong></h2>
+      <p class="vb-hint">Wählen Sie, um welchen Betrag die Version erhöht werden soll:</p>
+      <div class="vb-bump-options">
+        <label class="vb-bump-option">
+          <input type="radio" name="bump_type" value="minor" checked>
+          <span class="vb-bump-label">
+            <strong>+0.1</strong>
+            <em>&nbsp;(inhaltliche Änderung, z.B. neue Abschnitte)</em>
+          </span>
+        </label>
+        <label class="vb-bump-option">
+          <input type="radio" name="bump_type" value="patch">
+          <span class="vb-bump-label">
+            <strong>+0.0.1</strong>
+            <em>&nbsp;(redaktionelle Korrekturen, Tippfehler)</em>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div class="vb-section">
+      <h2>Geänderte Kapitel</h2>
+      {% if info.changed_sections %}
+        <ul class="vb-changed-list">
+          {% for s in info.changed_sections %}
+            <li>{{ s.number }} {{ s.title }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="vb-hint">Keine Änderungen seit dem letzten Download erkannt.</p>
+      {% endif %}
+
+      <label for="bemerkungen" class="vb-label">
+        Bemerkungen (erscheint in der Änderungskontrolle):
+      </label>
+      <textarea id="bemerkungen" name="bemerkungen" rows="3" class="vb-textarea">{% if info.changed_sections %}Kapitel {{ info.changed_sections | map(attribute='number') | join(', ') }} angepasst.{% endif %}</textarea>
+    </div>
+
+    {% if info.changelog %}
+    <div class="vb-section">
+      <h2>Bisheriger Verlauf</h2>
+      <table class="vb-log-table">
+        <thead>
+          <tr><th>Version</th><th>Datum</th><th>Bemerkungen</th></tr>
+        </thead>
+        <tbody>
+          {% for entry in info.changelog | reverse %}
+          <tr>
+            <td>{{ entry.version }}</td>
+            <td>{{ entry.datum }}</td>
+            <td>{{ entry.bemerkungen }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <div class="vb-actions">
+      <button type="submit" class="btn-primary btn-large">
+        &#8595; PIA herunterladen
+      </button>
+      <a href="{{ url_for('ui.interview_workspace', session_id=session.id) }}"
+         class="btn-secondary">Zurück</a>
+    </div>
+
+  </form>
+</div>
+{% endblock %}

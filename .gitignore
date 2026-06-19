@@ -9,6 +9,14 @@ env/
 *.db
 methodos.db
 .pytest_cache/
+reports/
 .idea/
 .vscode/
 *.egg-info/
+
+# Mnemosyne – niemals Originaldaten oder Mapping ins Repo!
+tools/mnemosyne/output/
+**/mapping.json
+**/extraction_log.json
+pias/
+pias_original/
