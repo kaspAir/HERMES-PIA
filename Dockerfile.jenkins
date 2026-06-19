@@ -1,0 +1,10 @@
+# Multi-Stage: Docker-CLI aus dem offiziellen Docker-Image kopieren.
+# Das Binary ist statisch gelinkt und funktioniert unabhaengig von der
+# Basis-Distribution. Kein eigener apt-Repo-Setup noetig.
+FROM docker:latest AS docker-cli
+
+FROM jenkins/jenkins:lts-jdk17
+USER root
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+RUN groupadd -f docker && usermod -aG docker jenkins
+USER jenkins

@@ -1,0 +1,114 @@
+# =====================================================================
+# Referenzkatalog: Organisationsentwicklung
+#                  (Reorganisation, Prozessoptimierung, Kulturwandel)
+# =====================================================================
+# Erfahrungswissen aus 45 realen HERMES-PIAs (via Mnemosyne, pseudonymisiert).
+# Keine Rohdaten – abgeleitetes, aggregiertes Wissen.
+#
+# 'salience' >= 0.8 => Methodos fragt nach wenn der Eintrag fehlt.
+
+project_type:
+  id: organisationsentwicklung
+  name: "Organisationsentwicklung"
+  description: >
+    Reorganisation, Prozessoptimierung oder Kulturwandel ohne oder mit
+    untergeordnetem IT-Anteil. Fokus auf Menschen, Strukturen und Abläufe.
+  applies_to_method: hermes_pia
+
+# ---------------------------------------------------------------------
+# Typische ZIELE (Abschnitt 2.1)
+# ---------------------------------------------------------------------
+ziele:
+  - id: z_prozessklarheit
+    kategorie: "Systemziel"
+    beschreibung: "Klare, harmonisierte Prozesse für den betroffenen Bereich sind dokumentiert und eingeführt."
+    messgroesse: "Abnahme der Prozessdokumentation durch Auftraggeber"
+    salience: 0.85
+  - id: z_kompetenzaufbau
+    kategorie: "Vorgehensziel"
+    beschreibung: "Betroffene Mitarbeitende sind für die neuen Rollen und Abläufe befähigt."
+    messgroesse: "Schulungsabdeckung in Prozent der Betroffenen"
+    salience: 0.8
+
+# ---------------------------------------------------------------------
+# Typische LIEFERERGEBNISSE der Initialisierung (Abschnitt 4.1)
+# ---------------------------------------------------------------------
+lieferergebnisse:
+  - { id: le_stakeholder,       name: "Stakeholder-Analyse",               salience: 0.95 }
+  - { id: le_istzustand,        name: "Ist-Zustand-Analyse / As-Is",       salience: 0.9 }
+  - { id: le_studie,            name: "Studie (mit Variantenvergleich)",    salience: 0.9 }
+  - { id: le_changekonzept,     name: "Change-Management-Konzept",         salience: 0.8 }
+  - { id: le_kommunikationsplan, name: "Kommunikationsplan",               salience: 0.8 }
+
+# ---------------------------------------------------------------------
+# Typische RISIKEN (Abschnitt 7)
+# Eintraege mit salience >= 0.8 loesen eine Nachfrage aus.
+# ---------------------------------------------------------------------
+risiken:
+  - id: r_schluesselpersonen
+    beschreibung: "Schlüsselpersonen / Fachexperten stehen nicht ausreichend zur Verfügung (Urlaub, Stellenabbau, Vakanzen)"
+    kategorie: "Ressourcen"
+    salience: 0.9
+    nachfrage: >
+      In Organisationsentwicklungsprojekten ist die Verfügbarkeit von Schlüsselpersonen
+      fast immer ein zentrales Risiko – Stellenabbau, Vakanzen und Ferienabwesenheiten
+      verzögern regelmässig den Projektfortschritt. Wurde das bewusst weggelassen?
+    schlagworte: ["schlüsselperson", "vakant", "vakanz", "verfügbarkeit", "stellenabbau",
+                  "ressource", "personal", "fachexperte", "ferien", "abwesenheit"]
+
+  - id: r_akzeptanz
+    beschreibung: "Widerstand der Betroffenen gegen die organisatorische Veränderung"
+    kategorie: "Change / Akzeptanz"
+    salience: 0.9
+    nachfrage: >
+      Organisationsveränderungen scheitern häufig am Widerstand der Betroffenen.
+      Fehlt dieses Risiko bewusst, oder sollen wir es aufnehmen?
+    schlagworte: ["akzeptanz", "widerstand", "change", "betroffene", "kulturwandel",
+                  "veränderung", "mitnahme", "widerstände"]
+
+  - id: r_koordination
+    beschreibung: "Unzureichende Abstimmung zwischen beteiligten Organisationseinheiten oder Departementen"
+    kategorie: "Koordination"
+    salience: 0.85
+    nachfrage: >
+      Bei departementsübergreifenden oder einheitsübergreifenden Reorganisationen ist
+      fehlende Koordination ein häufiges Risiko. Relevant für dieses Vorhaben?
+    schlagworte: ["koordination", "abstimmung", "abteilung", "departement", "einheit",
+                  "schnittstelle", "zusammenarbeit", "vernetzung"]
+
+  - id: r_kompetenzen
+    beschreibung: "Fehlende Kompetenzen oder unzureichende Qualifikation der Beteiligten für die neuen Anforderungen"
+    kategorie: "Kompetenz"
+    salience: 0.85
+    nachfrage: >
+      Wenn neue Arbeitsweisen oder Rollen eingeführt werden, sind Kompetenzlücken
+      typisch. Soll dieses Risiko im PIA erfasst werden?
+    schlagworte: ["kompetenz", "qualifikation", "weiterbildung", "schulung", "know-how",
+                  "fähigkeit", "kenntnisse"]
+
+  - id: r_politisch
+    beschreibung: "Politische oder externe Rahmenbedingungen ändern sich und beeinflussen den Projektauftrag"
+    kategorie: "Umfeld / Politik"
+    salience: 0.8
+    nachfrage: >
+      Organisationsentwicklungen im öffentlichen Sektor sind oft von politischen
+      Prioritätenverschiebungen betroffen. Ist dieses Risiko relevant?
+    schlagworte: ["politisch", "rahmenbedingung", "auftrag", "mandat", "priorität",
+                  "gesetz", "vorgabe", "externe", "umfeld"]
+
+  - id: r_betrieb_stört
+    beschreibung: "Laufender Betrieb / dringende Geschäfte absorbieren die Ressourcen der Projektbeteiligten"
+    kategorie: "Ressourcen / Betrieb"
+    salience: 0.8
+    nachfrage: >
+      In vielen OE-Projekten konkurrieren Tagesbetrieb und Projektarbeit um dieselben
+      Personen. Wurde dieses Risiko bewusst ausgelassen?
+    schlagworte: ["betrieb", "tagesgeschäft", "überlastung", "doppelbelastung",
+                  "linie", "ressourcenkonflikt"]
+
+# ---------------------------------------------------------------------
+# Typische RAHMENBEDINGUNGEN (Abschnitt 2.2)
+# ---------------------------------------------------------------------
+rahmenbedingungen:
+  - { id: rb_hermes, vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022", salience: 0.99 }
+  - { id: rb_personalrecht, vorgaben: "Personalrechtliche Vorgaben", beschreibung: "Kantonales Personalgesetz und Mitwirkungsrechte des Personals", salience: 0.85 }
