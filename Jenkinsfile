@@ -2,15 +2,17 @@
 //
 // Stages:
 //   1. Regressionstests  – sauberer python:3.12-slim-Container
-//   2. Docker-Image      – baut und taggt das Image (Gate: nur nach grünen Tests)
-//   3. Deploy test       – nur auf Branch 'test'  → methodos-test  (Port 5001)
-//   4. Deploy prod       – nur auf Branch 'main'  → methodos-prod  (Port 5000)
+//   2. Deploy prod       – Branch 'main'  → hermespia.ch (Port 8000, Gunicorn)
+//   3. Deploy test       – Branch 'test'  → hermespia.ch (Port 8001, Gunicorn)
 //
-// Voraussetzungen auf dem Jenkins-Server:
-//   - Docker + Docker-Pipeline-Plugin
-//   - SSH-Credential 'phronesis-deploy' (privater Key für deploy@phronesis.swiss)
-//   - Auf dem Zielserver: Docker, docker-compose, /opt/methodos/docker-compose.yml
-//     und Secrets unter /opt/methodos/secrets/{prod,test}.env
+// Voraussetzungen Jenkins:
+//   - SSH-Credential 'hermespia-deploy' (privater Key für u7031y_kaspar@83.228.238.194)
+//   - Docker + Docker-Pipeline-Plugin (nur für Testcontainer)
+//
+// Voraussetzungen Server hermespia.ch:
+//   - Python-venv unter ~/venv, Methodos-Repo unter ~/methodos
+//   - .env mit ANTHROPIC_API_KEY und FLASK_SECRET_KEY
+//   - ~/bin/start-methodos.sh für Gunicorn-Start
 
 pipeline {
     agent any
@@ -23,9 +25,9 @@ pipeline {
     }
 
     environment {
-        IMAGE_NAME   = 'methodos'
-        DEPLOY_HOST  = 'deploy@phronesis.swiss'
-        DEPLOY_PATH  = '/opt/methodos'
+        DEPLOY_HOST = 'u7031y_kaspar@83.228.238.194'
+        APP_DIR     = '/home/clients/2a1849703150229016af3666c2f46b09/methodos'
+        VENV        = '/home/clients/2a1849703150229016af3666c2f46b09/venv'
     }
 
     stages {
@@ -49,12 +51,29 @@ pipeline {
             }
         }
 
-        stage('Docker-Image bauen') {
+        stage('Deploy prod') {
+            when { branch 'main' }
             steps {
-                script {
-                    def tag = env.BRANCH_NAME == 'main' ? 'prod' : 'test'
-                    def image = docker.build("${IMAGE_NAME}:${tag}")
-                    image.tag(env.BUILD_NUMBER)
+                sshagent(credentials: ['hermespia-deploy']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
+                            cd ${APP_DIR}
+                            git fetch origin
+                            git reset --hard origin/main
+                            source ${VENV}/bin/activate
+                            pip install -r requirements.txt -q
+                            PID_FILE=\$HOME/tmp/gunicorn.pid
+                            [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
+                            sleep 1
+                            set -a; source .env; set +a
+                            nohup gunicorn run:app \\
+                                --bind 127.0.0.1:8000 --workers 2 --timeout 120 \\
+                                --access-logfile logs/access.log \\
+                                --error-logfile logs/error.log > /dev/null 2>&1 &
+                            echo \$! > \$HOME/tmp/gunicorn.pid
+                            sleep 2 && curl -sf http://127.0.0.1:8000 > /dev/null && echo "OK: prod laeuft"
+                        '
+                    """
                 }
             }
         }
@@ -62,34 +81,28 @@ pipeline {
         stage('Deploy test') {
             when { branch 'test' }
             steps {
-                sshagent(credentials: ['phronesis-deploy']) {
+                sshagent(credentials: ['hermespia-deploy']) {
                     sh """
-                        docker save ${IMAGE_NAME}:test | gzip | \
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} \
-                            'gunzip | docker load'
-
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} \
-                            'cd ${DEPLOY_PATH} && \
-                             docker compose up -d --no-build methodos-test && \
-                             docker compose ps methodos-test'
-                    """
-                }
-            }
-        }
-
-        stage('Deploy prod') {
-            when { branch 'main' }
-            steps {
-                sshagent(credentials: ['phronesis-deploy']) {
-                    sh """
-                        docker save ${IMAGE_NAME}:prod | gzip | \
-                            ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} \
-                            'gunzip | docker load'
-
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} \
-                            'cd ${DEPLOY_PATH} && \
-                             docker compose up -d --no-build methodos-prod && \
-                             docker compose ps methodos-prod'
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
+                            cd \$HOME/methodos-test 2>/dev/null || git clone ${APP_DIR} \$HOME/methodos-test
+                            cd \$HOME/methodos-test
+                            git fetch origin
+                            git reset --hard origin/test
+                            source ${VENV}/bin/activate
+                            pip install -r requirements.txt -q
+                            PID_FILE=\$HOME/tmp/gunicorn-test.pid
+                            [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
+                            sleep 1
+                            set -a; source \$HOME/methodos/.env; set +a
+                            DATABASE_URL=sqlite:///\$HOME/methodos-test/data/methodos-test.db
+                            mkdir -p \$HOME/methodos-test/data \$HOME/methodos-test/logs
+                            nohup gunicorn run:app \\
+                                --bind 127.0.0.1:8001 --workers 1 --timeout 120 \\
+                                --access-logfile logs/access.log \\
+                                --error-logfile logs/error.log > /dev/null 2>&1 &
+                            echo \$! > \$HOME/tmp/gunicorn-test.pid
+                            sleep 2 && curl -sf http://127.0.0.1:8001 > /dev/null && echo "OK: test laeuft"
+                        '
                     """
                 }
             }
@@ -99,7 +112,7 @@ pipeline {
 
     post {
         success {
-            echo "OK – Tests grün, Image ${IMAGE_NAME}:${env.BUILD_NUMBER} gebaut und deployt."
+            echo "Pipeline gruen – deployed auf hermespia.ch."
         }
         failure {
             echo 'Pipeline rot – siehe Stage-Logs und Testbericht.'
