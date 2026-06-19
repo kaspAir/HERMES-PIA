@@ -9,6 +9,7 @@ env/
 *.db
 methodos.db
 .pytest_cache/
+reports/
 .idea/
 .vscode/
 *.egg-info/
