@@ -1,12 +1,51 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>{{ method.method.name }} <small>({{ method.method.framework }})</small></h1>
-  <p>{{ method.method.description }}</p>
-  <h2>Abschnitte</h2>
-  <ol>
-    {% for s in sections %}
-      <li>{{ s.number }} &mdash; {{ s.title }} <em>({{ s.type }}{% if s.gap_check %}, Nachfrage aktiv{% endif %})</em></li>
-    {% endfor %}
-  </ol>
-  <p><a href="/demo/followups">Demo: Nachfrage-Verhalten (JSON)</a></p>
+
+<div class="index-hero">
+  <h1>{{ method.method.name }}
+    <small>({{ method.method.framework }})</small>
+  </h1>
+  <p class="hero-desc">{{ method.method.description }}</p>
+
+  <form method="post" action="/interview/start" class="start-form">
+    <input type="text"
+           name="project_name"
+           placeholder="Projektname eingeben &hellip;"
+           class="input-project-name"
+           required
+           autofocus>
+    <button type="submit" class="btn-primary btn-large">
+      Interview starten &#8594;
+    </button>
+  </form>
+</div>
+
+{% if sessions %}
+<div class="sessions-section">
+  <h2>Laufende Interviews</h2>
+  <table class="sessions-table">
+    <thead>
+      <tr>
+        <th>Projekt</th>
+        <th>Typ</th>
+        <th>Status</th>
+        <th>Erstellt</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.project_name }}</td>
+        <td>{{ s.project_type_id or '–' }}</td>
+        <td>{{ s.status }}</td>
+        <td>{{ s.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        <td><a href="/interview/{{ s.id }}" class="btn-link">Weiter</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {% endblock %}

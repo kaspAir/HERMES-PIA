@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Interview – {{ session.project_name }}{% endblock %}
+
+{% block content %}
+<div class="interview-layout">
+
+  {# ---- Linke Spalte: Fortschritt ---- #}
+  <aside class="progress-panel">
+    <div class="project-meta">
+      <div class="project-name">{{ session.project_name }}</div>
+      <div class="project-type">
+        {% if session.project_type_id %}
+          <span class="badge badge-type">{{ session.project_type_id | replace("_", " ") | title }}</span>
+        {% else %}
+          <span class="badge badge-pending">Typ wird erkannt&hellip;</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <ol class="section-list">
+      {% for s in sections %}
+        <li class="section-item section-{{ s.status }}"
+            title="{{ s.title }}">
+          <span class="section-status-icon">
+            {% if s.status == 'done' %}&#10003;
+            {% elif s.status == 'current' %}&#8594;
+            {% elif s.status == 'followup_pending' %}&#9679;
+            {% else %}&nbsp;
+            {% endif %}
+          </span>
+          <span class="section-number">{{ s.number }}</span>
+          <span class="section-title-short">{{ s.title }}</span>
+        </li>
+      {% endfor %}
+    </ol>
+
+    <div class="progress-bar-wrap">
+      {% set pct = (state.progress.done / state.progress.total * 100) | int %}
+      <div class="progress-bar" style="width: {{ pct }}%"></div>
+    </div>
+    <div class="progress-label">
+      {{ state.progress.done }} / {{ state.progress.total }} Abschnitte
+    </div>
+  </aside>
+
+  {# ---- Rechte Spalte: Interview-Dialog ---- #}
+  <section class="interview-main">
+
+    {% if state.phase == "question" %}
+      {# ---- Normale Frage ---- #}
+      <div class="section-header">
+        <span class="section-num-badge">{{ state.section.number }}</span>
+        <h2>{{ state.section.title }}</h2>
+      </div>
+
+      {% if state.section.interview %}
+        <div class="question-list">
+          {% for q in state.section.interview.questions %}
+            <p class="question-item">{{ q }}</p>
+          {% endfor %}
+        </div>
+        {% if state.section.interview.completeness %}
+          <details class="completeness-hint">
+            <summary>Vollstaendigkeit</summary>
+            <ul>
+              {% for c in state.section.interview.completeness %}
+                <li>{{ c }}</li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% endif %}
+      {% else %}
+        <p class="question-item">
+          Bitte beschreiben Sie den Abschnitt
+          &laquo;{{ state.section.title }}&raquo;.
+        </p>
+      {% endif %}
+
+      <form method="post"
+            action="{{ url_for('ui.interview_answer', session_id=session.id) }}">
+        <div class="answer-area">
+          <textarea id="answer-text"
+                    name="raw_text"
+                    rows="6"
+                    placeholder="Antwort sprechen (Mikrofon) oder hier eintippen &hellip;"
+                    autofocus></textarea>
+          <button type="button" id="voice-btn" class="btn-voice"
+                  title="Spracheingabe starten">
+            &#127908; Sprechen
+          </button>
+          <div id="voice-status" class="voice-status"></div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">
+            Weiter &#8594;
+          </button>
+          <a href="{{ url_for('ui.index') }}" class="btn-link">Abbrechen</a>
+        </div>
+      </form>
+
+    {% elif state.phase == "followup" %}
+      {# ---- Nachfrage (Gap-Check-Ergebnis) ---- #}
+      <div class="followup-card">
+        <div class="followup-label">Methodos hat eine Luecke erkannt</div>
+        <p class="followup-question">{{ state.followup.frage }}</p>
+        {% if state.followup.vorschlag %}
+          <p class="followup-suggestion">
+            Vorschlag: <em>{{ state.followup.vorschlag }}</em>
+          </p>
+        {% endif %}
+      </div>
+
+      <form method="post"
+            action="{{ url_for('ui.interview_followup', session_id=session.id) }}">
+        <input type="hidden" name="risk_id" value="{{ state.followup.risk_id }}">
+        <div class="answer-area">
+          <textarea name="raw_text"
+                    id="answer-text"
+                    rows="3"
+                    placeholder="Optional: Anmerkung oder Ergaenzung &hellip;"></textarea>
+          <button type="button" id="voice-btn" class="btn-voice"
+                  title="Spracheingabe starten">
+            &#127908; Sprechen
+          </button>
+        </div>
+        <div class="form-actions">
+          <button type="submit" name="accepted" value="1" class="btn-primary">
+            Aufnehmen
+          </button>
+          <button type="submit" name="accepted" value="0" class="btn-secondary">
+            Bewusst weggelassen
+          </button>
+        </div>
+      </form>
+
+    {% elif state.phase == "complete" %}
+      {# ---- Abgeschlossen ---- #}
+      <div class="complete-banner">
+        <div class="complete-icon">&#10003;</div>
+        <h2>Interview abgeschlossen</h2>
+        <p>
+          Alle {{ state.progress.total }} Abschnitte sind erfasst.
+          Methodos kann jetzt den PIA erstellen.
+        </p>
+        <a href="{{ url_for('ui.index') }}" class="btn-primary">
+          Zur &Uuml;bersicht
+        </a>
+      </div>
+    {% endif %}
+
+  </section>
+
+</div>
+
+<script>
+(function () {
+  // Web Speech API – nur in Chrome/Edge verfuegbar
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var btn = document.getElementById('voice-btn');
+  var textarea = document.getElementById('answer-text');
+  var statusEl = document.getElementById('voice-status');
+
+  if (!SpeechRecognition) {
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+
+  var recognition = new SpeechRecognition();
+  recognition.lang = 'de-CH';
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+  var recording = false;
+
+  btn.addEventListener('click', function () {
+    if (recording) {
+      recognition.stop();
+    } else {
+      recognition.start();
+    }
+  });
+
+  recognition.onstart = function () {
+    recording = true;
+    btn.textContent = '⏹ Aufnahme läuft …';
+    btn.classList.add('recording');
+    if (statusEl) statusEl.textContent = 'Bitte sprechen …';
+  };
+
+  recognition.onresult = function (event) {
+    var transcript = '';
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    if (textarea) textarea.value = transcript;
+  };
+
+  recognition.onend = function () {
+    recording = false;
+    btn.textContent = '🌈 Sprechen';
+    btn.classList.remove('recording');
+    if (statusEl) statusEl.textContent = '';
+  };
+
+  recognition.onerror = function (e) {
+    recording = false;
+    btn.textContent = '🌈 Sprechen';
+    btn.classList.remove('recording');
+    if (statusEl) statusEl.textContent = 'Fehler: ' + e.error;
+  };
+}());
+</script>
+{% endblock %}
