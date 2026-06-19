@@ -8,6 +8,7 @@ class Config:
     DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///methodos.db")
     SQL_ECHO = os.environ.get("SQL_ECHO", "0") == "1"
     DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
+    SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-in-prod")
 
     # Wo Methoden-Modelle und Kataloge liegen (Konfiguration vor Programmierung).
     METHODS_DIR = BASE_DIR / "methods"

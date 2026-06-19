@@ -1,11 +1,35 @@
 services:
-  methodos:
+
+  # ── Produktion (main-Branch) ─────────────────────────────────────────────
+  methodos-prod:
+    image: methodos:prod
     build: .
+    restart: unless-stopped
     ports:
       - "5000:5000"
-    environment:
-      - DATABASE_URL=sqlite:////app/methodos.db
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - METHODOS_LLM_MODEL=${METHODOS_LLM_MODEL:-claude-sonnet-4-6}
     volumes:
-      - ./:/app
+      - methodos-prod-data:/app/data
+    env_file:
+      - /opt/methodos/secrets/prod.env
+    environment:
+      DATABASE_URL: sqlite:////app/data/methodos.db
+      FLASK_DEBUG: "0"
+
+  # ── Test (test-Branch) ───────────────────────────────────────────────────
+  methodos-test:
+    image: methodos:test
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    volumes:
+      - methodos-test-data:/app/data
+    env_file:
+      - /opt/methodos/secrets/test.env
+    environment:
+      DATABASE_URL: sqlite:////app/data/methodos.db
+      FLASK_DEBUG: "0"
+
+volumes:
+  methodos-prod-data:
+  methodos-test-data:

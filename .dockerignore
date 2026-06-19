@@ -1,7 +1,16 @@
 .git
+.claude
 .venv
+venv
 __pycache__
+*.pyc
 *.db
 *.sqlite*
 .env
+.env.*
+!.env.example
 .pytest_cache
+reports/
+tools/mnemosyne/output/
+*.log
+WEEKEND_PLAN.md
