@@ -154,9 +154,8 @@
 
 <script>
 (function () {
-  // Web Speech API – nur in Chrome/Edge verfuegbar
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var btn = document.getElementById('voice-btn');
+  var btn      = document.getElementById('voice-btn');
   var textarea = document.getElementById('answer-text');
   var statusEl = document.getElementById('voice-status');
 
@@ -166,45 +165,74 @@
   }
 
   var recognition = new SpeechRecognition();
-  recognition.lang = 'de-CH';
-  recognition.interimResults = true;
+  recognition.lang            = 'de-CH';
+  recognition.continuous      = true;
+  recognition.interimResults  = true;
   recognition.maxAlternatives = 1;
-  var recording = false;
+
+  var active          = false; // true = Nutzer hat gestartet, noch nicht gestoppt
+  var finalTranscript = '';
+  var interimText     = '';
+
+  function render() {
+    if (textarea) textarea.value = finalTranscript + interimText;
+  }
+
+  function setUiRecording(on) {
+    btn.textContent = on ? '⏹ Aufnahme stoppen' : '🎤 Sprechen';
+    btn.classList.toggle('recording', on);
+    if (statusEl) statusEl.textContent = on ? 'Aufnahme läuft – bitte sprechen …' : '';
+  }
 
   btn.addEventListener('click', function () {
-    if (recording) {
-      recognition.stop();
-    } else {
+    if (!active) {
+      // Start: vorhandenen Textarea-Text als Basis behalten
+      finalTranscript = (textarea ? textarea.value.trim() : '');
+      if (finalTranscript) finalTranscript += ' ';
+      interimText = '';
+      active = true;
       recognition.start();
+    } else {
+      // Stop: active VOR recognition.stop() setzen,
+      // damit onend weiss, dass es nicht neu starten soll.
+      active = false;
+      recognition.stop();
     }
   });
 
   recognition.onstart = function () {
-    recording = true;
-    btn.textContent = '⏹ Aufnahme läuft …';
-    btn.classList.add('recording');
-    if (statusEl) statusEl.textContent = 'Bitte sprechen …';
+    setUiRecording(true);
   };
 
   recognition.onresult = function (event) {
-    var transcript = '';
+    interimText = '';
     for (var i = event.resultIndex; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript;
+      var t = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += t + ' ';
+      } else {
+        interimText = t;
+      }
     }
-    if (textarea) textarea.value = transcript;
+    render();
   };
 
   recognition.onend = function () {
-    recording = false;
-    btn.textContent = '🌈 Sprechen';
-    btn.classList.remove('recording');
-    if (statusEl) statusEl.textContent = '';
+    if (active) {
+      // Pause im Satz – automatisch neu starten (continuous-Workaround)
+      recognition.start();
+    } else {
+      finalTranscript += interimText;
+      interimText = '';
+      render();
+      setUiRecording(false);
+    }
   };
 
   recognition.onerror = function (e) {
-    recording = false;
-    btn.textContent = '🌈 Sprechen';
-    btn.classList.remove('recording');
+    if (e.error === 'no-speech') return; // onend kuemmert sich ums Neustart
+    active = false;
+    setUiRecording(false);
     if (statusEl) statusEl.textContent = 'Fehler: ' + e.error;
   };
 }());
