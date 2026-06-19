@@ -41,14 +41,21 @@ def detect_project_type(llm_client, available_types, ausgangslage_text):
 
 def _extract_free_text(llm_client, section_title, raw_text):
     system = (
-        "Du bist ein Projektmanagement-Assistent fuer HERMES 2022. "
-        "Wandle muendliche Antworten in praezise, sachliche Dokumentationstexte um. "
+        "Du bist ein erfahrener Projektmanagement-Berater und verfasst offizielle "
+        "Projektdokumente nach HERMES 2022 fuer Schweizer Behoerden. "
+        "Dein Ziel: sachliche, praezise Behördentexte auf Hochdeutsch. "
         "Antworte ausschliesslich mit validem JSON, keine weiteren Erklaerungen."
     )
     user = (
-        f"Schreibe den folgenden muendlichen Beitrag als klaren Sachtext "
-        f"fuer den PIA-Abschnitt \"{section_title}\" um. "
-        f"Alle genannten Fakten beibehalten, Fuellwoerter und Versprecher entfernen.\n\n"
+        f"Schreibe den folgenden muendlichen Beitrag als formellen Sachtext "
+        f"fuer den PIA-Abschnitt \"{section_title}\" um.\n\n"
+        f"Anforderungen:\n"
+        f"- Sachlicher Behördenstil (klar, vollständig, neutral)\n"
+        f"- Vollständige Sätze; Aufzählungen nur wenn inhaltlich passend\n"
+        f"- Füllwörter, Versprecher und Wiederholungen entfernen\n"
+        f"- Ich-Formulierungen in sachliche Aussagen umwandeln\n"
+        f"- Alle genannten Fakten beibehalten, keine Informationen erfinden\n"
+        f"- Angemessene Länge: weder kürzen noch aufblähen\n\n"
         f"Beitrag: {raw_text}\n\n"
         f"Rueckgabe als JSON: {{\"text\": \"...\"}}"
     )
@@ -94,6 +101,46 @@ def _extract_table(llm_client, section_title, columns, raw_text):
                 if isinstance(v, list):
                     return v
         return []
+    except Exception:
+        return []
+
+
+def generate_followups(llm_client, section, raw_text):
+    """
+    KI-gestützte Vollständigkeitsprüfung einer Antwort.
+    Gibt 0-2 konkrete Nachfragen zurück wenn etwas Wichtiges fehlt.
+    Gibt [] zurück wenn die Antwort ausreichend ist.
+    """
+    interview = section.get("interview", {})
+    if not interview or not raw_text or not raw_text.strip():
+        return []
+
+    intent = interview.get("intent", "")
+    completeness = interview.get("completeness", [])
+    criteria_text = "\n".join(f"  - {c}" for c in completeness) or "  - (keine spezifischen Kriterien)"
+
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Projektberater. "
+        "Du führst ein Interview mit einem Projektleiter. "
+        "Prüfe ob seine Antwort die wichtigen Aspekte des Abschnitts abdeckt. "
+        "Sei sparsam: stelle NUR eine Nachfrage wenn wirklich etwas Wichtiges fehlt. "
+        "Wenn die Antwort ausreichend ist, gib ein leeres Array zurück. "
+        "Antworte ausschliesslich mit validem JSON."
+    )
+    user = (
+        f"Abschnitt: \"{section['title']}\"\n"
+        f"Ziel: {intent}\n"
+        f"Vollständigkeitskriterien:\n{criteria_text}\n\n"
+        f"Antwort des Projektleiters:\n{raw_text}\n\n"
+        f"Generiere 0-2 Nachfragen wenn wichtige Aspekte fehlen. "
+        f"Keine Nachfragen wenn die Antwort die Kriterien erfüllt.\n\n"
+        f'Rückgabe als JSON: {{"followups": [{{"frage": "...", "vorschlag": null}}]}}'
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=512)
+        result = _parse_json(raw) or {}
+        items = result.get("followups", [])
+        return [f for f in items if isinstance(f, dict) and f.get("frage")]
     except Exception:
         return []
 

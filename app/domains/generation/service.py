@@ -1,21 +1,48 @@
-"""Dokumenterzeugung: fuellt die originale HERMES-.dotx mit den Interview-
-Inhalten und gibt eine .docx zurueck.
-
-ANSATZ (template-getrieben, NICHT Layout-im-Code):
-  1. Die .dotx ist die Quelle der Wahrheit (Layout, Kopfzeilen, Tabellen).
-  2. .dotx entpacken (es ist ein ZIP mit XML).
-  3. In word/document.xml die farbig-kursiven Beispiel-/Hilfetexte und
-     Platzhalter durch die echten Inhalte ersetzen; Tabellenzeilen je nach
-     Anzahl Eintraege duplizieren.
-  4. Wieder als .docx zusammenpacken und validieren.
-
-Derselbe Mechanismus traegt spaeter kundeneigene Vorlagen: nur die
-Bindungspunkte (Zuordnung Abschnitt -> Stelle im Dokument) wechseln.
-
-Dieses Modul ist bewusst ein dokumentierter Stub - die XML-Fuelllogik
-entsteht am Wochenende.
 """
+Dokumenterzeugung: füllt die HERMES-.dotx mit Interview-Inhalten.
+
+Strategie: .dotx Content-Type auf .docx patchen, dann mit python-docx öffnen.
+Formatierung (Schriften, Farben, Kopf-/Fusszeilen, Bilder) bleibt 1:1 erhalten –
+nur Textinhalt wird ersetzt.
+
+Platzhalter im Template:
+  •  (U+2022)                     → leeres Wertefeld (wird ersetzt)
+  HHilfstextfarbigkursiv105ptF    → Hilfetext-Paragraph (wird gelöscht)
+  HTabBeispiel85ptF               → Beispiel-Tabellenzeile (wird gelöscht)
+"""
+import copy
+import zipfile
+from io import BytesIO
 from pathlib import Path
+
+from docx import Document
+from lxml import etree
+
+W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+XML_SPACE = '{http://www.w3.org/XML/1998/namespace}space'
+
+PLACEHOLDER = '•'  # •
+
+# Deckblatt: Paragraphen-Labels → Metadata-Keys
+COVER_FIELDS = {
+    'Projektname / Projektnummer': 'projektname',
+    'Bearbeitungsdatum':            'datum',
+    'Version':                      'version',
+    'Dokument Status':              'status',
+    'Klassifizierung':              'klassifizierung',
+    'Autor/-in':                    'autor',
+    'Projektleiter/in':             'projektleiter',
+    'Auftraggeber/in':              'auftraggeber',
+    'Verwaltungseinheit':           'verwaltungseinheit',
+    'Geschäftsbereich':             'geschaeftsbereich',
+}
+
+STYLE_H1 = 'Hberschrift1105pt'
+STYLE_H2 = 'Hberschrift2105pt'
+STYLE_NORMAL = 'Normal'
+STYLE_HELP = 'HHilfstextfarbigkursiv105ptF'
+STYLE_EXAMPLE = 'HTabBeispiel85ptF'
+STYLE_DATA = 'HTabText85pt'
 
 
 class GenerationService:
@@ -23,12 +50,350 @@ class GenerationService:
         self.methods = method_service
 
     def template_path(self, method_id):
-        method = self.methods.get(method_id)
-        return Path(method["_dir"]) / method["template"]
+        data = self.methods.get(method_id)
+        return Path(data['_dir']) / data['method']['template']
 
-    def generate(self, method_id, session_answers, out_path):
-        raise NotImplementedError(
-            "Wochenend-Aufgabe: .dotx entpacken, Platzhalter/Beispielzeilen "
-            "durch session_answers ersetzen, als .docx packen. "
-            "Siehe Docstring fuer den Ansatz."
-        )
+    def generate(self, method_id, session_answers, metadata, changelog=None):
+        """
+        Füllt die .dotx-Vorlage und gibt das fertige Dokument als BytesIO zurück.
+
+        Args:
+            session_answers: {section_id: {'extracted': ..., 'raw_text': ...}}
+            metadata: {'projektname': ..., 'projektleiter': ..., ...}
+            changelog: list of {version, name, datum, bemerkungen} for Änderungskontrolle
+        """
+        template = self.template_path(method_id)
+        method = self.methods.get(method_id)
+
+        doc = self._open_template(template)
+
+        self._fill_cover(doc, metadata)
+        self._fill_body(doc, method, session_answers)
+        if changelog:
+            self._fill_aenderungskontrolle(doc, changelog)
+        self._delete_style(doc, STYLE_HELP)
+        self._delete_style(doc, STYLE_EXAMPLE)
+
+        buf = BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+        return buf
+
+    # ------------------------------------------------------------------ #
+    # Template öffnen (Content-Type-Patch: .dotx → .docx)                 #
+    # ------------------------------------------------------------------ #
+
+    def _open_template(self, path):
+        raw = Path(path).read_bytes()
+        buf_in = BytesIO(raw)
+        buf_out = BytesIO()
+        with zipfile.ZipFile(buf_in, 'r') as zin, \
+             zipfile.ZipFile(buf_out, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename == '[Content_Types].xml':
+                    data = data.replace(
+                        b'wordprocessingml.template.main+xml',
+                        b'wordprocessingml.document.main+xml'
+                    )
+                zout.writestr(item, data)
+        buf_out.seek(0)
+        return Document(buf_out)
+
+    # ------------------------------------------------------------------ #
+    # Deckblatt                                                            #
+    # ------------------------------------------------------------------ #
+
+    def _fill_cover(self, doc, metadata):
+        # Direkt über lxml iterieren: doc.paragraphs übersieht Paragraphen
+        # in Tabellen und Content-Controls (trifft Projektname nicht, aber
+        # ist robuster für spätere Template-Änderungen).
+        W_R   = f'{{{W}}}r'
+        W_T   = f'{{{W}}}t'
+        W_TAB = f'{{{W}}}tab'
+        W_SDT = f'{{{W}}}sdt'
+        W_SDT_PR      = f'{{{W}}}sdtPr'
+        W_SDT_CONTENT = f'{{{W}}}sdtContent'
+        W_SHOWING_PLH = f'{{{W}}}showingPlcHdr'
+
+        # Jedes Feld nur einmal befüllen – "Version" kommt im Template auf
+        # dem Deckblatt UND in der Änderungshistorie-Tabelle vor.
+        filled: set = set()
+
+        for p_el in doc.element.body.iter(f'{{{W}}}p'):
+            # Nur direkte w:r-Kinder (nicht solche in fldSimple / w:sdt)
+            direct_runs = [c for c in p_el if c.tag == W_R]
+            if not direct_runs:
+                continue
+            label = ''.join(t.text or '' for t in direct_runs[0].iter(W_T)).strip()
+            key = COVER_FIELDS.get(label)
+            if not key or key in filled:
+                continue
+            value = metadata.get(key, '')
+            if not value:
+                continue
+
+            # Prüfe ob ein w:sdt-Kindelement den Wert enthält (z.B. Version-Feld)
+            sdt_children = [c for c in p_el if c.tag == W_SDT]
+            if sdt_children:
+                # SDT-Struktur: Wert in <w:sdtContent> schreiben, Platzhalter-Flag entfernen
+                sdt = sdt_children[0]
+                sdt_content = sdt.find(W_SDT_CONTENT)
+                if sdt_content is not None:
+                    for t in sdt_content.iter(W_T):
+                        t.text = value
+                        break
+                sdt_pr = sdt.find(W_SDT_PR)
+                if sdt_pr is not None:
+                    showing = sdt_pr.find(W_SHOWING_PLH)
+                    if showing is not None:
+                        sdt_pr.remove(showing)
+            elif len(direct_runs) >= 3:
+                # Standard-Struktur: runs[0]=Label, runs[1]=Tab, runs[2]=Wert
+                for t in direct_runs[2].iter(W_T):
+                    t.text = value
+                    break
+            elif len(direct_runs) == 1:
+                # Einzelner Label-Run (Projektname): Tab + Wert-Run anhängen
+                tab_r = etree.SubElement(p_el, W_R)
+                tab_r.append(etree.Element(W_TAB))
+
+                val_r = etree.SubElement(p_el, W_R)
+                val_t = etree.SubElement(val_r, W_T)
+                val_t.text = value
+                if value and (value[0] == ' ' or value[-1] == ' '):
+                    val_t.set(XML_SPACE, 'preserve')
+            # len(direct_runs)==2: Label+Tab mit fldSimple-Wert (Bearbeitungsdatum) → unberührt lassen
+
+            filled.add(key)
+
+    # ------------------------------------------------------------------ #
+    # Abschnitte (Fliesstext + Tabellen)                                  #
+    # ------------------------------------------------------------------ #
+
+    def _fill_body(self, doc, method, session_answers):
+        sections = {s['id']: s for s in method.get('sections', [])}
+        body = doc.element.body
+        children = list(body)
+        current_sid = None
+
+        for i, el in enumerate(children):
+            tag = _tag(el)
+            if tag == 'p':
+                style = _p_style(el)
+                if style in (STYLE_H1, STYLE_H2):
+                    heading = _p_text(el).strip()
+                    current_sid = self._match_section(heading, sections)
+            elif tag == 'tbl':
+                if current_sid and current_sid in session_answers:
+                    sect = sections[current_sid]
+                    if sect.get('type') == 'table':
+                        extracted = session_answers[current_sid].get('extracted') or []
+                        self._fill_table(el, sect, extracted)
+                    current_sid = None
+            elif tag == 'sdt':
+                current_sid = None
+
+        # Freitext-Abschnitte: Normal-Paragraph mit • unter dem Heading
+        for i, el in enumerate(children):
+            if _tag(el) != 'p':
+                continue
+            if _p_style(el) not in (STYLE_H1, STYLE_H2):
+                continue
+            heading = _p_text(el).strip()
+            sid = self._match_section(heading, sections)
+            if not sid or sid not in session_answers:
+                continue
+            sect = sections[sid]
+            if sect.get('type') != 'free_text':
+                continue
+            text = (session_answers[sid].get('extracted') or {}).get('text') \
+                   or session_answers[sid].get('raw_text', '')
+            # Nächsten Normal-Paragraph suchen
+            for j in range(i + 1, min(i + 6, len(children))):
+                if _tag(children[j]) == 'p' and _p_style(children[j]) == STYLE_NORMAL:
+                    _set_p_text(children[j], text)
+                    break
+                if _tag(children[j]) in (STYLE_H1, STYLE_H2, 'tbl'):
+                    break
+
+    def _match_section(self, heading, sections):
+        h = heading.lower()
+        for sid, sect in sections.items():
+            title = sect.get('title', '').lower()
+            if title and (h == title or h.endswith(title) or title in h):
+                return sid
+        return None
+
+    # ------------------------------------------------------------------ #
+    # Tabellen befüllen                                                    #
+    # ------------------------------------------------------------------ #
+
+    def _fill_table(self, tbl_el, section, data_rows):
+        if not data_rows:
+            return
+
+        columns = [c['id'] for c in section.get('columns', []) if c.get('id') != 'nr']
+        W_TR = f'{{{W}}}tr'
+        W_TC = f'{{{W}}}tc'
+
+        # Template-Datenzeile (erster HTabText85pt-Row, kein Example)
+        template_row = None
+        for row in tbl_el:
+            if row.tag != W_TR:
+                continue
+            if _row_style(row) == STYLE_DATA and template_row is None:
+                template_row = row
+
+        if template_row is None:
+            return
+
+        insert_pos = list(tbl_el).index(template_row)
+
+        for idx, data in enumerate(data_rows):
+            new_row = copy.deepcopy(template_row)
+            cells = [c for c in new_row if c.tag == W_TC]
+
+            # Erste Spalte: Nummer
+            if cells:
+                _set_tc_text(cells[0], f'{idx + 1:02d}')
+
+            # Weitere Spalten nach Reihenfolge
+            for col_offset, col_id in enumerate(columns):
+                cell_idx = col_offset + 1
+                if cell_idx < len(cells):
+                    val = data.get(col_id, '') if isinstance(data, dict) else ''
+                    _set_tc_text(cells[cell_idx], str(val) if val else '')
+
+            tbl_el.insert(insert_pos + idx, new_row)
+
+        # Originale Template-Zeile entfernen
+        tbl_el.remove(template_row)
+
+    # ------------------------------------------------------------------ #
+    # Änderungskontrolle (Kapitel 8)                                       #
+    # ------------------------------------------------------------------ #
+
+    def _fill_aenderungskontrolle(self, doc, changelog):
+        """
+        Schreibt den Changelog in die Tabelle unter 'Änderungskontrolle'.
+        Erwartet: changelog = [{version, name, datum, bemerkungen}, ...]
+        """
+        if not changelog:
+            return
+
+        W_TR = f'{{{W}}}tr'
+        W_TC = f'{{{W}}}tc'
+
+        body = doc.element.body
+        children = list(body)
+
+        # Kapitel 8-Überschrift und direkt folgende Tabelle finden
+        target_tbl = None
+        in_akk = False
+        for el in children:
+            if _tag(el) == 'p':
+                txt = _p_text(el).strip()
+                if 'nderungskontrolle' in txt or 'nderungsprotokoll' in txt:
+                    in_akk = True
+                    continue
+                if in_akk and _p_style(el) in (STYLE_H1, STYLE_H2):
+                    in_akk = False
+            elif _tag(el) == 'tbl' and in_akk:
+                target_tbl = el
+                break
+
+        if target_tbl is None:
+            return
+
+        # Template-Datenzeile suchen (erste HTabText85pt-Zeile)
+        template_row = None
+        for row in target_tbl:
+            if row.tag == W_TR and _row_style(row) == STYLE_DATA:
+                template_row = row
+                break
+
+        if template_row is None:
+            return
+
+        insert_pos = list(target_tbl).index(template_row)
+        col_keys = ['version', 'name', 'datum', 'bemerkungen']
+
+        for idx, entry in enumerate(changelog):
+            new_row = copy.deepcopy(template_row)
+            cells = [c for c in new_row if c.tag == W_TC]
+            for j, key in enumerate(col_keys):
+                if j < len(cells):
+                    _set_tc_text(cells[j], entry.get(key, ''))
+            target_tbl.insert(insert_pos + idx, new_row)
+
+        # Template-Zeile entfernen (war leer / Platzhalter)
+        target_tbl.remove(template_row)
+
+    # ------------------------------------------------------------------ #
+    # Hilfe-/Beispieltexte löschen                                        #
+    # ------------------------------------------------------------------ #
+
+    def _delete_style(self, doc, style_id):
+        body = doc.element.body
+        W_TR = f'{{{W}}}tr'
+        W_TC = f'{{{W}}}tc'
+
+        # Loose paragraphs
+        for el in list(body):
+            if _tag(el) == 'p' and _p_style(el) == style_id:
+                body.remove(el)
+
+        # Tabellenzeilen
+        for tbl in body.iter(f'{{{W}}}tbl'):
+            for row in list(tbl):
+                if row.tag == W_TR and _row_style(row) == style_id:
+                    tbl.remove(row)
+
+
+# ------------------------------------------------------------------ #
+# XML-Hilfsfunktionen                                                  #
+# ------------------------------------------------------------------ #
+
+def _tag(el):
+    return el.tag.split('}')[-1] if '}' in el.tag else el.tag
+
+
+def _p_style(p_el):
+    pPr = p_el.find(f'{{{W}}}pPr')
+    if pPr is None:
+        return 'Normal'
+    ps = pPr.find(f'{{{W}}}pStyle')
+    return ps.get(f'{{{W}}}val', 'Normal') if ps is not None else 'Normal'
+
+
+def _p_text(p_el):
+    return ''.join(t.text or '' for t in p_el.iter(f'{{{W}}}t'))
+
+
+def _set_p_text(p_el, text):
+    """Ersetzt den Textinhalt eines Paragraphen, erhält Stil."""
+    for r in list(p_el):
+        if r.tag == f'{{{W}}}r':
+            p_el.remove(r)
+    r = etree.SubElement(p_el, f'{{{W}}}r')
+    t = etree.SubElement(r, f'{{{W}}}t')
+    t.text = text
+    if text and (text[0] == ' ' or text[-1] == ' '):
+        t.set(XML_SPACE, 'preserve')
+
+
+def _row_style(row_el):
+    W_TC = f'{{{W}}}tc'
+    first_tc = next((c for c in row_el if c.tag == W_TC), None)
+    if first_tc is None:
+        return 'Normal'
+    first_p = first_tc.find(f'{{{W}}}p')
+    return _p_style(first_p) if first_p is not None else 'Normal'
+
+
+def _set_tc_text(tc_el, text):
+    p = tc_el.find(f'{{{W}}}p')
+    if p is None:
+        return
+    _set_p_text(p, text)

@@ -1,7 +1,9 @@
 from flask import Flask
+from sqlalchemy import inspect, text
 
 from app.config import get_config
 from app.domains.catalog.service import CatalogService
+from app.domains.generation.service import GenerationService
 from app.domains.interview.service import InterviewService
 from app.domains.llm.client import LLMClient
 from app.domains.method.service import MethodService
@@ -9,6 +11,27 @@ from app.shared.database import SessionLocal, init_engine
 from app.shared.errors import register_error_handlers
 from app.shared.logging import configure_logging, register_request_logging
 from app.web.ui_routes import bp as ui_bp
+
+
+def _migrate_db(engine):
+    """Fügt fehlende Spalten zur interview_session-Tabelle hinzu (SQLite-kompatibel)."""
+    inspector = inspect(engine)
+    if "interview_session" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("interview_session")}
+    new_cols = [
+        ("projektnummer",       "VARCHAR(100)"),
+        ("auftraggeber",        "VARCHAR(200)"),
+        ("verwaltungseinheit",  "VARCHAR(200)"),
+        ("doc_version",         "VARCHAR(20)"),
+        ("changelog_json",      "TEXT"),
+        ("last_snapshot_json",  "TEXT"),
+    ]
+    with engine.connect() as conn:
+        for col, dtype in new_cols:
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE interview_session ADD COLUMN {col} {dtype}"))
+        conn.commit()
 
 
 def create_app(config_class=None):
@@ -19,7 +42,8 @@ def create_app(config_class=None):
     register_error_handlers(app)
     register_request_logging(app)
 
-    init_engine(app.config["DATABASE_URL"], echo=app.config.get("SQL_ECHO", False))
+    engine = init_engine(app.config["DATABASE_URL"], echo=app.config.get("SQL_ECHO", False))
+    _migrate_db(engine)
 
     # Services aus der Konfiguration aufbauen ("Konfiguration vor Programmierung").
     app.method_service = MethodService(app.config["METHODS_DIR"])
@@ -31,6 +55,7 @@ def create_app(config_class=None):
     app.interview_service = InterviewService(
         app.method_service, app.catalog_service, llm_client
     )
+    app.generation_service = GenerationService(app.method_service)
 
     app.register_blueprint(ui_bp)
 

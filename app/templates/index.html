@@ -7,16 +7,38 @@
   </h1>
   <p class="hero-desc">{{ method.method.description }}</p>
 
-  <form method="post" action="/interview/start" class="start-form">
-    <input type="text"
-           name="project_name"
-           placeholder="Projektname eingeben &hellip;"
-           class="input-project-name"
-           required
-           autofocus>
-    <button type="submit" class="btn-primary btn-large">
-      Interview starten &#8594;
-    </button>
+  <form method="post" action="/interview/start" class="start-form-card">
+    <div class="form-row form-row-wide">
+      <label for="project_name">Projektname <span class="required">*</span></label>
+      <input type="text" id="project_name" name="project_name"
+             placeholder="z.B. Digitalisierung Baubewilligungen"
+             required autofocus>
+    </div>
+    <div class="form-row">
+      <label for="projektnummer">Projektnummer</label>
+      <input type="text" id="projektnummer" name="projektnummer"
+             placeholder="z.B. P-2024-042">
+    </div>
+    <div class="form-row">
+      <label for="auftraggeber">Auftraggeber/in</label>
+      <input type="text" id="auftraggeber" name="auftraggeber"
+             placeholder="Name oder Funktion">
+    </div>
+    <div class="form-row">
+      <label for="verwaltungseinheit">Verwaltungseinheit</label>
+      <input type="text" id="verwaltungseinheit" name="verwaltungseinheit"
+             placeholder="z.B. Amt für Digitalisierung">
+    </div>
+    <div class="form-row">
+      <label for="projektleiter">Projektleiter/in</label>
+      <input type="text" id="projektleiter" name="projektleiter"
+             placeholder="Name der Projektleiterin / des Projektleiters">
+    </div>
+    <div class="form-row-action">
+      <button type="submit" class="btn-primary btn-large">
+        Interview starten &#8594;
+      </button>
+    </div>
   </form>
 </div>
 

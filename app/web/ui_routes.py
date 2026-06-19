@@ -1,4 +1,7 @@
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for
+import json
+from datetime import date
+
+from flask import Blueprint, current_app, jsonify, redirect, render_template, request, send_file, url_for
 
 bp = Blueprint("ui", __name__)
 
@@ -17,11 +20,16 @@ def index():
 
 @bp.post("/interview/start")
 def interview_start():
-    project_name = request.form.get("project_name", "").strip() or "Unbenanntes Projekt"
+    def _get(name, fallback=""):
+        return request.form.get(name, "").strip() or fallback
+
     session = current_app.interview_service.start_session(
         method_id="hermes_pia",
-        project_name=project_name,
-        created_by=request.form.get("created_by", ""),
+        project_name=_get("project_name", "Unbenanntes Projekt"),
+        projektnummer=_get("projektnummer") or None,
+        auftraggeber=_get("auftraggeber") or None,
+        verwaltungseinheit=_get("verwaltungseinheit") or None,
+        created_by=_get("projektleiter") or None,
     )
     return redirect(url_for("ui.interview_workspace", session_id=session.id))
 
@@ -34,12 +42,14 @@ def interview_workspace(session_id):
         return "Session nicht gefunden", 404
     state = svc.current_state(session)
     sections = svc.section_summary(session)
+    preview = svc.preview_data(session)
     method = current_app.method_service.get(session.method_id)
     return render_template(
         "interview.html",
         session=session,
         state=state,
         sections=sections,
+        preview=preview,
         method=method,
     )
 
@@ -66,6 +76,71 @@ def interview_followup(session_id):
     except ValueError as e:
         return str(e), 400
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
+@bp.post("/interview/<int:session_id>/edit/<section_id>")
+def interview_edit(session_id, section_id):
+    """Setzt einen Abschnitt zurück, damit er neu beantwortet werden kann."""
+    current_app.interview_service.reset_section(session_id, section_id)
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
+# ---- Versionsverwaltung ----
+
+@bp.get("/interview/<int:session_id>/version")
+def interview_version(session_id):
+    svc = current_app.interview_service
+    session = svc.get_session(session_id)
+    if not session:
+        return "Session nicht gefunden", 404
+    info = svc.version_info(session)
+    return render_template("version_bump.html", session=session, info=info)
+
+
+@bp.post("/interview/<int:session_id>/version")
+def interview_version_post(session_id):
+    svc = current_app.interview_service
+    gen = current_app.generation_service
+    session = svc.get_session(session_id)
+    if not session:
+        return "Session nicht gefunden", 404
+
+    bump_type  = request.form.get("bump_type", "minor")
+    bemerkungen = request.form.get("bemerkungen", "").strip()
+
+    new_version, changelog = svc.record_version_bump(
+        session_id,
+        bump_type=bump_type,
+        projektleiter=session.created_by or "",
+        bemerkungen=bemerkungen,
+    )
+
+    answers = json.loads(session.answers_json or "{}")
+
+    name_part = session.project_name or "Projekt"
+    name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
+
+    metadata = {
+        "projektname":        name_display,
+        "projektleiter":      session.created_by or "",
+        "auftraggeber":       session.auftraggeber or "",
+        "verwaltungseinheit": session.verwaltungseinheit or "",
+        "datum":              date.today().strftime("%d.%m.%Y"),
+        "version":            new_version,
+        "status":             "in Arbeit",
+        "klassifizierung":    "Nicht klassifiziert",
+    }
+
+    buf = gen.generate(session.method_id, answers, metadata, changelog=changelog)
+
+    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in name_part).strip()
+    filename = f"{safe_name}_Projektinitialisierungsauftrag_v{new_version}.docx"
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @bp.get("/demo/followups")

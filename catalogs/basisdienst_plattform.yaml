@@ -1,0 +1,115 @@
+# =====================================================================
+# Referenzkatalog: Basisdienst / Plattform
+#                  (Shared Services, IAM, Dokumentenmanagement, etc.)
+# =====================================================================
+# Kein direktes PIA-Korpus für diesen Typ vorhanden (< 5 Treffer).
+# Katalog aus HERMES-Erfahrungswissen und Mustern verwandter Projekttypen
+# abgeleitet. Beim naechsten Mnemosyne-Lauf wird dieser Katalog ergaenzt.
+#
+# 'salience' >= 0.8 => Methodos fragt nach wenn der Eintrag fehlt.
+
+project_type:
+  id: basisdienst_plattform
+  name: "Basisdienst / Plattform"
+  description: >
+    Aufbau oder Weiterentwicklung eines gemeinsam genutzten Basisdienstes
+    oder einer Plattform (z.B. IAM, Dokumentenmanagement, Datenaustausch).
+  applies_to_method: hermes_pia
+
+# ---------------------------------------------------------------------
+# Typische ZIELE (Abschnitt 2.1)
+# ---------------------------------------------------------------------
+ziele:
+  - id: z_nutzungsbereitschaft
+    kategorie: "Systemziel"
+    beschreibung: "Der Basisdienst ist für die definierten Fachstellen produktiv verfügbar und in deren Prozesse integriert."
+    messgroesse: "Anzahl angebundener Fachstellen zum Zeitpunkt X"
+    salience: 0.9
+  - id: z_governance
+    kategorie: "Vorgehensziel"
+    beschreibung: "Trägerschaft, Finanzierungsmodell und Governance-Struktur sind vereinbart."
+    messgroesse: "Unterzeichnete Trägerschaftsvereinbarung"
+    salience: 0.85
+
+# ---------------------------------------------------------------------
+# Typische LIEFERERGEBNISSE der Initialisierung (Abschnitt 4.1)
+# ---------------------------------------------------------------------
+lieferergebnisse:
+  - { id: le_studie,          name: "Studie (mit Variantenvergleich)",    salience: 0.95 }
+  - { id: le_governance,      name: "Governance-Konzept / Trägerschaft",  salience: 0.9 }
+  - { id: le_isds,            name: "Schutzbedarfsanalyse (ISDS)",        salience: 0.9 }
+  - { id: le_stakeholder,     name: "Stakeholder-Analyse (nutzende Stellen)", salience: 0.85 }
+  - { id: le_rechtsgrundlagen, name: "Rechtsgrundlagenanalyse",           salience: 0.8 }
+
+# ---------------------------------------------------------------------
+# Typische RISIKEN (Abschnitt 7)
+# Eintraege mit salience >= 0.8 loesen eine Nachfrage aus.
+# ---------------------------------------------------------------------
+risiken:
+  - id: r_governance
+    beschreibung: "Unklare Trägerschaft, Finanzierungsmodell oder Entscheidungskompetenzen über den gemeinsamen Dienst"
+    kategorie: "Governance / Organisation"
+    salience: 0.95
+    nachfrage: >
+      Bei Basisdiensten mit mehreren nutzenden Stellen ist die Governance-Frage
+      (wer entscheidet, wer finanziert) oft ungeklärt. Ist das hier adressiert?
+    schlagworte: ["governance", "trägerschaft", "finanzierung", "entscheidung",
+                  "zuständigkeit", "mandat", "verantwortung", "steuerung"]
+
+  - id: r_verfuegbarkeit
+    beschreibung: "Hohe Verfügbarkeitsanforderungen durch alle angebundenen Fachstellen kaum erfüllbar"
+    kategorie: "Verfügbarkeit / SLA"
+    salience: 0.9
+    nachfrage: >
+      Basisdienste haben oft strengere SLAs als Fachanwendungen, weil viele
+      Stellen davon abhängen. Ist das Verfügbarkeitsrisiko erfasst?
+    schlagworte: ["verfügbarkeit", "sla", "ausfallzeit", "uptime", "abhängigkeit",
+                  "servicelevel", "betrieb", "ausfall"]
+
+  - id: r_schnittstellen
+    beschreibung: "Schnittstellenstandards für nutzende Systeme sind nicht definiert oder inkompatibel"
+    kategorie: "Technisch / Integration"
+    salience: 0.85
+    nachfrage: >
+      Ohne verbindliche Schnittstellenstandards integriert jede Fachstelle anders —
+      ein häufiges Problem bei Basisdiensten. Ist das Risiko berücksichtigt?
+    schlagworte: ["schnittstelle", "standard", "api", "integration", "protokoll",
+                  "kompatibilität", "anbindung", "format"]
+
+  - id: r_adoption
+    beschreibung: "Nutzende Fachstellen setzen den Basisdienst nicht wie geplant ein (mangelnde Adoption)"
+    kategorie: "Akzeptanz / Adoption"
+    salience: 0.85
+    nachfrage: >
+      Basisdienste funktionieren nur, wenn die Fachstellen sie tatsächlich nutzen.
+      Ist das Adoptionsrisiko (Onboarding, Incentivierung) berücksichtigt?
+    schlagworte: ["adoption", "nutzung", "onboarding", "fachstelle", "akzeptanz",
+                  "einführung", "migration", "umstieg"]
+
+  - id: r_sicherheit
+    beschreibung: "Sicherheits- und Berechtigungskonzept für einen geteilten Dienst mit mehreren Mandanten unzureichend"
+    kategorie: "Sicherheit / Datenschutz"
+    salience: 0.85
+    nachfrage: >
+      Mehrmandantenfähigkeit und Berechtigungskonzepte sind bei Basisdiensten
+      kritisch. Ist das Sicherheitsrisiko angemessen erfasst?
+    schlagworte: ["sicherheit", "berechtigung", "mandant", "datenschutz", "zugriff",
+                  "isds", "schutzbedarf", "iam", "identity"]
+
+  - id: r_ressourcen
+    beschreibung: "Schlüsselpersonen mit spezifischer Plattform-Expertise nicht verfügbar"
+    kategorie: "Ressourcen"
+    salience: 0.8
+    nachfrage: >
+      Plattformen erfordern spezialisiertes Know-how (Architektur, DevOps,
+      Sicherheit). Ist die Ressourcenverfügbarkeit gesichert?
+    schlagworte: ["ressource", "expertise", "verfügbarkeit", "schlüsselperson",
+                  "architekt", "spezialist", "kompetenz", "personal"]
+
+# ---------------------------------------------------------------------
+# Typische RAHMENBEDINGUNGEN (Abschnitt 2.2)
+# ---------------------------------------------------------------------
+rahmenbedingungen:
+  - { id: rb_hermes, vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022", salience: 0.99 }
+  - { id: rb_isds, vorgaben: "Informationssicherheit und Datenschutz", beschreibung: "ISDS-Vorgaben der Stammorganisation", salience: 0.9 }
+  - { id: rb_governance, vorgaben: "Governance-Regelwerk", beschreibung: "Trägerschaftsvereinbarung und Finanzierungsmodell müssen in der Initialisierung definiert werden", salience: 0.85 }

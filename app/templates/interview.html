@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Interview – {{ session.project_name }}{% endblock %}
+{% block main_class %}wide{% endblock %}
 
 {% block content %}
 <div class="interview-layout">
@@ -30,6 +31,13 @@
           </span>
           <span class="section-number">{{ s.number }}</span>
           <span class="section-title-short">{{ s.title }}</span>
+          {% if s.status == 'done' %}
+            <form method="post"
+                  action="{{ url_for('ui.interview_edit', session_id=session.id, section_id=s.id) }}"
+                  class="edit-section-form">
+              <button type="submit" class="btn-edit-section" title="Abschnitt bearbeiten">&#9998;</button>
+            </form>
+          {% endif %}
         </li>
       {% endfor %}
     </ol>
@@ -43,7 +51,7 @@
     </div>
   </aside>
 
-  {# ---- Rechte Spalte: Interview-Dialog ---- #}
+  {# ---- Mittlere Spalte: Interview-Dialog ---- #}
   <section class="interview-main">
 
     {% if state.phase == "question" %}
@@ -61,7 +69,7 @@
         </div>
         {% if state.section.interview.completeness %}
           <details class="completeness-hint">
-            <summary>Vollstaendigkeit</summary>
+            <summary>Vollständigkeit</summary>
             <ul>
               {% for c in state.section.interview.completeness %}
                 <li>{{ c }}</li>
@@ -101,7 +109,10 @@
     {% elif state.phase == "followup" %}
       {# ---- Nachfrage (Gap-Check-Ergebnis) ---- #}
       <div class="followup-card">
-        <div class="followup-label">Methodos hat eine Luecke erkannt</div>
+        <div class="followup-label">
+          {% if state.followup.type == 'catalog' %}Typisches Risiko nicht erwähnt
+          {% else %}Methodos hat eine Rückfrage{% endif %}
+        </div>
         <p class="followup-question">{{ state.followup.frage }}</p>
         {% if state.followup.vorschlag %}
           <p class="followup-suggestion">
@@ -117,7 +128,7 @@
           <textarea name="raw_text"
                     id="answer-text"
                     rows="3"
-                    placeholder="Optional: Anmerkung oder Ergaenzung &hellip;"></textarea>
+                    placeholder="Optional: Anmerkung oder Ergänzung &hellip;"></textarea>
           <button type="button" id="voice-btn" class="btn-voice"
                   title="Spracheingabe starten">
             &#127908; Sprechen
@@ -140,15 +151,67 @@
         <h2>Interview abgeschlossen</h2>
         <p>
           Alle {{ state.progress.total }} Abschnitte sind erfasst.
-          Methodos kann jetzt den PIA erstellen.
+          Methodos erstellt jetzt den PIA.
         </p>
-        <a href="{{ url_for('ui.index') }}" class="btn-primary">
-          Zur &Uuml;bersicht
+        <a href="{{ url_for('ui.interview_version', session_id=session.id) }}"
+           class="btn-primary btn-large">
+          &#8595; PIA herunterladen (.docx)
+        </a>
+        <a href="{{ url_for('ui.index') }}" class="btn-link" style="display:block;margin-top:16px">
+          Zur Übersicht
         </a>
       </div>
     {% endif %}
 
   </section>
+
+  {# ---- Rechte Spalte: Live-Vorschau ---- #}
+  <aside class="preview-panel">
+    <div class="preview-header">
+      <span class="preview-title">PIA-Vorschau</span>
+      <span class="preview-version">v{{ session.doc_version or '0.1' }}</span>
+    </div>
+
+    {% if preview %}
+      <div class="preview-content">
+        {% for item in preview %}
+          <div class="preview-section">
+            <div class="preview-section-title">
+              <span class="preview-num">{{ item.number }}</span>
+              {{ item.title }}
+            </div>
+            {% if item.type == 'free_text' %}
+              <p class="preview-text">{{ item.content }}</p>
+            {% elif item.type == 'table' %}
+              <table class="preview-table">
+                <thead>
+                  <tr>
+                    {% for col in item.columns %}
+                      <th>{{ col.label }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in item.rows %}
+                    <tr>
+                      {% for col in item.columns %}
+                        <td>{{ row.get(col.id, '') }}</td>
+                      {% endfor %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="preview-empty">
+        <p>Noch keine Abschnitte erfasst.</p>
+        <p>Die Vorschau aktualisiert sich nach jeder Antwort.</p>
+      </div>
+    {% endif %}
+  </aside>
 
 </div>
 
@@ -170,7 +233,7 @@
   recognition.interimResults  = true;
   recognition.maxAlternatives = 1;
 
-  var active          = false; // true = Nutzer hat gestartet, noch nicht gestoppt
+  var active          = false;
   var finalTranscript = '';
   var interimText     = '';
 
@@ -186,53 +249,34 @@
 
   btn.addEventListener('click', function () {
     if (!active) {
-      // Start: vorhandenen Textarea-Text als Basis behalten
       finalTranscript = (textarea ? textarea.value.trim() : '');
       if (finalTranscript) finalTranscript += ' ';
       interimText = '';
       active = true;
       recognition.start();
     } else {
-      // Stop: active VOR recognition.stop() setzen,
-      // damit onend weiss, dass es nicht neu starten soll.
       active = false;
       recognition.stop();
     }
   });
 
-  recognition.onstart = function () {
-    setUiRecording(true);
-  };
-
+  recognition.onstart  = function () { setUiRecording(true); };
   recognition.onresult = function (event) {
     interimText = '';
     for (var i = event.resultIndex; i < event.results.length; i++) {
       var t = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalTranscript += t + ' ';
-      } else {
-        interimText = t;
-      }
+      if (event.results[i].isFinal) { finalTranscript += t + ' '; }
+      else                          { interimText = t; }
     }
     render();
   };
-
   recognition.onend = function () {
-    if (active) {
-      // Pause im Satz – automatisch neu starten (continuous-Workaround)
-      recognition.start();
-    } else {
-      finalTranscript += interimText;
-      interimText = '';
-      render();
-      setUiRecording(false);
-    }
+    if (active) { recognition.start(); }
+    else { finalTranscript += interimText; interimText = ''; render(); setUiRecording(false); }
   };
-
   recognition.onerror = function (e) {
-    if (e.error === 'no-speech') return; // onend kuemmert sich ums Neustart
-    active = false;
-    setUiRecording(false);
+    if (e.error === 'no-speech') return;
+    active = false; setUiRecording(false);
     if (statusEl) statusEl.textContent = 'Fehler: ' + e.error;
   };
 }());

@@ -1,0 +1,114 @@
+# =====================================================================
+# Referenzkatalog: Erneuerung IT-Infrastruktur
+#                  (Server, Netzwerk, Basisdienste, Rechenzentrum)
+# =====================================================================
+# Erfahrungswissen aus 25 realen HERMES-PIAs (via Mnemosyne, pseudonymisiert).
+# Keine Rohdaten – abgeleitetes, aggregiertes Wissen.
+#
+# 'salience' >= 0.8 => Methodos fragt nach wenn der Eintrag fehlt.
+
+project_type:
+  id: infrastruktur_erneuerung
+  name: "Erneuerung IT-Infrastruktur"
+  description: >
+    Ablösung oder Erneuerung technischer Infrastruktur (Server, Netzwerk,
+    Basisdienste) ohne wesentliche fachliche Prozessänderungen.
+  applies_to_method: hermes_pia
+
+# ---------------------------------------------------------------------
+# Typische ZIELE (Abschnitt 2.1)
+# ---------------------------------------------------------------------
+ziele:
+  - id: z_verfuegbarkeit
+    kategorie: "Systemziel"
+    beschreibung: "Die erneuerte Infrastruktur erreicht die geforderte Verfügbarkeit und Ausfallsicherheit."
+    messgroesse: "Verfügbarkeit in % (SLA)"
+    salience: 0.9
+  - id: z_studie
+    kategorie: "Vorgehensziel"
+    beschreibung: "Belastbare Studie mit Variantenvergleich liegt am Ende der Initialisierung vor."
+    messgroesse: "Abnahme der Studie durch Auftraggeber"
+    salience: 0.9
+
+# ---------------------------------------------------------------------
+# Typische LIEFERERGEBNISSE der Initialisierung (Abschnitt 4.1)
+# ---------------------------------------------------------------------
+lieferergebnisse:
+  - { id: le_studie,          name: "Studie (mit Variantenvergleich)",     salience: 0.95 }
+  - { id: le_isds,            name: "Schutzbedarfsanalyse (ISDS)",         salience: 0.95 }
+  - { id: le_migrationsplan,  name: "Migrationsplan / Übergangskonzept",   salience: 0.9 }
+  - { id: le_rechtsgrundlagen, name: "Rechtsgrundlagenanalyse",            salience: 0.8 }
+
+# ---------------------------------------------------------------------
+# Typische RISIKEN (Abschnitt 7)
+# Eintraege mit salience >= 0.8 loesen eine Nachfrage aus.
+# ---------------------------------------------------------------------
+risiken:
+  - id: r_verfuegbarkeit_migration
+    beschreibung: "Betriebsunterbrechung oder eingeschränkte Verfügbarkeit der Systeme während der Migration"
+    kategorie: "Verfügbarkeit / Business Continuity"
+    salience: 0.95
+    nachfrage: >
+      Bei Infrastrukturerneuerungen ist das Ausfallrisiko während der Migration
+      fast immer das zentrale Risiko. Wurde die Business-Continuity-Strategie
+      (Parallelbetrieb, Rollback) hier bewusst nicht aufgeführt?
+    schlagworte: ["verfügbarkeit", "ausfall", "migration", "betrieb", "unterbrechung",
+                  "parallelbetrieb", "rollback", "business continuity", "hochverfügbarkeit"]
+
+  - id: r_sicherheit
+    beschreibung: "Sicherheits- und Integritätsanforderungen werden unterschätzt (Schutzbedarf, kritische Infrastruktur)"
+    kategorie: "Sicherheit"
+    salience: 0.9
+    nachfrage: >
+      IT-Infrastrukturprojekte im öffentlichen Sektor berühren oft kritische oder
+      schutzbedürftige Systeme. Ist das Sicherheitsrisiko (ISDS) hier erfasst?
+    schlagworte: ["sicherheit", "schutzbedarf", "isds", "kritisch", "integrität",
+                  "datensicherheit", "informationssicherheit", "cyber"]
+
+  - id: r_kompatibilitaet
+    beschreibung: "Technische Inkompatibilität zwischen neuer Infrastruktur und bestehenden Schnittstellen / Applikationen"
+    kategorie: "Technisch"
+    salience: 0.85
+    nachfrage: >
+      Infrastrukturerneuerungen brechen regelmässig bestehende Schnittstellen.
+      Sind alle abhängigen Applikationen und Schnittstellen berücksichtigt?
+    schlagworte: ["kompatibilität", "schnittstelle", "applikation", "abhängigkeit",
+                  "inkompatibel", "integration", "format", "protokoll"]
+
+  - id: r_georedundanz
+    beschreibung: "Fehlende Georedundanz oder unzureichende Ausfallsicherheit des Backup-Standorts"
+    kategorie: "Technisch / Ausfallsicherheit"
+    salience: 0.8
+    nachfrage: >
+      Klumpenrisiken durch fehlende Georedundanz sind in Infrastrukturprojekten
+      ein häufiges, oft unterschätztes Risiko. Ist das hier relevant?
+    schlagworte: ["georedundanz", "redundanz", "backup", "rechenzentrum", "standort",
+                  "klumpenrisiko", "ausfallsicherheit", "single point"]
+
+  - id: r_lieferant
+    beschreibung: "Verzögerung durch Lieferanten oder Abhängigkeit von externem Hersteller / Anbieter"
+    kategorie: "Lieferant / Beschaffung"
+    salience: 0.8
+    nachfrage: >
+      Infrastrukturprojekte hängen stark von Lieferzeiten und Herstellerunterstützung ab.
+      Ist das Lieferantenrisiko berücksichtigt?
+    schlagworte: ["lieferant", "hersteller", "anbieter", "lieferzeit", "beschaffung",
+                  "vendor", "abhängigkeit", "support"]
+
+  - id: r_kosten
+    beschreibung: "Erhebliche Mehrkosten durch unerwartete technische Anforderungen oder Normalisierungsaufwände"
+    kategorie: "Kosten"
+    salience: 0.8
+    nachfrage: >
+      Infrastrukturerneuerungen weichen oft vom Kostenrahmen ab durch
+      unvorhergesehene Anpassungen. Sind Kostenpuffer eingeplant?
+    schlagworte: ["kosten", "mehrkosten", "budget", "kostenüberschreitung", "investition",
+                  "aufwand", "finanzierung"]
+
+# ---------------------------------------------------------------------
+# Typische RAHMENBEDINGUNGEN (Abschnitt 2.2)
+# ---------------------------------------------------------------------
+rahmenbedingungen:
+  - { id: rb_hermes, vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022", salience: 0.99 }
+  - { id: rb_isds, vorgaben: "Informationssicherheit und Datenschutz", beschreibung: "ISDS-Vorgaben der Stammorganisation", salience: 0.95 }
+  - { id: rb_betrieb, vorgaben: "Betriebskontinuität", beschreibung: "Keine ungeplanten Ausfälle produktiver Systeme während Migration", salience: 0.9 }

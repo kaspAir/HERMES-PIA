@@ -15,7 +15,7 @@ Klare Aufgabentrennung:
 """
 import json
 
-from app.domains.interview.extraction import detect_project_type, extract_fields
+from app.domains.interview.extraction import detect_project_type, extract_fields, generate_followups
 from app.domains.interview.gap_check import build_followups, find_missing_risks
 from app.domains.interview.models import InterviewSession
 from app.shared.database import SessionLocal
@@ -29,7 +29,47 @@ _AVAILABLE_PROJECT_TYPES = [
             "Beschaffung oder Entwicklung und Einfuehrung einer IT-Fachanwendung, "
             "verbunden mit Anpassungen der Aufbau- und Ablauforganisation."
         ),
-    }
+    },
+    {
+        "id": "infrastruktur_erneuerung",
+        "name": "Erneuerung IT-Infrastruktur",
+        "description": (
+            "Abloesung oder Erneuerung technischer Infrastruktur (Server, Netzwerk, "
+            "Basisdienste) ohne wesentliche fachliche Prozessaenderungen."
+        ),
+    },
+    {
+        "id": "organisationsentwicklung",
+        "name": "Organisationsentwicklung",
+        "description": (
+            "Reorganisation, Prozessoptimierung oder Kulturwandel ohne "
+            "oder mit untergeordnetem IT-Anteil."
+        ),
+    },
+    {
+        "id": "e_government_portal",
+        "name": "E-Government / Buergerportal",
+        "description": (
+            "Digitalisierung von Verwaltungsleistungen fuer Buergerinnen und Buerger "
+            "oder Unternehmen; Online-Schalter, eUmzug, eBewilligung o.ae."
+        ),
+    },
+    {
+        "id": "basisdienst_plattform",
+        "name": "Basisdienst / Plattform",
+        "description": (
+            "Aufbau oder Weiterentwicklung eines gemeinsam genutzten Basisdienstes "
+            "oder einer Plattform (z.B. IAM, Dokumentenmanagement, Datenaustausch)."
+        ),
+    },
+    {
+        "id": "betriebsabloesung",
+        "name": "Betriebsabloesung / Migration",
+        "description": (
+            "Migration von Applikationen, Daten oder Betrieb von einem Altsystem "
+            "oder Rechenzentrum zu einer neuen Umgebung."
+        ),
+    },
 ]
 
 
@@ -43,10 +83,14 @@ class InterviewService:
     # Session-Lifecycle                                                    #
     # ------------------------------------------------------------------ #
 
-    def start_session(self, method_id, project_name, created_by=None):
+    def start_session(self, method_id, project_name, created_by=None,
+                      projektnummer=None, auftraggeber=None, verwaltungseinheit=None):
         session = InterviewSession(
             method_id=method_id,
             project_name=project_name,
+            projektnummer=projektnummer,
+            auftraggeber=auftraggeber,
+            verwaltungseinheit=verwaltungseinheit,
             created_by=created_by,
             answers_json="{}",
         )
@@ -146,9 +190,8 @@ class InterviewService:
                 db.commit()
                 session.project_type_id = pt
 
-        # Gap-Check bei markierten Abschnitten
-        if section.get("gap_check") and session.project_type_id:
-            entry["followups"] = self._gap_followups(section, extracted, session.project_type_id)
+        # Nachfragen: KI für alle Abschnitte + Katalog-Gap-Check für Risiken
+        entry["followups"] = self._build_followups(section, extracted, raw_text, session.project_type_id)
 
         answers[section["id"]] = entry
         self._persist_answers(session, answers)
@@ -222,9 +265,141 @@ class InterviewService:
             return bool(extracted and extracted.get("text", "").strip())
         return bool(extracted)
 
-    def _gap_followups(self, section, extracted, project_type_id):
-        if section["id"] == "risiken":
+    # ------------------------------------------------------------------ #
+    # Abschnitt-Reset für Nachbearbeitung                                  #
+    # ------------------------------------------------------------------ #
+
+    def reset_section(self, session_id, section_id):
+        """Setzt einen Abschnitt zurück, damit er neu beantwortet werden kann."""
+        session = self.get_session(session_id)
+        answers = self._answers(session)
+        if section_id in answers:
+            del answers[section_id]
+            self._persist_answers(session, answers)
+
+    # ------------------------------------------------------------------ #
+    # Preview-Daten für die Live-Vorschau                                  #
+    # ------------------------------------------------------------------ #
+
+    def preview_data(self, session):
+        """Gibt alle beantworteten Abschnitte mit ihrem Inhalt zurück."""
+        answers = self._answers(session)
+        sections = self._interviewable_sections(session.method_id)
+        result = []
+        for s in sections:
+            sid = s["id"]
+            if sid not in answers:
+                continue
+            entry = answers[sid]
+            sect_type = s.get("type", "free_text")
+            if sect_type == "free_text":
+                content = (entry.get("extracted") or {}).get("text") or entry.get("raw_text", "")
+                result.append({"id": sid, "number": s["number"], "title": s["title"],
+                                "type": "free_text", "content": content})
+            elif sect_type == "table":
+                rows = entry.get("extracted") or []
+                cols = [c for c in s.get("columns", []) if c.get("id") != "nr"]
+                result.append({"id": sid, "number": s["number"], "title": s["title"],
+                                "type": "table", "columns": cols, "rows": rows})
+        return result
+
+    # ------------------------------------------------------------------ #
+    # Versionsverwaltung                                                   #
+    # ------------------------------------------------------------------ #
+
+    def version_info(self, session):
+        """Gibt aktuelle Version und Changelog zurück."""
+        import json as _json
+        changelog = _json.loads(session.changelog_json or "[]")
+        snapshot  = _json.loads(session.last_snapshot_json or "{}")
+        answers   = self._answers(session)
+        # Welche Abschnitte haben sich seit dem letzten Download verändert?
+        changed = []
+        sections = self._interviewable_sections(session.method_id)
+        for s in sections:
+            sid = s["id"]
+            if sid in answers:
+                old = snapshot.get(sid, {})
+                new = answers[sid]
+                old_txt = (old.get("extracted") or {}).get("text", "") if isinstance(old.get("extracted"), dict) else str(old.get("extracted", ""))
+                new_txt = (new.get("extracted") or {}).get("text", "") if isinstance(new.get("extracted"), dict) else str(new.get("extracted", ""))
+                if old_txt != new_txt or sid not in snapshot:
+                    changed.append({"id": sid, "number": s["number"], "title": s["title"]})
+        return {
+            "current_version": session.doc_version or "0.1",
+            "changelog": changelog,
+            "changed_sections": changed,
+        }
+
+    def record_version_bump(self, session_id, bump_type, projektleiter, bemerkungen):
+        """Speichert einen Versionseintrag und gibt die neue Version zurück."""
+        import json as _json
+        from datetime import date as _date
+        session = self.get_session(session_id)
+        old = session.doc_version or "0.1"
+        new = _bump_version(old, bump_type)
+
+        entry = {
+            "version":     new,
+            "name":        projektleiter,
+            "datum":       _date.today().strftime("%d.%m.%Y"),
+            "bemerkungen": bemerkungen,
+        }
+        changelog = _json.loads(session.changelog_json or "[]")
+        changelog.append(entry)
+
+        db = SessionLocal()
+        s = db.get(InterviewSession, session_id)
+        s.doc_version = new
+        s.changelog_json = _json.dumps(changelog, ensure_ascii=False)
+        s.last_snapshot_json = s.answers_json  # Snapshot = aktueller Stand
+        db.commit()
+        return new, changelog
+
+    def _build_followups(self, section, extracted, raw_text, project_type_id):
+        followups = []
+
+        # KI-Vollständigkeitsprüfung für alle Abschnitte mit interview-Definition
+        if self.llm and section.get("interview"):
+            ai_items = generate_followups(self.llm, section, raw_text)
+            for i, f in enumerate(ai_items):
+                followups.append({
+                    "risk_id": f"ai_{section['id']}_{i}",
+                    "frage": f["frage"],
+                    "vorschlag": f.get("vorschlag"),
+                    "type": "ai",
+                    "status": "pending",
+                })
+
+        # Deterministischer Katalog-Gap-Check zusätzlich für Risiken
+        if section.get("gap_check") and project_type_id and section["id"] == "risiken":
             risk_texts = [r.get("beschreibung", "") for r in (extracted or [])]
-            followups = self.followups_for_risks(project_type_id, risk_texts)
-            return [dict(f, status="pending") for f in followups]
-        return []
+            catalog_items = self.followups_for_risks(project_type_id, risk_texts)
+            for f in catalog_items:
+                followups.append(dict(f, type="catalog", status="pending"))
+
+        return followups
+
+
+# ------------------------------------------------------------------ #
+# Modul-Hilfsfunktionen                                                #
+# ------------------------------------------------------------------ #
+
+def _bump_version(version_str, bump_type):
+    """
+    bump_type: 'minor' (+0.1) oder 'patch' (+0.0.1)
+    '0.1' + minor = '0.2'
+    '0.1' + patch = '0.1.1'
+    '0.1.1' + minor = '0.2'
+    """
+    parts = [int(p) for p in str(version_str).split('.')]
+    while len(parts) < 3:
+        parts.append(0)
+    if bump_type == 'minor':
+        parts[1] += 1
+        parts[2] = 0
+    else:
+        parts[2] += 1
+    if parts[2] == 0:
+        return f"{parts[0]}.{parts[1]}"
+    return f"{parts[0]}.{parts[1]}.{parts[2]}"

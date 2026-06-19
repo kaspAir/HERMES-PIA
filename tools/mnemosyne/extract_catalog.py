@@ -54,8 +54,9 @@ Analysiere diesen pseudonymisierten HERMES-PIA-Text:
 
 Extrahiere:
 1. projekt_typ: Welcher HERMES-Projekttyp passt am besten?
-   Möglichkeiten: "fachanwendung_einfuehrung", "organisationsentwicklung",
-   "infrastruktur", "e_government", "studie", "unbekannt"
+   Möglichkeiten: "fachanwendung_einfuehrung", "infrastruktur_erneuerung",
+   "organisationsentwicklung", "e_government_portal", "basisdienst_plattform",
+   "betriebsabloesung", "unbekannt"
 2. risiken: Liste der erwähnten Risiken (max. 10)
    Format: [{{"beschreibung": "...", "kategorie": "...", "schlagworte": [...]}}]
 3. ziele: Liste der erwähnten Projektziele (max. 8)
@@ -76,37 +77,48 @@ Antworte nur mit JSON:
 
 
 def extract_from_pia(client: anthropic.Anthropic, text: str, model: str) -> dict:
-    # Längere Texte auf ~8000 Zeichen kürzen (PIA-Inhalte sind selten länger)
     truncated = text[:8000]
     if len(text) > 8000:
         truncated += "\n[... Text gekürzt ...]"
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=1024,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _EXTRACTION_PROMPT.format(text=truncated)}],
-    )
-    raw = response.content[0].text.strip()
+    for attempt in range(2):
+        response = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": _EXTRACTION_PROMPT.format(text=truncated)}],
+        )
+        raw = response.content[0].text.strip()
 
-    # Markdown-Fences entfernen falls vorhanden
-    if raw.startswith('```'):
-        raw = raw.split('\n', 1)[1]
-        raw = raw.rsplit('```', 1)[0]
+        # Markdown-Fences entfernen falls vorhanden
+        if raw.startswith('```'):
+            raw = raw.split('\n', 1)[1]
+            raw = raw.rsplit('```', 1)[0]
 
-    return json.loads(raw)
+        try:
+            return json.loads(raw.strip())
+        except json.JSONDecodeError:
+            if attempt == 0:
+                # Zweiter Versuch mit kürzerem Text
+                truncated = text[:4000] + "\n[... Text stark gekürzt für Retry ...]"
+                continue
+            raise
 
 
 def aggregate_results(extractions: list[dict]) -> dict:
-    """Aggregiert Extraktionsergebnisse und berechnet salience-Werte."""
+    """Aggregiert Extraktionsergebnisse nach Projekttyp.
+
+    Risiken werden NICHT per exaktem String-Match aggregiert (jedes PIA
+    formuliert Risiken individuell — ein 30%-Schwellwert würde nie greifen).
+    Stattdessen: alle Risiken nach Projekttyp gruppiert ausgeben, damit der
+    Nutzer thematische Muster erkennen und Katalogeinträge manuell erstellen kann.
+    """
     from collections import Counter, defaultdict
 
     total = len(extractions)
-    risk_counter: Counter = Counter()
-    risk_meta: dict = {}
-    ziel_counter: Counter = Counter()
-    lieferergebnis_counter: Counter = Counter()
     projekt_typ_counter: Counter = Counter()
+    risiken_by_type: dict = defaultdict(list)
+    lieferergebnis_counter: Counter = Counter()
 
     for ex in extractions:
         typ = ex.get('projekt_typ', 'unbekannt')
@@ -115,54 +127,42 @@ def aggregate_results(extractions: list[dict]) -> dict:
         for r in ex.get('risiken', []):
             desc = r.get('beschreibung', '').strip()
             if desc and len(desc) > 10:
-                # Normalisierung: lowercase für Zählung
-                key = desc.lower()[:60]
-                risk_counter[key] += 1
-                if key not in risk_meta:
-                    risk_meta[key] = r
-
-        for z in ex.get('ziele', []):
-            desc = z.get('beschreibung', '').strip()
-            if desc and len(desc) > 10:
-                ziel_counter[desc.lower()[:60]] += 1
+                risiken_by_type[typ].append({
+                    'beschreibung': desc,
+                    'kategorie': r.get('kategorie', ''),
+                })
 
         for le in ex.get('lieferergebnisse', []):
             name = le.get('name', '').strip()
             if name and len(name) > 3:
                 lieferergebnis_counter[name.lower()] += 1
 
-    def salience(count: int, n: int) -> float:
-        return round(min(count / n, 1.0), 2)
+    # Pro Projekttyp: max. 30 Risiken (dedupliziert nach erster 80 Zeichen)
+    risiken_pro_typ = {}
+    for typ, risiken in risiken_by_type.items():
+        seen = set()
+        unique = []
+        for r in risiken:
+            key = r['beschreibung'].lower()[:80]
+            if key not in seen:
+                seen.add(key)
+                unique.append(r)
+        risiken_pro_typ[typ] = unique[:30]
 
-    # Nur Einträge mit salience >= 0.3 (mindestens 30% der PIAs)
-    threshold = max(1, total * 0.3)
-
-    risiken_yaml = []
-    for key, count in risk_counter.most_common(20):
-        if count >= threshold:
-            meta = risk_meta[key]
-            risiken_yaml.append({
-                'beschreibung': meta.get('beschreibung', key),
-                'kategorie': meta.get('kategorie', ''),
-                'salience': salience(count, total),
-                'schlagworte': meta.get('schlagworte', []),
-                '_vorkommen': f"{count}/{total}",
-            })
+    # Lieferergebnisse die in mind. 2 PIAs vorkamen
+    haeufige_le = [
+        {'name': k[:60], '_vorkommen': f"{v}/{total}"}
+        for k, v in lieferergebnis_counter.most_common(15)
+        if v >= 2
+    ]
 
     return {
         'projekt_typen': dict(projekt_typ_counter.most_common()),
         'gesamt_pias': total,
-        'risiken': risiken_yaml,
-        'haeufige_ziele': [
-            {'beschreibung': k[:80], '_vorkommen': f"{v}/{total}"}
-            for k, v in ziel_counter.most_common(10)
-            if v >= threshold
-        ],
-        'haeufige_lieferergebnisse': [
-            {'name': k[:60], '_vorkommen': f"{v}/{total}"}
-            for k, v in lieferergebnis_counter.most_common(10)
-            if v >= threshold
-        ],
+        # Flache Liste für Abwärtskompatibilität (bleibt leer, s. risiken_pro_typ)
+        'risiken': [],
+        'risiken_pro_projekttyp': risiken_pro_typ,
+        'haeufige_lieferergebnisse': haeufige_le,
     }
 
 
