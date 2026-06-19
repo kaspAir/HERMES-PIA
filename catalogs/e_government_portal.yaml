@@ -1,0 +1,115 @@
+# =====================================================================
+# Referenzkatalog: E-Government / Bürgerportal
+#                  (Digitalisierung von Verwaltungsleistungen)
+# =====================================================================
+# Erfahrungswissen aus 24 realen HERMES-PIAs (via Mnemosyne, pseudonymisiert).
+# Keine Rohdaten – abgeleitetes, aggregiertes Wissen.
+#
+# 'salience' >= 0.8 => Methodos fragt nach wenn der Eintrag fehlt.
+
+project_type:
+  id: e_government_portal
+  name: "E-Government / Bürgerportal"
+  description: >
+    Digitalisierung von Verwaltungsleistungen für Bürgerinnen und Bürger oder
+    Unternehmen; Online-Schalter, eUmzug, eBewilligung o.ä.
+  applies_to_method: hermes_pia
+
+# ---------------------------------------------------------------------
+# Typische ZIELE (Abschnitt 2.1)
+# ---------------------------------------------------------------------
+ziele:
+  - id: z_digitaler_kanal
+    kategorie: "Systemziel"
+    beschreibung: "Die Verwaltungsleistung ist vollständig digital und medienbruchfrei verfügbar."
+    messgroesse: "Anteil digital abgewickelter Transaktionen"
+    salience: 0.9
+  - id: z_rechtskonformitaet
+    kategorie: "Vorgehensziel"
+    beschreibung: "Rechtliche und regulatorische Anforderungen (DSG, ÖREB) sind vollständig erfüllt."
+    messgroesse: "Abnahme durch Rechtsdienst / Datenschutzbeauftragten"
+    salience: 0.9
+
+# ---------------------------------------------------------------------
+# Typische LIEFERERGEBNISSE der Initialisierung (Abschnitt 4.1)
+# ---------------------------------------------------------------------
+lieferergebnisse:
+  - { id: le_rechtsgrundlagen,  name: "Rechtsgrundlagenanalyse",              salience: 0.95 }
+  - { id: le_isds,              name: "Schutzbedarfsanalyse (ISDS)",           salience: 0.95 }
+  - { id: le_studie,            name: "Studie (mit Variantenvergleich)",       salience: 0.9 }
+  - { id: le_stakeholder,       name: "Stakeholder-Analyse",                  salience: 0.85 }
+  - { id: le_prozessanalyse,    name: "Prozessanalyse As-Is / To-Be",         salience: 0.85 }
+
+# ---------------------------------------------------------------------
+# Typische RISIKEN (Abschnitt 7)
+# Eintraege mit salience >= 0.8 loesen eine Nachfrage aus.
+# ---------------------------------------------------------------------
+risiken:
+  - id: r_datenschutz
+    beschreibung: "Datenschutz- und Informationssicherheitsanforderungen (DSG, Schutzbedarf) unterschätzt oder nicht vollständig geklärt"
+    kategorie: "Recht / Sicherheit"
+    salience: 0.95
+    nachfrage: >
+      E-Government-Vorhaben verarbeiten regelmässig Personendaten – Datenschutz
+      und Informationssicherheit sind fast immer kritische Risiken. Ist das erfasst?
+    schlagworte: ["datenschutz", "informationssicherheit", "isds", "schutzbedarf",
+                  "personendaten", "dsg", "vertraulichkeit", "sicherheit"]
+
+  - id: r_rechtlich
+    beschreibung: "Gesetzliche Grundlage fehlt oder muss angepasst werden, um den digitalen Kanal zu ermöglichen"
+    kategorie: "Recht / Regulierung"
+    salience: 0.9
+    nachfrage: >
+      Für E-Government-Lösungen fehlen oft noch die rechtlichen Grundlagen oder
+      es braucht Gesetzesanpassungen. Ist die Rechtsbasis bereits gesichert?
+    schlagworte: ["gesetz", "rechtsgrundlage", "rechtlich", "regulierung", "vorschrift",
+                  "erlass", "verordnung", "recht", "bewilligung"]
+
+  - id: r_systemintegration
+    beschreibung: "Integration mit Backendsystemen (Fachapplikationen, Register, Drittsysteme) ist komplex oder unklar"
+    kategorie: "Technisch / Integration"
+    salience: 0.85
+    nachfrage: >
+      E-Government-Portale müssen fast immer an bestehende Fachsysteme und Register
+      angebunden werden. Sind Integrationsrisiken berücksichtigt?
+    schlagworte: ["integration", "schnittstelle", "backend", "fachsystem", "register",
+                  "api", "anbindung", "drittsystem", "migration"]
+
+  - id: r_nutzerakzeptanz
+    beschreibung: "Geringe Nutzungsbereitschaft der Bevölkerung oder internen Stellen für den digitalen Kanal"
+    kategorie: "Akzeptanz / Change"
+    salience: 0.8
+    nachfrage: >
+      Die Akzeptanz des digitalen Kanals ist nicht selbstverständlich – fehlende
+      Bekanntheit, Medienbrüche oder Barrierefreiheit sind häufige Gründe.
+      Ist dieses Risiko bedacht?
+    schlagworte: ["akzeptanz", "nutzer", "bevölkerung", "bürger", "nutzung",
+                  "benutzerfreundlichkeit", "barrierefreiheit", "adoption"]
+
+  - id: r_ressourcen
+    beschreibung: "Externe Expertise für E-Government / eID / eIDAS fehlt oder ist nicht verfügbar"
+    kategorie: "Ressourcen"
+    salience: 0.8
+    nachfrage: >
+      E-Government-Vorhaben erfordern spezialisiertes Know-how (eID, eIDAS,
+      Sicherheitsarchitektur), das intern oft nicht vorhanden ist. Ist das adressiert?
+    schlagworte: ["expertise", "ressource", "eid", "eidas", "spezialist",
+                  "fachkenntnisse", "extern", "kompetenz", "personal"]
+
+  - id: r_altsystem
+    beschreibung: "Bestehende Altsysteme sind nicht mehr wartbar oder integrierbar"
+    kategorie: "Technisch / Legacy"
+    salience: 0.8
+    nachfrage: >
+      In vielen E-Government-Projekten sind bestehende Systeme technisch veraltet
+      und behindern die Digitalisierung. Ist das Legacy-Risiko erfasst?
+    schlagworte: ["altsystem", "legacy", "veraltet", "wartung", "quellcode",
+                  "technologie", "migration", "ablösung", "ersatz"]
+
+# ---------------------------------------------------------------------
+# Typische RAHMENBEDINGUNGEN (Abschnitt 2.2)
+# ---------------------------------------------------------------------
+rahmenbedingungen:
+  - { id: rb_hermes, vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022", salience: 0.99 }
+  - { id: rb_isds, vorgaben: "Informationssicherheit und Datenschutz", beschreibung: "ISDS-Vorgaben und Datenschutzgesetz (DSG)", salience: 0.95 }
+  - { id: rb_egovernance, vorgaben: "E-Government-Strategie", beschreibung: "Kantonale oder nationale E-Government-Strategie und Standards", salience: 0.8 }

@@ -1,19 +1,405 @@
-"""Der Interview-Loop. MVP-Geruest - die Konversationslogik baust du am
-Wochenende mit Claude aus. Die Lueckenpruefung (gap_check) ist bereits real.
+"""Der Interview-Loop: der Kern von Methodos.
+
+Ablauf je Abschnitt:
+  1. Frage stellen  (aus method.yaml: interview.questions)
+  2. Antwort aufnehmen (frei, gesprochen oder getippt)
+  3. LLM extrahiert strukturierte Felder
+  4. Vollstaendigkeitspruefung (method.yaml: interview.completeness)
+  5. Bei gap_check-Abschnitten: deterministischer Abgleich gegen Katalog,
+     Nachfragen einspeisen wenn typische Eintraege fehlen.
+
+Klare Aufgabentrennung:
+  - gap_check.py  entscheidet, ob eine Luecke vorliegt  (deterministisch)
+  - extraction.py  formuliert und extrahiert            (LLM)
+  - Diese Klasse   steuert den Dialog                   (Zustand + Logik)
 """
+import json
+
+from app.domains.interview.extraction import detect_project_type, extract_fields, generate_followups
 from app.domains.interview.gap_check import build_followups, find_missing_risks
+from app.domains.interview.models import InterviewSession
+from app.shared.database import SessionLocal
+
+_INTERVIEWABLE = {"free_text", "table"}
+_AVAILABLE_PROJECT_TYPES = [
+    {
+        "id": "fachanwendung_einfuehrung",
+        "name": "Einfuehrung einer Fachanwendung",
+        "description": (
+            "Beschaffung oder Entwicklung und Einfuehrung einer IT-Fachanwendung, "
+            "verbunden mit Anpassungen der Aufbau- und Ablauforganisation."
+        ),
+    },
+    {
+        "id": "infrastruktur_erneuerung",
+        "name": "Erneuerung IT-Infrastruktur",
+        "description": (
+            "Abloesung oder Erneuerung technischer Infrastruktur (Server, Netzwerk, "
+            "Basisdienste) ohne wesentliche fachliche Prozessaenderungen."
+        ),
+    },
+    {
+        "id": "organisationsentwicklung",
+        "name": "Organisationsentwicklung",
+        "description": (
+            "Reorganisation, Prozessoptimierung oder Kulturwandel ohne "
+            "oder mit untergeordnetem IT-Anteil."
+        ),
+    },
+    {
+        "id": "e_government_portal",
+        "name": "E-Government / Buergerportal",
+        "description": (
+            "Digitalisierung von Verwaltungsleistungen fuer Buergerinnen und Buerger "
+            "oder Unternehmen; Online-Schalter, eUmzug, eBewilligung o.ae."
+        ),
+    },
+    {
+        "id": "basisdienst_plattform",
+        "name": "Basisdienst / Plattform",
+        "description": (
+            "Aufbau oder Weiterentwicklung eines gemeinsam genutzten Basisdienstes "
+            "oder einer Plattform (z.B. IAM, Dokumentenmanagement, Datenaustausch)."
+        ),
+    },
+    {
+        "id": "betriebsabloesung",
+        "name": "Betriebsabloesung / Migration",
+        "description": (
+            "Migration von Applikationen, Daten oder Betrieb von einem Altsystem "
+            "oder Rechenzentrum zu einer neuen Umgebung."
+        ),
+    },
+]
 
 
 class InterviewService:
-    def __init__(self, method_service, catalog_service):
+    def __init__(self, method_service, catalog_service, llm_client=None):
         self.methods = method_service
         self.catalogs = catalog_service
+        self.llm = llm_client
+
+    # ------------------------------------------------------------------ #
+    # Session-Lifecycle                                                    #
+    # ------------------------------------------------------------------ #
+
+    def start_session(self, method_id, project_name, created_by=None,
+                      projektnummer=None, auftraggeber=None, verwaltungseinheit=None):
+        session = InterviewSession(
+            method_id=method_id,
+            project_name=project_name,
+            projektnummer=projektnummer,
+            auftraggeber=auftraggeber,
+            verwaltungseinheit=verwaltungseinheit,
+            created_by=created_by,
+            answers_json="{}",
+        )
+        db = SessionLocal()
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        return session
+
+    def get_session(self, session_id):
+        return SessionLocal().get(InterviewSession, int(session_id))
+
+    def all_sessions(self):
+        return SessionLocal().query(InterviewSession).order_by(
+            InterviewSession.created_at.desc()
+        ).all()
+
+    # ------------------------------------------------------------------ #
+    # Zustand                                                              #
+    # ------------------------------------------------------------------ #
+
+    def current_state(self, session):
+        """Gibt den aktuellen Interviewzustand zurueck (fuer UI und API)."""
+        answers = self._answers(session)
+        sections = self._interviewable_sections(session.method_id)
+        progress = self._progress(answers, sections)
+
+        for section in sections:
+            sid = section["id"]
+            if sid not in answers:
+                return {
+                    "phase": "question",
+                    "section": section,
+                    "progress": progress,
+                }
+            pending = self._pending_followups(answers[sid])
+            if pending:
+                return {
+                    "phase": "followup",
+                    "section": section,
+                    "followup": pending[0],
+                    "progress": progress,
+                }
+
+        return {"phase": "complete", "progress": progress}
+
+    def section_summary(self, session):
+        """Gibt alle Abschnitte mit ihrem Status zurueck (fuer Fortschrittsanzeige)."""
+        answers = self._answers(session)
+        sections = self._interviewable_sections(session.method_id)
+        state = self.current_state(session)
+        current_id = state.get("section", {}).get("id")
+
+        result = []
+        for s in sections:
+            sid = s["id"]
+            if sid in answers:
+                status = "done"
+                if self._pending_followups(answers[sid]):
+                    status = "followup_pending"
+            elif sid == current_id:
+                status = "current"
+            else:
+                status = "pending"
+            result.append({"id": sid, "number": s["number"], "title": s["title"], "status": status})
+        return result
+
+    # ------------------------------------------------------------------ #
+    # Antwortverarbeitung                                                  #
+    # ------------------------------------------------------------------ #
+
+    def submit_answer(self, session_id, raw_text):
+        """Verarbeitet die Antwort des Projektleiters auf die aktuelle Frage."""
+        session = self.get_session(session_id)
+        answers = self._answers(session)
+        state = self.current_state(session)
+
+        if state["phase"] != "question":
+            raise ValueError("Kein offener Frageabschnitt")
+
+        section = state["section"]
+        extracted = self._extract(section, raw_text)
+
+        entry = {
+            "raw_text": raw_text,
+            "extracted": extracted,
+            "complete": self._is_complete(section, extracted),
+        }
+
+        # Nach der Ausgangslage: Projekttyp aus dem Text ableiten
+        if section["id"] == "ausgangslage" and not session.project_type_id:
+            pt = self._detect_type(raw_text)
+            if pt:
+                db = SessionLocal()
+                s = db.get(InterviewSession, session.id)
+                s.project_type_id = pt
+                db.commit()
+                session.project_type_id = pt
+
+        # Nachfragen: KI für alle Abschnitte + Katalog-Gap-Check für Risiken
+        entry["followups"] = self._build_followups(section, extracted, raw_text, session.project_type_id)
+
+        answers[section["id"]] = entry
+        self._persist_answers(session, answers)
+        return self.current_state(session)
+
+    def answer_followup(self, session_id, risk_id, accepted, raw_text=None):
+        """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen."""
+        session = self.get_session(session_id)
+        answers = self._answers(session)
+
+        for section_answer in answers.values():
+            for followup in section_answer.get("followups", []):
+                if followup.get("risk_id") == risk_id and followup.get("status") == "pending":
+                    followup["status"] = "accepted" if accepted else "dismissed"
+                    if raw_text:
+                        followup["raw_text"] = raw_text
+                    self._persist_answers(session, answers)
+                    return self.current_state(session)
+
+        raise ValueError(f"Kein offenes Followup fuer Risiko '{risk_id}'")
+
+    # ------------------------------------------------------------------ #
+    # Bestehende oeffentliche API (Rueckwaertskompatibilitaet / Tests)    #
+    # ------------------------------------------------------------------ #
 
     def followups_for_risks(self, project_type_id, entered_risk_texts):
-        """Liefert konkrete Nachfragen fuer fehlende, typische Risiken."""
         catalog_risks = self.catalogs.salient_risks(project_type_id)
         missing = find_missing_risks(entered_risk_texts, catalog_risks)
         return build_followups(missing)
 
-    # TODO (Wochenende): naechste-Frage-Logik, Antwortextraktion via LLM,
-    # Vollstaendigkeitspruefung je Abschnitt (completeness aus method.yaml).
+    # ------------------------------------------------------------------ #
+    # Interne Hilfsmethoden                                                #
+    # ------------------------------------------------------------------ #
+
+    def _interviewable_sections(self, method_id):
+        return [s for s in self.methods.sections(method_id) if s.get("type") in _INTERVIEWABLE]
+
+    def _answers(self, session):
+        return json.loads(session.answers_json or "{}")
+
+    def _persist_answers(self, session, answers):
+        db = SessionLocal()
+        s = db.get(InterviewSession, session.id)
+        s.answers_json = json.dumps(answers, ensure_ascii=False, indent=2)
+        db.commit()
+
+    def _progress(self, answers, sections):
+        done = sum(1 for s in sections if s["id"] in answers)
+        return {"done": done, "total": len(sections)}
+
+    def _pending_followups(self, section_answer):
+        return [f for f in section_answer.get("followups", []) if f.get("status") == "pending"]
+
+    def _extract(self, section, raw_text):
+        if not raw_text or not raw_text.strip():
+            return {"text": ""} if section.get("type") == "free_text" else []
+        if not self.llm:
+            return {"text": raw_text} if section.get("type") == "free_text" else []
+        return extract_fields(self.llm, section, raw_text)
+
+    def _detect_type(self, text):
+        if not self.llm:
+            return _AVAILABLE_PROJECT_TYPES[0]["id"]
+        return detect_project_type(self.llm, _AVAILABLE_PROJECT_TYPES, text)
+
+    def _is_complete(self, section, extracted):
+        criteria = section.get("interview", {}).get("completeness", [])
+        if not criteria:
+            return True
+        if section.get("type") == "free_text":
+            return bool(extracted and extracted.get("text", "").strip())
+        return bool(extracted)
+
+    # ------------------------------------------------------------------ #
+    # Abschnitt-Reset für Nachbearbeitung                                  #
+    # ------------------------------------------------------------------ #
+
+    def reset_section(self, session_id, section_id):
+        """Setzt einen Abschnitt zurück, damit er neu beantwortet werden kann."""
+        session = self.get_session(session_id)
+        answers = self._answers(session)
+        if section_id in answers:
+            del answers[section_id]
+            self._persist_answers(session, answers)
+
+    # ------------------------------------------------------------------ #
+    # Preview-Daten für die Live-Vorschau                                  #
+    # ------------------------------------------------------------------ #
+
+    def preview_data(self, session):
+        """Gibt alle beantworteten Abschnitte mit ihrem Inhalt zurück."""
+        answers = self._answers(session)
+        sections = self._interviewable_sections(session.method_id)
+        result = []
+        for s in sections:
+            sid = s["id"]
+            if sid not in answers:
+                continue
+            entry = answers[sid]
+            sect_type = s.get("type", "free_text")
+            if sect_type == "free_text":
+                content = (entry.get("extracted") or {}).get("text") or entry.get("raw_text", "")
+                result.append({"id": sid, "number": s["number"], "title": s["title"],
+                                "type": "free_text", "content": content})
+            elif sect_type == "table":
+                rows = entry.get("extracted") or []
+                cols = [c for c in s.get("columns", []) if c.get("id") != "nr"]
+                result.append({"id": sid, "number": s["number"], "title": s["title"],
+                                "type": "table", "columns": cols, "rows": rows})
+        return result
+
+    # ------------------------------------------------------------------ #
+    # Versionsverwaltung                                                   #
+    # ------------------------------------------------------------------ #
+
+    def version_info(self, session):
+        """Gibt aktuelle Version und Changelog zurück."""
+        import json as _json
+        changelog = _json.loads(session.changelog_json or "[]")
+        snapshot  = _json.loads(session.last_snapshot_json or "{}")
+        answers   = self._answers(session)
+        # Welche Abschnitte haben sich seit dem letzten Download verändert?
+        changed = []
+        sections = self._interviewable_sections(session.method_id)
+        for s in sections:
+            sid = s["id"]
+            if sid in answers:
+                old = snapshot.get(sid, {})
+                new = answers[sid]
+                old_txt = (old.get("extracted") or {}).get("text", "") if isinstance(old.get("extracted"), dict) else str(old.get("extracted", ""))
+                new_txt = (new.get("extracted") or {}).get("text", "") if isinstance(new.get("extracted"), dict) else str(new.get("extracted", ""))
+                if old_txt != new_txt or sid not in snapshot:
+                    changed.append({"id": sid, "number": s["number"], "title": s["title"]})
+        return {
+            "current_version": session.doc_version or "0.1",
+            "changelog": changelog,
+            "changed_sections": changed,
+        }
+
+    def record_version_bump(self, session_id, bump_type, projektleiter, bemerkungen):
+        """Speichert einen Versionseintrag und gibt die neue Version zurück."""
+        import json as _json
+        from datetime import date as _date
+        session = self.get_session(session_id)
+        old = session.doc_version or "0.1"
+        new = _bump_version(old, bump_type)
+
+        entry = {
+            "version":     new,
+            "name":        projektleiter,
+            "datum":       _date.today().strftime("%d.%m.%Y"),
+            "bemerkungen": bemerkungen,
+        }
+        changelog = _json.loads(session.changelog_json or "[]")
+        changelog.append(entry)
+
+        db = SessionLocal()
+        s = db.get(InterviewSession, session_id)
+        s.doc_version = new
+        s.changelog_json = _json.dumps(changelog, ensure_ascii=False)
+        s.last_snapshot_json = s.answers_json  # Snapshot = aktueller Stand
+        db.commit()
+        return new, changelog
+
+    def _build_followups(self, section, extracted, raw_text, project_type_id):
+        followups = []
+
+        # KI-Vollständigkeitsprüfung für alle Abschnitte mit interview-Definition
+        if self.llm and section.get("interview"):
+            ai_items = generate_followups(self.llm, section, raw_text)
+            for i, f in enumerate(ai_items):
+                followups.append({
+                    "risk_id": f"ai_{section['id']}_{i}",
+                    "frage": f["frage"],
+                    "vorschlag": f.get("vorschlag"),
+                    "type": "ai",
+                    "status": "pending",
+                })
+
+        # Deterministischer Katalog-Gap-Check zusätzlich für Risiken
+        if section.get("gap_check") and project_type_id and section["id"] == "risiken":
+            risk_texts = [r.get("beschreibung", "") for r in (extracted or [])]
+            catalog_items = self.followups_for_risks(project_type_id, risk_texts)
+            for f in catalog_items:
+                followups.append(dict(f, type="catalog", status="pending"))
+
+        return followups
+
+
+# ------------------------------------------------------------------ #
+# Modul-Hilfsfunktionen                                                #
+# ------------------------------------------------------------------ #
+
+def _bump_version(version_str, bump_type):
+    """
+    bump_type: 'minor' (+0.1) oder 'patch' (+0.0.1)
+    '0.1' + minor = '0.2'
+    '0.1' + patch = '0.1.1'
+    '0.1.1' + minor = '0.2'
+    """
+    parts = [int(p) for p in str(version_str).split('.')]
+    while len(parts) < 3:
+        parts.append(0)
+    if bump_type == 'minor':
+        parts[1] += 1
+        parts[2] = 0
+    else:
+        parts[2] += 1
+    if parts[2] == 0:
+        return f"{parts[0]}.{parts[1]}"
+    return f"{parts[0]}.{parts[1]}.{parts[2]}"

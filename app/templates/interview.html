@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block title %}Interview – {{ session.project_name }}{% endblock %}
+{% block main_class %}wide{% endblock %}
+
+{% block content %}
+<div class="interview-layout">
+
+  {# ---- Linke Spalte: Fortschritt ---- #}
+  <aside class="progress-panel">
+    <div class="project-meta">
+      <div class="project-name">{{ session.project_name }}</div>
+      <div class="project-type">
+        {% if session.project_type_id %}
+          <span class="badge badge-type">{{ session.project_type_id | replace("_", " ") | title }}</span>
+        {% else %}
+          <span class="badge badge-pending">Typ wird erkannt&hellip;</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <ol class="section-list">
+      {% for s in sections %}
+        <li class="section-item section-{{ s.status }}"
+            title="{{ s.title }}">
+          <span class="section-status-icon">
+            {% if s.status == 'done' %}&#10003;
+            {% elif s.status == 'current' %}&#8594;
+            {% elif s.status == 'followup_pending' %}&#9679;
+            {% else %}&nbsp;
+            {% endif %}
+          </span>
+          <span class="section-number">{{ s.number }}</span>
+          <span class="section-title-short">{{ s.title }}</span>
+          {% if s.status == 'done' %}
+            <form method="post"
+                  action="{{ url_for('ui.interview_edit', session_id=session.id, section_id=s.id) }}"
+                  class="edit-section-form">
+              <button type="submit" class="btn-edit-section" title="Abschnitt bearbeiten">&#9998;</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+
+    <div class="progress-bar-wrap">
+      {% set pct = (state.progress.done / state.progress.total * 100) | int %}
+      <div class="progress-bar" style="width: {{ pct }}%"></div>
+    </div>
+    <div class="progress-label">
+      {{ state.progress.done }} / {{ state.progress.total }} Abschnitte
+    </div>
+  </aside>
+
+  {# ---- Mittlere Spalte: Interview-Dialog ---- #}
+  <section class="interview-main">
+
+    {% if state.phase == "question" %}
+      {# ---- Normale Frage ---- #}
+      <div class="section-header">
+        <span class="section-num-badge">{{ state.section.number }}</span>
+        <h2>{{ state.section.title }}</h2>
+      </div>
+
+      {% if state.section.interview %}
+        <div class="question-list">
+          {% for q in state.section.interview.questions %}
+            <p class="question-item">{{ q }}</p>
+          {% endfor %}
+        </div>
+        {% if state.section.interview.completeness %}
+          <details class="completeness-hint">
+            <summary>Vollständigkeit</summary>
+            <ul>
+              {% for c in state.section.interview.completeness %}
+                <li>{{ c }}</li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% endif %}
+      {% else %}
+        <p class="question-item">
+          Bitte beschreiben Sie den Abschnitt
+          &laquo;{{ state.section.title }}&raquo;.
+        </p>
+      {% endif %}
+
+      <form method="post"
+            action="{{ url_for('ui.interview_answer', session_id=session.id) }}">
+        <div class="answer-area">
+          <textarea id="answer-text"
+                    name="raw_text"
+                    rows="6"
+                    placeholder="Antwort sprechen (Mikrofon) oder hier eintippen &hellip;"
+                    autofocus></textarea>
+          <button type="button" id="voice-btn" class="btn-voice"
+                  title="Spracheingabe starten">
+            &#127908; Sprechen
+          </button>
+          <div id="voice-status" class="voice-status"></div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">
+            Weiter &#8594;
+          </button>
+          <a href="{{ url_for('ui.index') }}" class="btn-link">Abbrechen</a>
+        </div>
+      </form>
+
+    {% elif state.phase == "followup" %}
+      {# ---- Nachfrage (Gap-Check-Ergebnis) ---- #}
+      <div class="followup-card">
+        <div class="followup-label">
+          {% if state.followup.type == 'catalog' %}Typisches Risiko nicht erwähnt
+          {% else %}Methodos hat eine Rückfrage{% endif %}
+        </div>
+        <p class="followup-question">{{ state.followup.frage }}</p>
+        {% if state.followup.vorschlag %}
+          <p class="followup-suggestion">
+            Vorschlag: <em>{{ state.followup.vorschlag }}</em>
+          </p>
+        {% endif %}
+      </div>
+
+      <form method="post"
+            action="{{ url_for('ui.interview_followup', session_id=session.id) }}">
+        <input type="hidden" name="risk_id" value="{{ state.followup.risk_id }}">
+        <div class="answer-area">
+          <textarea name="raw_text"
+                    id="answer-text"
+                    rows="3"
+                    placeholder="Optional: Anmerkung oder Ergänzung &hellip;"></textarea>
+          <button type="button" id="voice-btn" class="btn-voice"
+                  title="Spracheingabe starten">
+            &#127908; Sprechen
+          </button>
+        </div>
+        <div class="form-actions">
+          <button type="submit" name="accepted" value="1" class="btn-primary">
+            Aufnehmen
+          </button>
+          <button type="submit" name="accepted" value="0" class="btn-secondary">
+            Bewusst weggelassen
+          </button>
+        </div>
+      </form>
+
+    {% elif state.phase == "complete" %}
+      {# ---- Abgeschlossen ---- #}
+      <div class="complete-banner">
+        <div class="complete-icon">&#10003;</div>
+        <h2>Interview abgeschlossen</h2>
+        <p>
+          Alle {{ state.progress.total }} Abschnitte sind erfasst.
+          Methodos erstellt jetzt den PIA.
+        </p>
+        <a href="{{ url_for('ui.interview_version', session_id=session.id) }}"
+           class="btn-primary btn-large">
+          &#8595; PIA herunterladen (.docx)
+        </a>
+        <a href="{{ url_for('ui.index') }}" class="btn-link" style="display:block;margin-top:16px">
+          Zur Übersicht
+        </a>
+      </div>
+    {% endif %}
+
+  </section>
+
+  {# ---- Rechte Spalte: Live-Vorschau ---- #}
+  <aside class="preview-panel">
+    <div class="preview-header">
+      <span class="preview-title">PIA-Vorschau</span>
+      <span class="preview-version">v{{ session.doc_version or '0.1' }}</span>
+    </div>
+
+    {% if preview %}
+      <div class="preview-content">
+        {% for item in preview %}
+          <div class="preview-section">
+            <div class="preview-section-title">
+              <span class="preview-num">{{ item.number }}</span>
+              {{ item.title }}
+            </div>
+            {% if item.type == 'free_text' %}
+              <p class="preview-text">{{ item.content }}</p>
+            {% elif item.type == 'table' %}
+              <table class="preview-table">
+                <thead>
+                  <tr>
+                    {% for col in item.columns %}
+                      <th>{{ col.label }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in item.rows %}
+                    <tr>
+                      {% for col in item.columns %}
+                        <td>{{ row.get(col.id, '') }}</td>
+                      {% endfor %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="preview-empty">
+        <p>Noch keine Abschnitte erfasst.</p>
+        <p>Die Vorschau aktualisiert sich nach jeder Antwort.</p>
+      </div>
+    {% endif %}
+  </aside>
+
+</div>
+
+<script>
+(function () {
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var btn      = document.getElementById('voice-btn');
+  var textarea = document.getElementById('answer-text');
+  var statusEl = document.getElementById('voice-status');
+
+  if (!SpeechRecognition) {
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+
+  var recognition = new SpeechRecognition();
+  recognition.lang            = 'de-CH';
+  recognition.continuous      = true;
+  recognition.interimResults  = true;
+  recognition.maxAlternatives = 1;
+
+  var active          = false;
+  var finalTranscript = '';
+  var interimText     = '';
+
+  function render() {
+    if (textarea) textarea.value = finalTranscript + interimText;
+  }
+
+  function setUiRecording(on) {
+    btn.textContent = on ? '⏹ Aufnahme stoppen' : '🎤 Sprechen';
+    btn.classList.toggle('recording', on);
+    if (statusEl) statusEl.textContent = on ? 'Aufnahme läuft – bitte sprechen …' : '';
+  }
+
+  btn.addEventListener('click', function () {
+    if (!active) {
+      finalTranscript = (textarea ? textarea.value.trim() : '');
+      if (finalTranscript) finalTranscript += ' ';
+      interimText = '';
+      active = true;
+      recognition.start();
+    } else {
+      active = false;
+      recognition.stop();
+    }
+  });
+
+  recognition.onstart  = function () { setUiRecording(true); };
+  recognition.onresult = function (event) {
+    interimText = '';
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      var t = event.results[i][0].transcript;
+      if (event.results[i].isFinal) { finalTranscript += t + ' '; }
+      else                          { interimText = t; }
+    }
+    render();
+  };
+  recognition.onend = function () {
+    if (active) { recognition.start(); }
+    else { finalTranscript += interimText; interimText = ''; render(); setUiRecording(false); }
+  };
+  recognition.onerror = function (e) {
+    if (e.error === 'no-speech') return;
+    active = false; setUiRecording(false);
+    if (statusEl) statusEl.textContent = 'Fehler: ' + e.error;
+  };
+}());
+</script>
+{% endblock %}
