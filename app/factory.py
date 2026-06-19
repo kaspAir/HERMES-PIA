@@ -37,6 +37,7 @@ def _migrate_db(engine):
 def create_app(config_class=None):
     app = Flask(__name__)
     app.config.from_object(config_class or get_config())
+    app.secret_key = app.config.get("SECRET_KEY", "dev-only-change-in-prod")
 
     configure_logging(app)
     register_error_handlers(app)
