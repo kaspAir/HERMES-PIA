@@ -266,17 +266,18 @@ class GenerationService:
         W_SDT_PR = f'{{{W}}}sdtPr'
         W_SHOWING_PLH = f'{{{W}}}showingPlcHdr'
 
-        # Template-Datenzeile (erster HTabText85pt-Row, kein Example)
-        template_row = None
-        for row in tbl_el:
-            if row.tag != W_TR:
-                continue
-            if _row_style(row) == STYLE_DATA and template_row is None:
-                template_row = row
-
-        if template_row is None:
+        # Alle Vorlage-Datenzeilen (HTabText85pt) sammeln. Manche Tabellen
+        # liefern mehrere mit – z.B. Ergebnisse (8 Beispielzeilen) oder
+        # Personalaufwand (AG + PL). Die erste dient als Klonvorlage, ALLE
+        # werden am Ende entfernt – sonst bleiben Geisterzeilen stehen.
+        template_rows = [
+            row for row in tbl_el
+            if row.tag == W_TR and _row_style(row) == STYLE_DATA
+        ]
+        if not template_rows:
             return
 
+        template_row = template_rows[0]
         insert_pos = list(tbl_el).index(template_row)
 
         for idx, data in enumerate(data_rows):
@@ -330,8 +331,9 @@ class GenerationService:
 
             tbl_el.insert(insert_pos + idx, new_row)
 
-        # Originale Template-Zeile entfernen
-        tbl_el.remove(template_row)
+        # Alle originalen Vorlage-Datenzeilen entfernen (nicht nur die erste)
+        for row in template_rows:
+            tbl_el.remove(row)
 
     # ------------------------------------------------------------------ #
     # Änderungskontrolle (Kapitel 8)                                       #
@@ -371,16 +373,16 @@ class GenerationService:
         if target_tbl is None:
             return
 
-        # Template-Datenzeile suchen (erste HTabText85pt-Zeile)
-        template_row = None
-        for row in target_tbl:
-            if row.tag == W_TR and _row_style(row) == STYLE_DATA:
-                template_row = row
-                break
-
-        if template_row is None:
+        # Template-Datenzeilen suchen (HTabText85pt). Erste = Klonvorlage,
+        # alle werden am Ende entfernt (die Vorlage liefert eine Leerzeile mit).
+        template_rows = [
+            row for row in target_tbl
+            if row.tag == W_TR and _row_style(row) == STYLE_DATA
+        ]
+        if not template_rows:
             return
 
+        template_row = template_rows[0]
         insert_pos = list(target_tbl).index(template_row)
         col_keys = ['version', 'name', 'datum', 'bemerkungen']
 
@@ -401,8 +403,9 @@ class GenerationService:
                     _set_tc_text(all_cells[j], entry.get(key, ''))
             target_tbl.insert(insert_pos + idx, new_row)
 
-        # Template-Zeile entfernen (war leer / Platzhalter)
-        target_tbl.remove(template_row)
+        # Alle originalen Vorlage-Datenzeilen entfernen
+        for row in template_rows:
+            target_tbl.remove(row)
 
     # ------------------------------------------------------------------ #
     # Hilfe-/Beispieltexte löschen                                        #
