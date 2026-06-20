@@ -2,9 +2,9 @@
 //
 // Stages pro Pipeline-Job:
 //   hermes-pia develop     → nur Regressionstests (kein Deploy)
-//   hermes-pia test        → Tests + Deploy test  (origin/test  → Port 8001, test.hermespia.ch)
-//   hermes-pia integration → Tests + Deploy prod  (origin/main  → Port 8000, hermespia.ch)
-//   hermes-pia main        → Tests + Deploy prod  (origin/main  → Port 8000, hermespia.ch)
+//   hermes-pia test        → Tests + Deploy test  (origin/test        → Port 8001, test.hermespia.ch)
+//   hermes-pia integration → Tests + Deploy int   (origin/integration → Port 8002, int.hermespia.ch)
+//   hermes-pia main        → Tests + Deploy prod  (origin/main        → Port 8000, hermespia.ch)
 //
 // Voraussetzungen Jenkins:
 //   - SSH-Credential 'hermespia-deploy' (privater Key für u7031y_kaspar@83.228.238.194)
@@ -54,15 +54,14 @@ pipeline {
 
         stage('Deploy prod') {
             when {
-                expression {
-                    env.JOB_NAME.contains('main') || env.JOB_NAME.contains('integration')
-                }
+                expression { env.JOB_NAME.contains('main') }
             }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
                             cd ${APP_DIR}
+                            git remote set-url origin ${REPO_URL}
                             git fetch origin
                             git reset --hard origin/main
                             source ${VENV}/bin/activate
@@ -83,11 +82,47 @@ pipeline {
             }
         }
 
+        stage('Deploy int') {
+            when {
+                expression { env.JOB_NAME.contains('integration') }
+            }
+            steps {
+                sshagent(credentials: ['hermespia-deploy']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
+                            if [ ! -d "\$HOME/methodos-int/.git" ]; then
+                                git clone ${REPO_URL} \$HOME/methodos-int
+                            fi
+                            cd \$HOME/methodos-int
+                            git remote set-url origin ${REPO_URL}
+                            git fetch origin
+                            git reset --hard origin/integration
+                            source ${VENV}/bin/activate
+                            pip install -r requirements.txt -q
+                            PID_FILE=\$HOME/tmp/gunicorn-int.pid
+                            [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
+                            sleep 1
+                            set -a
+                            source \$HOME/methodos/.env
+                            DATABASE_URL=sqlite:///\$HOME/methodos-int/data/methodos-int.db
+                            set +a
+                            mkdir -p \$HOME/methodos-int/data \$HOME/methodos-int/logs
+                            cd \$HOME/methodos-int
+                            nohup gunicorn run:app \\
+                                --bind 127.0.0.1:8002 --workers 1 --timeout 120 \\
+                                --access-logfile logs/access.log \\
+                                --error-logfile logs/error.log > /dev/null 2>&1 &
+                            echo \$! > \$HOME/tmp/gunicorn-int.pid
+                            sleep 2 && curl -sf http://127.0.0.1:8002 > /dev/null && echo "OK: int laeuft"
+                        '
+                    """
+                }
+            }
+        }
+
         stage('Deploy test') {
             when {
-                expression {
-                    env.JOB_NAME.contains('test')
-                }
+                expression { env.JOB_NAME.contains('test') }
             }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
@@ -97,6 +132,7 @@ pipeline {
                                 git clone ${REPO_URL} \$HOME/methodos-test
                             fi
                             cd \$HOME/methodos-test
+                            git remote set-url origin ${REPO_URL}
                             git fetch origin
                             git reset --hard origin/test
                             source ${VENV}/bin/activate
