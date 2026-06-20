@@ -52,7 +52,6 @@ pipeline {
         }
 
         stage('Deploy prod') {
-            when { branch 'main' }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
                     sh """
@@ -79,7 +78,6 @@ pipeline {
         }
 
         stage('Deploy test') {
-            when { branch 'test' }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
                     sh """
