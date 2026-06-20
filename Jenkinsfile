@@ -1,18 +1,18 @@
-// Methodos CI/CD-Pipeline
+// HERMES PIA CI/CD-Pipeline
 //
-// Stages:
-//   1. Regressionstests  – sauberer python:3.12-slim-Container
-//   2. Deploy prod       – Branch 'main'  → hermespia.ch (Port 8000, Gunicorn)
-//   3. Deploy test       – Branch 'test'  → hermespia.ch (Port 8001, Gunicorn)
+// Stages pro Pipeline-Job:
+//   hermes-pia develop     → nur Regressionstests (kein Deploy)
+//   hermes-pia test        → Tests + Deploy test  (origin/test  → Port 8001, test.hermespia.ch)
+//   hermes-pia integration → Tests + Deploy prod  (origin/main  → Port 8000, hermespia.ch)
+//   hermes-pia main        → Tests + Deploy prod  (origin/main  → Port 8000, hermespia.ch)
 //
 // Voraussetzungen Jenkins:
 //   - SSH-Credential 'hermespia-deploy' (privater Key für u7031y_kaspar@83.228.238.194)
-//   - Docker + Docker-Pipeline-Plugin (nur für Testcontainer)
+//   - Docker + Docker-Pipeline-Plugin (für Testcontainer)
 //
 // Voraussetzungen Server hermespia.ch:
 //   - Python-venv unter ~/venv, Methodos-Repo unter ~/methodos
 //   - .env mit ANTHROPIC_API_KEY und FLASK_SECRET_KEY
-//   - ~/bin/start-methodos.sh für Gunicorn-Start
 
 pipeline {
     agent any
@@ -53,6 +53,11 @@ pipeline {
         }
 
         stage('Deploy prod') {
+            when {
+                expression {
+                    env.JOB_NAME.contains('main') || env.JOB_NAME.contains('integration')
+                }
+            }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
                     sh """
@@ -79,6 +84,11 @@ pipeline {
         }
 
         stage('Deploy test') {
+            when {
+                expression {
+                    env.JOB_NAME.contains('test')
+                }
+            }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
                     sh """
