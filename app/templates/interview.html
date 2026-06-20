@@ -111,6 +111,7 @@
       <div class="followup-card">
         <div class="followup-label">
           {% if state.followup.type == 'catalog' %}Typisches Risiko nicht erwähnt
+          {% elif state.followup.type == 'offer' %}HERMES PIA denkt mit
           {% else %}HERMES PIA hat eine Rückfrage{% endif %}
         </div>
         <p class="followup-question">{{ state.followup.frage }}</p>
@@ -124,6 +125,7 @@
       <form method="post"
             action="{{ url_for('ui.interview_followup', session_id=session.id) }}">
         <input type="hidden" name="risk_id" value="{{ state.followup.risk_id }}">
+        {% if state.followup.type != 'offer' %}
         <div class="answer-area">
           <textarea name="raw_text"
                     id="answer-text"
@@ -134,13 +136,23 @@
             &#127908; Sprechen
           </button>
         </div>
+        {% endif %}
         <div class="form-actions">
+          {% if state.followup.type == 'offer' %}
+          <button type="submit" name="accepted" value="1" class="btn-primary">
+            Ja, Vorschlag erstellen
+          </button>
+          <button type="submit" name="accepted" value="0" class="btn-secondary">
+            Nein danke
+          </button>
+          {% else %}
           <button type="submit" name="accepted" value="1" class="btn-primary">
             Aufnehmen
           </button>
           <button type="submit" name="accepted" value="0" class="btn-secondary">
             Bewusst weggelassen
           </button>
+          {% endif %}
         </div>
       </form>
 

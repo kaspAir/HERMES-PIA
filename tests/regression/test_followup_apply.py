@@ -53,3 +53,34 @@ def test_free_text_followup_appends_to_text():
     svc._apply_followup(section, section_answer, followup, raw_text=None)
 
     assert section_answer["extracted"]["text"] == "Bestehender Text.\nErgaenzender Hinweis."
+
+
+def test_is_empty_detects_blank_and_filled():
+    svc = _interview()
+    assert svc._is_empty(None) is True
+    assert svc._is_empty([]) is True
+    assert svc._is_empty({"text": "  "}) is True
+    assert svc._is_empty([{"empfaenger": ""}]) is True
+    assert svc._is_empty({"text": "etwas"}) is False
+    assert svc._is_empty([{"empfaenger": "Auftraggeber"}]) is False
+
+
+def test_catalog_suggestion_kommunikation_fallback():
+    svc = _interview()
+    section = svc._section_by_id("hermes_pia", "kommunikation")
+    assert section is not None
+
+    rows = svc._catalog_suggestion("fachanwendung_einfuehrung", section)
+    assert rows and len(rows) >= 3
+    # Nur Spalten-IDs der method.yaml, keine Katalog-internen Felder wie 'id'/'salience'
+    allowed = {c["id"] for c in section["columns"] if c["id"] != "nr"}
+    for r in rows:
+        assert set(r.keys()) <= allowed
+    assert rows[0]["empfaenger"] == "Auftraggeber"
+
+
+def test_catalog_suggestion_none_when_no_block():
+    svc = _interview()
+    section = svc._section_by_id("hermes_pia", "sachmittel")
+    # Kein 'sachmittel'-Block im Katalog -> kein Fallback
+    assert svc._catalog_suggestion("fachanwendung_einfuehrung", section) is None
