@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/methodos.css') }}">
 </head>
 <body>
-  {% if 'test.' in request.host %}
+  {% if ':8001' in request.host %}
   <div class="env-banner env-banner--test">&#9888; Testsystem &mdash; test.hermespia.ch</div>
-  {% elif 'int.' in request.host %}
+  {% elif ':8002' in request.host %}
   <div class="env-banner env-banner--int">&#9432; Integrationssystem &mdash; int.hermespia.ch</div>
   {% endif %}
   <header><strong>HERMES PIA</strong> &mdash; vom Gespraech zum strukturierten Ergebnis</header>
