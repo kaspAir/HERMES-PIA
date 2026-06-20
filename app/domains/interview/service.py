@@ -198,20 +198,60 @@ class InterviewService:
         return self.current_state(session)
 
     def answer_followup(self, session_id, risk_id, accepted, raw_text=None):
-        """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen."""
+        """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen.
+
+        Beim Aufnehmen ('accepted') wird der Vorschlag – oder die vom
+        Projektleiter diktierte Ergaenzung – in die Abschnittsdaten uebernommen,
+        sodass er im Dokument und in der Live-Vorschau erscheint.
+        """
         session = self.get_session(session_id)
         answers = self._answers(session)
 
-        for section_answer in answers.values():
+        for sid, section_answer in answers.items():
             for followup in section_answer.get("followups", []):
                 if followup.get("risk_id") == risk_id and followup.get("status") == "pending":
                     followup["status"] = "accepted" if accepted else "dismissed"
                     if raw_text:
                         followup["raw_text"] = raw_text
+                    if accepted:
+                        section = self._section_by_id(session.method_id, sid)
+                        if section:
+                            self._apply_followup(section, section_answer, followup, raw_text)
                     self._persist_answers(session, answers)
                     return self.current_state(session)
 
         raise ValueError(f"Kein offenes Followup fuer Risiko '{risk_id}'")
+
+    def _section_by_id(self, method_id, sid):
+        for s in self.methods.sections(method_id):
+            if s.get("id") == sid:
+                return s
+        return None
+
+    def _apply_followup(self, section, section_answer, followup, raw_text):
+        """Uebernimmt einen akzeptierten Vorschlag in die Abschnittsdaten."""
+        suggestion = (raw_text or "").strip() or (followup.get("vorschlag") or "").strip()
+        if not suggestion:
+            return
+
+        if section.get("type") == "table":
+            rows = section_answer.get("extracted")
+            if not isinstance(rows, list):
+                rows = []
+                section_answer["extracted"] = rows
+            cols = [c for c in section.get("columns", []) if c.get("id") != "nr"]
+            if not cols:
+                return
+            # Hauptspalte: 'beschreibung' bevorzugt, sonst erste Nicht-Nr-Spalte
+            target = next((c["id"] for c in cols if c["id"] == "beschreibung"), cols[0]["id"])
+            rows.append({target: suggestion})
+        elif section.get("type") == "free_text":
+            extracted = section_answer.get("extracted")
+            if not isinstance(extracted, dict):
+                extracted = {"text": ""}
+                section_answer["extracted"] = extracted
+            existing = extracted.get("text", "")
+            extracted["text"] = f"{existing}\n{suggestion}".strip() if existing else suggestion
 
     # ------------------------------------------------------------------ #
     # Bestehende oeffentliche API (Rueckwaertskompatibilitaet / Tests)    #

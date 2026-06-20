@@ -134,7 +134,7 @@ def interview_version_post(session_id):
     buf = gen.generate(session.method_id, answers, metadata, changelog=changelog)
 
     safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in name_part).strip()
-    filename = f"{safe_name}_Projektinitialisierungsauftrag_v{new_version}.docx"
+    filename = f"{safe_name}_PIA_v{new_version}.docx"
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
