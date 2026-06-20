@@ -24,6 +24,22 @@ body {
   line-height: 1.6;
 }
 
+/* ---- Umgebungs-Banner ---- */
+.env-banner {
+  padding: 6px 28px;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: .02em;
+}
+.env-banner--test {
+  background: #f59e0b;
+  color: #1a1a2e;
+}
+.env-banner--int {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
 /* ---- Header ---- */
 header {
   background: var(--color-brand);
