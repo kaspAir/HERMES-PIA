@@ -68,6 +68,7 @@ class GenerationService:
         doc = self._open_template(template)
 
         self._fill_cover(doc, metadata)
+        self._fill_headers(doc, metadata)
         self._fill_body(doc, method, session_answers)
         if changelog:
             self._fill_aenderungskontrolle(doc, changelog)
@@ -171,6 +172,24 @@ class GenerationService:
             filled.add(key)
 
     # ------------------------------------------------------------------ #
+    # Kopfzeilen befüllen                                                  #
+    # ------------------------------------------------------------------ #
+
+    def _fill_headers(self, doc, metadata):
+        """Ersetzt 'Projektname / Projektnummer' in allen Kopfzeilen."""
+        projektname = metadata.get('projektname', '')
+        if not projektname:
+            return
+        W_T = f'{{{W}}}t'
+        placeholder = 'Projektname / Projektnummer'
+        for section in doc.sections:
+            for t_el in section.header._element.iter(W_T):
+                if (t_el.text or '').strip() == placeholder:
+                    t_el.text = projektname
+                    if projektname[0] == ' ' or projektname[-1] == ' ':
+                        t_el.set(XML_SPACE, 'preserve')
+
+    # ------------------------------------------------------------------ #
     # Abschnitte (Fliesstext + Tabellen)                                  #
     # ------------------------------------------------------------------ #
 
@@ -236,7 +255,10 @@ class GenerationService:
         if not data_rows:
             return
 
+        has_nr = any(c.get('id') == 'nr' for c in section.get('columns', []))
         columns = [c['id'] for c in section.get('columns', []) if c.get('id') != 'nr']
+        col_defs = {c['id']: c for c in section.get('columns', [])}
+
         W_TR = f'{{{W}}}tr'
         W_TC = f'{{{W}}}tc'
         W_SDT = f'{{{W}}}sdt'
@@ -259,6 +281,21 @@ class GenerationService:
 
         for idx, data in enumerate(data_rows):
             new_row = copy.deepcopy(template_row)
+            data = dict(data) if isinstance(data, dict) else {}
+
+            # Computed fields vorberechnen (z.B. risikozahl = ew * ag)
+            for col in section.get('columns', []):
+                cid = col.get('id', '')
+                expr = col.get('computed', '')
+                if expr and not data.get(cid):
+                    parts = [p.strip() for p in expr.split('*')]
+                    try:
+                        result = 1
+                        for p in parts:
+                            result *= int(data.get(p) or 0)
+                        data[cid] = str(result) if result else ''
+                    except (ValueError, TypeError):
+                        pass
 
             # Alle Zellen in Reihenfolge sammeln – inkl. SDT-umhüllter Zellen
             # (Dropdown-/Combobox-Spalten liegen als <w:sdt><w:sdtContent><w:tc> vor)
@@ -278,15 +315,17 @@ class GenerationService:
                                     sdt_pr.remove(showing)
                             all_cells.append(tc)
 
-            # Erste Spalte: Nummer
-            if all_cells:
+            # Erste Spalte: Nummer (nur wenn Nr-Spalte im Schema vorhanden)
+            start_idx = 0
+            if has_nr and all_cells:
                 _set_tc_text(all_cells[0], f'{idx + 1:02d}')
+                start_idx = 1
 
-            # Weitere Spalten nach Reihenfolge
+            # Datenspalten in Reihenfolge
             for col_offset, col_id in enumerate(columns):
-                cell_idx = col_offset + 1
+                cell_idx = col_offset + start_idx
                 if cell_idx < len(all_cells):
-                    val = data.get(col_id, '') if isinstance(data, dict) else ''
+                    val = data.get(col_id, '')
                     _set_tc_text(all_cells[cell_idx], str(val) if val else '')
 
             tbl_el.insert(insert_pos + idx, new_row)
