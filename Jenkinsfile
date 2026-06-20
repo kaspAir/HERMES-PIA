@@ -28,7 +28,7 @@ pipeline {
         DEPLOY_HOST = 'u7031y_kaspar@83.228.238.194'
         APP_DIR     = '/home/clients/2a1849703150229016af3666c2f46b09/methodos'
         VENV        = '/home/clients/2a1849703150229016af3666c2f46b09/venv'
-        REPO_URL    = 'https://github.com/kaspAir/Methodos'
+        REPO_URL    = 'https://github.com/kaspAir/HERMES-PIA'
     }
 
     stages {
