@@ -97,6 +97,7 @@ pipeline {
                                 git clone ${REPO_URL} \$HOME/methodos-test
                             fi
                             cd \$HOME/methodos-test
+                            git remote set-url origin ${REPO_URL}
                             git fetch origin
                             git reset --hard origin/test
                             source ${VENV}/bin/activate
