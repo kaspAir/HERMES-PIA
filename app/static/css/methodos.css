@@ -40,6 +40,22 @@ body {
   color: #ffffff;
 }
 
+/* ---- Versions-Badge (immer sichtbar, dezent unten rechts) ---- */
+.app-version-badge {
+  position: fixed;
+  bottom: 8px;
+  right: 10px;
+  z-index: 50;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #6b7280;
+  background: rgba(255, 255, 255, .85);
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  user-select: text;
+}
+
 /* ---- Header ---- */
 header {
   background: var(--color-brand);
