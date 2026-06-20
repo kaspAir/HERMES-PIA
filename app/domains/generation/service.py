@@ -110,7 +110,6 @@ class GenerationService:
         # ist robuster für spätere Template-Änderungen).
         W_R   = f'{{{W}}}r'
         W_T   = f'{{{W}}}t'
-        W_TAB = f'{{{W}}}tab'
         W_SDT = f'{{{W}}}sdt'
         W_SDT_PR      = f'{{{W}}}sdtPr'
         W_SDT_CONTENT = f'{{{W}}}sdtContent'
@@ -154,15 +153,19 @@ class GenerationService:
                     t.text = value
                     break
             elif len(direct_runs) == 1:
-                # Einzelner Label-Run (Projektname): Tab + Wert-Run anhängen
-                tab_r = etree.SubElement(p_el, W_R)
-                tab_r.append(etree.Element(W_TAB))
-
-                val_r = etree.SubElement(p_el, W_R)
-                val_t = etree.SubElement(val_r, W_T)
-                val_t.text = value
-                if value and (value[0] == ' ' or value[-1] == ' '):
-                    val_t.set(XML_SPACE, 'preserve')
+                # Einzelner Label-Run (z.B. "Projektname / Projektnummer" in Magenta):
+                # Label-Text durch Wert ersetzen und Farb-Formatierung entfernen.
+                label_run = direct_runs[0]
+                rPr = label_run.find(f'{{{W}}}rPr')
+                if rPr is not None:
+                    color_el = rPr.find(f'{{{W}}}color')
+                    if color_el is not None:
+                        rPr.remove(color_el)
+                for t in label_run.iter(W_T):
+                    t.text = value
+                    if value and (value[0] == ' ' or value[-1] == ' '):
+                        t.set(XML_SPACE, 'preserve')
+                    break
             # len(direct_runs)==2: Label+Tab mit fldSimple-Wert (Bearbeitungsdatum) → unberührt lassen
 
             filled.add(key)
@@ -236,6 +239,10 @@ class GenerationService:
         columns = [c['id'] for c in section.get('columns', []) if c.get('id') != 'nr']
         W_TR = f'{{{W}}}tr'
         W_TC = f'{{{W}}}tc'
+        W_SDT = f'{{{W}}}sdt'
+        W_SDT_CONTENT = f'{{{W}}}sdtContent'
+        W_SDT_PR = f'{{{W}}}sdtPr'
+        W_SHOWING_PLH = f'{{{W}}}showingPlcHdr'
 
         # Template-Datenzeile (erster HTabText85pt-Row, kein Example)
         template_row = None
@@ -252,18 +259,35 @@ class GenerationService:
 
         for idx, data in enumerate(data_rows):
             new_row = copy.deepcopy(template_row)
-            cells = [c for c in new_row if c.tag == W_TC]
+
+            # Alle Zellen in Reihenfolge sammeln – inkl. SDT-umhüllter Zellen
+            # (Dropdown-/Combobox-Spalten liegen als <w:sdt><w:sdtContent><w:tc> vor)
+            all_cells = []
+            for child in new_row:
+                if child.tag == W_TC:
+                    all_cells.append(child)
+                elif child.tag == W_SDT:
+                    sdt_pr = child.find(W_SDT_PR)
+                    sdt_content = child.find(W_SDT_CONTENT)
+                    if sdt_content is not None:
+                        tc = sdt_content.find(W_TC)
+                        if tc is not None:
+                            if sdt_pr is not None:
+                                showing = sdt_pr.find(W_SHOWING_PLH)
+                                if showing is not None:
+                                    sdt_pr.remove(showing)
+                            all_cells.append(tc)
 
             # Erste Spalte: Nummer
-            if cells:
-                _set_tc_text(cells[0], f'{idx + 1:02d}')
+            if all_cells:
+                _set_tc_text(all_cells[0], f'{idx + 1:02d}')
 
             # Weitere Spalten nach Reihenfolge
             for col_offset, col_id in enumerate(columns):
                 cell_idx = col_offset + 1
-                if cell_idx < len(cells):
+                if cell_idx < len(all_cells):
                     val = data.get(col_id, '') if isinstance(data, dict) else ''
-                    _set_tc_text(cells[cell_idx], str(val) if val else '')
+                    _set_tc_text(all_cells[cell_idx], str(val) if val else '')
 
             tbl_el.insert(insert_pos + idx, new_row)
 
@@ -284,6 +308,8 @@ class GenerationService:
 
         W_TR = f'{{{W}}}tr'
         W_TC = f'{{{W}}}tc'
+        W_SDT = f'{{{W}}}sdt'
+        W_SDT_CONTENT = f'{{{W}}}sdtContent'
 
         body = doc.element.body
         children = list(body)
@@ -321,10 +347,19 @@ class GenerationService:
 
         for idx, entry in enumerate(changelog):
             new_row = copy.deepcopy(template_row)
-            cells = [c for c in new_row if c.tag == W_TC]
+            all_cells = []
+            for child in new_row:
+                if child.tag == W_TC:
+                    all_cells.append(child)
+                elif child.tag == W_SDT:
+                    sdt_content = child.find(W_SDT_CONTENT)
+                    if sdt_content is not None:
+                        tc = sdt_content.find(W_TC)
+                        if tc is not None:
+                            all_cells.append(tc)
             for j, key in enumerate(col_keys):
-                if j < len(cells):
-                    _set_tc_text(cells[j], entry.get(key, ''))
+                if j < len(all_cells):
+                    _set_tc_text(all_cells[j], entry.get(key, ''))
             target_tbl.insert(insert_pos + idx, new_row)
 
         # Template-Zeile entfernen (war leer / Platzhalter)
