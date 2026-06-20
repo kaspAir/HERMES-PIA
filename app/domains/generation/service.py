@@ -240,9 +240,11 @@ class GenerationService:
                     break
 
     def _match_section(self, heading, sections):
-        h = heading.lower()
+        # Umlaut-tolerant vergleichen: Vorlage schreibt "Abkürzungen",
+        # die method.yaml transkribiert als "Abkuerzungen" (ASCII).
+        h = _normalize(heading)
         for sid, sect in sections.items():
-            title = sect.get('title', '').lower()
+            title = _normalize(sect.get('title', ''))
             if title and (h == title or h.endswith(title) or title in h):
                 return sid
         return None
@@ -431,6 +433,14 @@ class GenerationService:
 # ------------------------------------------------------------------ #
 # XML-Hilfsfunktionen                                                  #
 # ------------------------------------------------------------------ #
+
+def _normalize(s):
+    """Kleinschreibung + Umlaut-Transkription für robusten Titelvergleich."""
+    s = (s or '').lower().strip()
+    for a, b in (('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue'), ('ß', 'ss')):
+        s = s.replace(a, b)
+    return s
+
 
 def _tag(el):
     return el.tag.split('}')[-1] if '}' in el.tag else el.tag
