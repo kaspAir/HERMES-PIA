@@ -145,6 +145,86 @@ def generate_followups(llm_client, section, raw_text):
         return []
 
 
+def generate_suggestion(llm_client, section, context):
+    """Erzeugt einen proaktiven Vorschlag fuer einen leeren Abschnitt.
+
+    'context' ist ein Kurztext mit dem bisher Bekannten (Projektname, -typ,
+    Ausgangslage ...). Das LLM denkt mit; gibt es nichts Brauchbares zurueck,
+    faellt der Aufrufer auf den Katalog zurueck.
+
+    Rueckgabe: Liste von Zeilen-Dicts (table) bzw. {"text": ...} (free_text),
+    oder None/[] wenn nichts Sinnvolles erzeugt werden konnte.
+    """
+    if section.get("type") == "table":
+        return _suggest_table(llm_client, section, context)
+    if section.get("type") == "free_text":
+        return _suggest_free_text(llm_client, section, context)
+    return None
+
+
+def _suggest_table(llm_client, section, context):
+    columns = [c for c in section.get("columns", []) if c.get("id") != "nr"]
+    col_parts = []
+    for c in columns:
+        label = c.get("label", c["id"])
+        vocab = c.get("vocabulary", [])
+        if vocab:
+            col_parts.append(f"{c['id']} ({label}) [erlaubte Werte: {', '.join(vocab)}]")
+        else:
+            col_parts.append(f"{c['id']} ({label})")
+    col_desc = "\n".join(f"  - {p}" for p in col_parts)
+
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Projektberater fuer Schweizer Behoerden. "
+        "Der Projektleiter hat zu diesem Abschnitt noch nichts geliefert und bittet dich "
+        "um einen fachlich sinnvollen Erstvorschlag, den er danach pruefen kann. "
+        "Stuetze dich auf den Projektkontext und uebliche HERMES-Praxis. "
+        "Antworte ausschliesslich mit einem validen JSON-Array, keine Erklaerungen."
+    )
+    user = (
+        f"PIA-Abschnitt: \"{section['title']}\"\n\n"
+        f"Projektkontext:\n{context}\n\n"
+        f"Felder je Eintrag:\n{col_desc}\n\n"
+        f"Erzeuge 3-6 plausible Eintraege fuer diesen Abschnitt, abgestimmt auf den "
+        f"Projektkontext. Felder ohne Information mit leerem String befuellen.\n\n"
+        f"Rueckgabe als JSON-Array. Leeres Array, wenn kein sinnvoller Vorschlag moeglich ist."
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1024)
+        result = _parse_json(raw)
+        if isinstance(result, list):
+            return [r for r in result if isinstance(r, dict) and any(str(v).strip() for v in r.values())]
+        if isinstance(result, dict):
+            for v in result.values():
+                if isinstance(v, list):
+                    return [r for r in v if isinstance(r, dict)]
+        return []
+    except Exception:
+        return []
+
+
+def _suggest_free_text(llm_client, section, context):
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Projektberater fuer Schweizer Behoerden. "
+        "Der Projektleiter hat zu diesem Abschnitt noch nichts geliefert und bittet dich "
+        "um einen fachlich sinnvollen Erstentwurf im sachlichen Behoerdenstil. "
+        "Antworte ausschliesslich mit validem JSON, keine Erklaerungen."
+    )
+    user = (
+        f"PIA-Abschnitt: \"{section['title']}\"\n\n"
+        f"Projektkontext:\n{context}\n\n"
+        f"Schreibe einen knappen, plausiblen Erstentwurf (2-5 Saetze) fuer diesen Abschnitt.\n\n"
+        f'Rueckgabe als JSON: {{"text": "..."}}. Leerer Text, wenn kein sinnvoller Entwurf moeglich ist.'
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=512)
+        result = _parse_json(raw) or {}
+        text = (result.get("text") or "").strip()
+        return {"text": text} if text else None
+    except Exception:
+        return None
+
+
 def _parse_json(text):
     """Parst JSON robust - auch wenn das LLM Markdown-Code-Fences eingebaut hat."""
     if not text:

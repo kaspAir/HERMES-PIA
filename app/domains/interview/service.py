@@ -15,7 +15,12 @@ Klare Aufgabentrennung:
 """
 import json
 
-from app.domains.interview.extraction import detect_project_type, extract_fields, generate_followups
+from app.domains.interview.extraction import (
+    detect_project_type,
+    extract_fields,
+    generate_followups,
+    generate_suggestion,
+)
 from app.domains.interview.gap_check import build_followups, find_missing_risks
 from app.domains.interview.models import InterviewSession
 from app.shared.database import SessionLocal
@@ -193,6 +198,17 @@ class InterviewService:
         # Nachfragen: KI für alle Abschnitte + Katalog-Gap-Check für Risiken
         entry["followups"] = self._build_followups(section, extracted, raw_text, session.project_type_id)
 
+        # Hat der PL nichts geliefert und entstand auch keine andere Nachfrage,
+        # bietet HERMES PIA proaktiv einen Vorschlag an ("Soll ich einen machen?").
+        if self.llm and not entry["followups"] and self._is_empty(extracted):
+            entry["followups"].append({
+                "risk_id": f"offer_{section['id']}",
+                "frage": f"Für \"{section['title']}\" liegt noch nichts vor. "
+                         f"Soll ich aus dem bisherigen Projektkontext einen Vorschlag erstellen?",
+                "type": "offer",
+                "status": "pending",
+            })
+
         answers[section["id"]] = entry
         self._persist_answers(session, answers)
         return self.current_state(session)
@@ -215,12 +231,72 @@ class InterviewService:
                         followup["raw_text"] = raw_text
                     if accepted:
                         section = self._section_by_id(session.method_id, sid)
-                        if section:
+                        if section and followup.get("type") == "offer":
+                            self._fill_from_suggestion(session, section, section_answer, answers)
+                        elif section:
                             self._apply_followup(section, section_answer, followup, raw_text)
                     self._persist_answers(session, answers)
                     return self.current_state(session)
 
         raise ValueError(f"Kein offenes Followup fuer Risiko '{risk_id}'")
+
+    def _fill_from_suggestion(self, session, section, section_answer, answers):
+        """Erzeugt einen proaktiven Vorschlag (LLM, sonst Katalog) und übernimmt ihn."""
+        context = self._suggestion_context(session, answers)
+        suggestion = None
+        if self.llm:
+            suggestion = generate_suggestion(self.llm, section, context)
+
+        # Fallback auf den Referenzkatalog, wenn das LLM nichts Brauchbares liefert.
+        if not suggestion:
+            suggestion = self._catalog_suggestion(session.project_type_id, section)
+
+        if not suggestion:
+            return
+
+        if section.get("type") == "table" and isinstance(suggestion, list):
+            section_answer["extracted"] = suggestion
+        elif section.get("type") == "free_text" and isinstance(suggestion, dict):
+            section_answer["extracted"] = {"text": suggestion.get("text", "")}
+
+    def _suggestion_context(self, session, answers):
+        """Baut einen Kurzkontext aus dem bisher Bekannten für die LLM-Vorschläge."""
+        parts = []
+        if session.project_name:
+            parts.append(f"Projektname: {session.project_name}")
+        if session.project_type_id:
+            parts.append(f"Projekttyp: {session.project_type_id}")
+        if session.auftraggeber:
+            parts.append(f"Auftraggeber: {session.auftraggeber}")
+        for sid in ("ausgangslage", "ziele"):
+            entry = answers.get(sid)
+            if not entry:
+                continue
+            extracted = entry.get("extracted")
+            if isinstance(extracted, dict) and extracted.get("text"):
+                parts.append(f"{sid}: {extracted['text']}")
+            elif isinstance(extracted, list) and extracted:
+                joined = "; ".join(
+                    str(r.get("beschreibung") or next(iter(r.values()), "")) for r in extracted
+                )
+                parts.append(f"{sid}: {joined}")
+        return "\n".join(parts) or "(noch keine weiteren Angaben)"
+
+    def _catalog_suggestion(self, project_type_id, section):
+        """Liest einen Vorschlag aus dem Referenzkatalog (Fallback)."""
+        if not project_type_id:
+            return None
+        catalog = self.catalogs.get(project_type_id) or {}
+        entries = catalog.get(section["id"])
+        if not entries or not isinstance(entries, list):
+            return None
+        col_ids = {c["id"] for c in section.get("columns", []) if c.get("id") != "nr"}
+        rows = []
+        for e in entries:
+            row = {k: v for k, v in e.items() if k in col_ids}
+            if row:
+                rows.append(row)
+        return rows or None
 
     def _section_by_id(self, method_id, sid):
         for s in self.methods.sections(method_id):
@@ -296,6 +372,18 @@ class InterviewService:
         if not self.llm:
             return _AVAILABLE_PROJECT_TYPES[0]["id"]
         return detect_project_type(self.llm, _AVAILABLE_PROJECT_TYPES, text)
+
+    def _is_empty(self, extracted):
+        if not extracted:
+            return True
+        if isinstance(extracted, dict):
+            return not (extracted.get("text") or "").strip()
+        if isinstance(extracted, list):
+            return not any(
+                any(str(v).strip() for v in row.values())
+                for row in extracted if isinstance(row, dict)
+            )
+        return False
 
     def _is_complete(self, section, extracted):
         criteria = section.get("interview", {}).get("completeness", [])

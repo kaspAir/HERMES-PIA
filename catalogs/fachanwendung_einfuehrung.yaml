@@ -116,3 +116,30 @@ risiken:
 rahmenbedingungen:
   - { id: rb_hermes, vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022", salience: 0.99 }
   - { id: rb_isds, vorgaben: "Informationssicherheit und Datenschutz", beschreibung: "ISDS-Vorgaben der Stammorganisation", salience: 0.8 }
+
+# ---------------------------------------------------------------------
+# Typische KOMMUNIKATION (Abschnitt 6)
+# Fallback fuer den proaktiven Vorschlag, wenn das LLM nichts liefert.
+# Feldnamen = Spalten-IDs der method.yaml (empfaenger/verantwortlich/...).
+# ---------------------------------------------------------------------
+kommunikation:
+  - empfaenger: "Auftraggeber"
+    verantwortlich: "Projektleiter"
+    inhalt: "Status, Entscheide und Eskalationen"
+    medium: "Sitzung / Statusbericht"
+    termin: "monatlich"
+  - empfaenger: "Projektausschuss"
+    verantwortlich: "Projektleiter"
+    inhalt: "Steuerung und Freigaben"
+    medium: "Sitzung"
+    termin: "monatlich"
+  - empfaenger: "Projektteam"
+    verantwortlich: "Projektleiter"
+    inhalt: "Operative Abstimmung"
+    medium: "Teams / Workshop"
+    termin: "woechentlich"
+  - empfaenger: "Betroffene Organisationseinheiten"
+    verantwortlich: "Auftraggeber"
+    inhalt: "Information ueber Vorhaben und Auswirkungen"
+    medium: "Intranet / Informationsveranstaltung"
+    termin: "nach Bedarf"
