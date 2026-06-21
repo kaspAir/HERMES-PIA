@@ -151,7 +151,10 @@ def _extract_free_text(llm_client, section_title, raw_text):
         f"Rueckgabe als JSON: {{\"text\": \"...\"}}"
     )
     try:
-        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=512)
+        # Grosszuegiges Limit: lange Ausgangslagen ergeben lange Antworten –
+        # bei zu kleinem Limit wird das JSON abgeschnitten und der Code faellt
+        # still auf den Rohtext zurueck (keine Umformulierung).
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
         return _parse_json(raw) or {"text": raw_text}
     except Exception:
         return {"text": raw_text}
@@ -184,7 +187,7 @@ def _extract_table(llm_client, section_title, columns, raw_text, vocabularies=No
         f"Rueckgabe als JSON-Array. Felder ohne Information mit leerem String befuellen."
     )
     try:
-        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1024)
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
         result = _parse_json(raw)
         if isinstance(result, list):
             return result
@@ -284,7 +287,7 @@ def _suggest_table(llm_client, section, context, vocabularies=None):
         f"Rueckgabe als JSON-Array. Leeres Array, wenn kein sinnvoller Vorschlag moeglich ist."
     )
     try:
-        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1024)
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
         result = _parse_json(raw)
         if isinstance(result, list):
             return [r for r in result if isinstance(r, dict) and any(str(v).strip() for v in r.values())]
@@ -312,7 +315,7 @@ def _suggest_free_text(llm_client, section, context):
         f'Rueckgabe als JSON: {{"text": "..."}}. Leerer Text, wenn kein sinnvoller Entwurf moeglich ist.'
     )
     try:
-        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=512)
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1024)
         result = _parse_json(raw) or {}
         text = (result.get("text") or "").strip()
         return {"text": text} if text else None
