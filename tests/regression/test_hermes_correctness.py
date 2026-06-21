@@ -64,17 +64,8 @@ def test_hermes_rules_injected_into_prompts():
     assert "KEINEN Phasenbericht" in extraction.HERMES_RULES
 
 
-def test_projektleiter_name_autofilled_in_personalaufwand():
-    gs = GenerationService(MethodService(get_config().METHODS_DIR))
-    sa = {"personalaufwand": {"extracted": [
-        {"rolle": "Auftraggeber", "aufwand": "3"},
-        {"rolle": "Projektleiter", "aufwand": "20"},
-        {"rolle": "PL", "aufwand": "5"},
-    ]}}
-    buf = gs.generate("hermes_pia", sa,
-                      {"projektname": "Test", "projektleiter": "Helene Digital"})
+def _personalaufwand_rows(buf):
     doc = Document(buf)
-
     rows = []
     cur = ""
     for el in doc.element.body:
@@ -91,8 +82,57 @@ def test_projektleiter_name_autofilled_in_personalaufwand():
                 rows.append(["".join(t.text or "" for t in c.iter(qn("w:t")))
                              for c in r if c.tag == qn("w:tc")])
             break
+    return {r[0]: r[1] for r in rows if len(r) >= 2}
 
-    joined = {r[0]: r[1] for r in rows if len(r) >= 2}
-    assert joined.get("Projektleiter") == "Helene Digital"
-    assert joined.get("PL") == "Helene Digital"
-    assert joined.get("Auftraggeber", "") == ""  # andere Rollen unberührt
+
+def test_projektleiter_und_auftraggeber_name_autofilled():
+    gs = GenerationService(MethodService(get_config().METHODS_DIR))
+    sa = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "aufwand": "20"},
+        {"rolle": "Auftraggeber", "aufwand": "3"},
+        {"rolle": "IT-Architekt", "aufwand": "5"},
+    ]}}
+    buf = gs.generate("hermes_pia", sa, {
+        "projektname": "Test",
+        "projektleiter": "Markus Stein", "auftraggeber": "Hans Meier",
+    })
+    joined = _personalaufwand_rows(buf)
+    assert joined.get("Projektleiter") == "Markus Stein"
+    assert joined.get("Auftraggeber") == "Hans Meier"
+    assert joined.get("IT-Architekt", "") == ""  # andere Rollen unberührt
+
+
+def test_gendered_rolle_for_female_projektleiterin():
+    gs = GenerationService(MethodService(get_config().METHODS_DIR))
+    sa = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "aufwand": "20"},
+        {"rolle": "Auftraggeber", "aufwand": "3"},
+    ]}}
+    buf = gs.generate("hermes_pia", sa, {
+        "projektname": "Test",
+        "projektleiter": "Helene Digital", "projektleiter_weiblich": True,
+        "auftraggeber": "Hans Meier", "auftraggeber_weiblich": False,
+    })
+    joined = _personalaufwand_rows(buf)
+    assert joined.get("Projektleiterin") == "Helene Digital"
+    assert joined.get("Auftraggeber") == "Hans Meier"
+
+
+def test_risikozahl_mapping_und_ew_ag_uebernahme():
+    from app.domains.generation.service import _risk_num
+    assert _risk_num("Tief") == 1 and _risk_num("Mittel") == 2 and _risk_num("Hoch") == 3
+    assert _risk_num("3") == 3  # numerisch weiterhin möglich
+
+    # Akzeptiertes Katalog-Risiko bringt EW/AG/Massnahmen mit
+    cs = _catalogs()
+    ms = MethodService(get_config().METHODS_DIR)
+    from app.domains.interview.service import InterviewService
+    svc = InterviewService(ms, cs, None)
+    sections = {s["id"]: s for s in ms.get("hermes_pia")["sections"]}
+    fup = next(f for f in svc.followups_for_risks("fachanwendung_einfuehrung", [])
+               if f["risk_id"] == "r_datenschutz")
+    sa = {"extracted": []}
+    svc._apply_followup(sections["risiken"], sa, dict(fup, status="pending"), None)
+    row = sa["extracted"][0]
+    assert row.get("ew") and row.get("ag")
+    assert row.get("massnahmen")

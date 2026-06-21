@@ -73,6 +73,27 @@ def detect_project_type(llm_client, available_types, ausgangslage_text):
         return available_types[0]["id"]
 
 
+def detect_gender(llm_client, name):
+    """Schaetzt das Geschlecht aus einem Namen: 'w', 'm' oder 'u' (unbekannt)."""
+    if not name or not name.strip() or llm_client is None:
+        return "u"
+    system = (
+        "Du bestimmst das wahrscheinliche Geschlecht anhand eines Vornamens. "
+        "Antworte ausschliesslich mit validem JSON, keine Erklaerungen."
+    )
+    user = (
+        f"Name: {name}\n"
+        f'Rueckgabe als JSON: {{"geschlecht": "w"}} fuer weiblich, '
+        f'{{"geschlecht": "m"}} fuer maennlich, {{"geschlecht": "u"}} wenn unklar.'
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=64)
+        g = (_parse_json(raw) or {}).get("geschlecht", "u")
+        return g if g in ("w", "m", "u") else "u"
+    except Exception:
+        return "u"
+
+
 def _extract_free_text(llm_client, section_title, raw_text):
     system = (
         "Du bist ein erfahrener Projektmanagement-Berater und verfasst offizielle "

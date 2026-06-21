@@ -158,10 +158,19 @@ def interview_download(session_id, filename):
     name_part = session.project_name or "Projekt"
     name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
 
+    # Geschlecht für korrekte Rollenbezeichnung (Projektleiter/in, Auftraggeber/in)
+    pl_weiblich = ag_weiblich = False
+    if getattr(svc, "llm", None):
+        from app.domains.interview.extraction import detect_gender
+        pl_weiblich = detect_gender(svc.llm, session.created_by or "") == "w"
+        ag_weiblich = detect_gender(svc.llm, session.auftraggeber or "") == "w"
+
     metadata = {
         "projektname":        name_display,
         "projektleiter":      session.created_by or "",
         "auftraggeber":       session.auftraggeber or "",
+        "projektleiter_weiblich": pl_weiblich,
+        "auftraggeber_weiblich":  ag_weiblich,
         "autor":              session.created_by or "",   # Autor = Projektleiter
         "verwaltungseinheit": session.verwaltungseinheit or "",
         "geschaeftsbereich":  session.geschaeftsbereich or "",

@@ -350,12 +350,17 @@ class InterviewService:
             if not isinstance(rows, list):
                 rows = []
                 section_answer["extracted"] = rows
-            cols = [c for c in section.get("columns", []) if c.get("id") != "nr"]
+            cols = [c["id"] for c in section.get("columns", []) if c.get("id") != "nr"]
             if not cols:
                 return
             # Hauptspalte: 'beschreibung' bevorzugt, sonst erste Nicht-Nr-Spalte
-            target = next((c["id"] for c in cols if c["id"] == "beschreibung"), cols[0]["id"])
-            rows.append({target: suggestion})
+            target = "beschreibung" if "beschreibung" in cols else cols[0]
+            # Strukturierte Felder aus dem Katalog (z.B. ew/ag/massnahmen)
+            # übernehmen; Hauptspalte ggf. mit diktiertem Text überschreiben.
+            row_data = followup.get("row") or {}
+            new_row = {k: v for k, v in row_data.items() if k in cols and v}
+            new_row[target] = suggestion
+            rows.append(new_row)
         elif section.get("type") == "free_text":
             extracted = section_answer.get("extracted")
             if not isinstance(extracted, dict):

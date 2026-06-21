@@ -65,6 +65,9 @@ risiken:
   - id: r_schluesselpersonen
     beschreibung: "Verfuegbarkeit von Schluesselpersonen / Fachexperten nicht gesichert"
     kategorie: "Ressourcen"
+    ew: "Mittel"
+    ag: "Hoch"
+    massnahmen: "Frühzeitig verbindliche Ressourcenzusagen einholen; Stellvertretungen definieren"
     salience: 0.9
     nachfrage: >
       In vergleichbaren Fachanwendungs-Einfuehrungen ist die Verfuegbarkeit
@@ -75,6 +78,9 @@ risiken:
   - id: r_akzeptanz
     beschreibung: "Geringe Akzeptanz der Anwender / Widerstand gegen die Organisationsaenderung"
     kategorie: "Change / Organisation"
+    ew: "Mittel"
+    ag: "Hoch"
+    massnahmen: "Change-Management aufsetzen; Betroffene früh einbinden und transparent informieren"
     salience: 0.9
     nachfrage: >
       Da das Vorhaben Organisationsanpassungen umfasst, ist Anwenderakzeptanz
@@ -84,6 +90,9 @@ risiken:
   - id: r_datenmigration
     beschreibung: "Datenmigration / Datenqualitaet aus Altsystemen unzureichend"
     kategorie: "Daten"
+    ew: "Mittel"
+    ag: "Mittel"
+    massnahmen: "Frühe Datenanalyse und -bereinigung; Migrationskonzept erarbeiten"
     salience: 0.85
     nachfrage: >
       Bei der Abloesung bestehender Loesungen ist Datenmigration/-qualitaet
@@ -93,6 +102,9 @@ risiken:
   - id: r_anforderungen
     beschreibung: "Unklare oder instabile fachliche Anforderungen"
     kategorie: "Anforderungen"
+    ew: "Mittel"
+    ag: "Mittel"
+    massnahmen: "Anforderungsworkshops; klare Priorisierung; iteratives Schärfen der Anforderungen"
     salience: 0.8
     nachfrage: >
       Unklare Anforderungen sind in der Initialisierung ein klassisches Risiko.
@@ -102,6 +114,9 @@ risiken:
   - id: r_datenschutz
     beschreibung: "Datenschutz- und Informationssicherheitsauflagen (Schutzbedarf) unterschaetzt"
     kategorie: "Recht / Sicherheit"
+    ew: "Mittel"
+    ag: "Hoch"
+    massnahmen: "ISDS-/Datenschutzverantwortliche früh einbinden; Schutzbedarfsanalyse durchführen"
     salience: 0.8
     nachfrage: >
       Fachanwendungen mit Personendaten unterliegen oft hohen Schutzbedarfs-
@@ -111,6 +126,9 @@ risiken:
   - id: r_beschaffung
     beschreibung: "Verzoegerung durch oeffentliche Beschaffung / Lieferantenabhaengigkeit"
     kategorie: "Beschaffung"
+    ew: "Mittel"
+    ag: "Mittel"
+    massnahmen: "Frühe Abstimmung mit Beschaffung; realistische Vergabetermine einplanen"
     salience: 0.7
     nachfrage: >
       Bei externer Beschaffung ist das Vergabe-/Lieferantenrisiko oft relevant.
