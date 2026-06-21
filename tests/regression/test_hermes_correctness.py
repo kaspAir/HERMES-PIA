@@ -118,6 +118,40 @@ def test_gendered_rolle_for_female_projektleiterin():
     assert joined.get("Auftraggeber") == "Hans Meier"
 
 
+def test_steuerungsausschuss_wird_zu_projektausschuss():
+    from app.domains.generation.service import _fix_hermes_terms
+    assert _fix_hermes_terms("Steuerungsausschuss") == "Projektausschuss"
+    assert _fix_hermes_terms("Lenkungsausschuss informiert") == "Projektausschuss informiert"
+    # Im generierten Dokument darf der Begriff nicht auftauchen.
+    gs = GenerationService(MethodService(get_config().METHODS_DIR))
+    data = {"kommunikation": {"extracted": [{"empfaenger": "Steuerungsausschuss"}]}}
+    from docx import Document as _Doc
+    blob = _Doc(gs.generate("hermes_pia", data, {"projektname": "X"}))
+    text = "".join(t.text or "" for t in blob.element.body.iter(qn("w:t")))
+    assert "Steuerungsausschuss" not in text
+    assert "Projektausschuss" in text
+
+
+def test_risk_estimate_fills_missing_ew_ag():
+    from app.domains.interview.service import InterviewService
+
+    class _LLM:
+        def complete(self, system, messages, max_tokens=1024):
+            return '{"ew":"Mittel","ag":"Hoch","massnahmen":"Rollback-Plan"}'
+
+    ms = MethodService(get_config().METHODS_DIR)
+    sections = {s["id"]: s for s in ms.get("hermes_pia")["sections"]}
+    svc = InterviewService(ms, _catalogs(), _LLM())
+    # Infrastruktur-Katalog liefert kein ew/ag -> wird per LLM geschätzt.
+    fup = next(f for f in svc.followups_for_risks("infrastruktur_erneuerung", [])
+               if f["risk_id"] == "r_verfuegbarkeit_migration")
+    sa = {"extracted": []}
+    svc._apply_followup(sections["risiken"], sa, dict(fup, status="pending"), None)
+    row = sa["extracted"][0]
+    assert row.get("ew") == "Mittel" and row.get("ag") == "Hoch"
+    assert row.get("massnahmen")
+
+
 def test_risikozahl_mapping_und_ew_ag_uebernahme():
     from app.domains.generation.service import _risk_num
     assert _risk_num("Tief") == 1 and _risk_num("Mittel") == 2 and _risk_num("Hoch") == 3
