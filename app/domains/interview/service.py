@@ -254,10 +254,21 @@ class InterviewService:
         if not suggestion:
             return
 
+        # Anhängen statt ersetzen: vorhandene Einträge dürfen nie verloren gehen,
+        # auch wenn der Vorschlag versehentlich für einen gefüllten Abschnitt käme.
         if section.get("type") == "table" and isinstance(suggestion, list):
-            section_answer["extracted"] = suggestion
+            existing = section_answer.get("extracted")
+            if not isinstance(existing, list):
+                existing = []
+            existing.extend(suggestion)
+            section_answer["extracted"] = existing
         elif section.get("type") == "free_text" and isinstance(suggestion, dict):
-            section_answer["extracted"] = {"text": suggestion.get("text", "")}
+            existing = section_answer.get("extracted")
+            old_text = existing.get("text", "") if isinstance(existing, dict) else ""
+            new_text = suggestion.get("text", "")
+            section_answer["extracted"] = {
+                "text": f"{old_text}\n{new_text}".strip() if old_text else new_text
+            }
 
     def _suggestion_context(self, session, answers):
         """Baut einen Kurzkontext aus dem bisher Bekannten für die LLM-Vorschläge."""
