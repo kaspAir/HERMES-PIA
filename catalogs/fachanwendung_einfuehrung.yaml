@@ -38,16 +38,23 @@ ziele:
     salience: 0.8
 
 # ---------------------------------------------------------------------
-# Typische LIEFERERGEBNISSE der Initialisierung (Abschnitt 4.1)
-# Viele sind HERMES-Minimalergebnisse und sollten fast immer da sein.
+# Lieferergebnisse und Meilensteine der Phase Initialisierung
+# (Abschnitt 4.1 "Ergebnisse und Termine"), gemaess HERMES 2022:
+#   - Mandat = "Durchführungsauftrag" (NICHT "Projektauftrag")
+#   - Die Phase Initialisierung hat KEINEN Phasenbericht
+#   - Drei Entscheidaufgaben enden je mit einem Meilenstein
+#   - Verantwortung (Abnahme) auf Rollenebene
+# Feldnamen = Spalten-IDs der method.yaml (ergebnis/termin/abnahme/pruefmethode).
 # ---------------------------------------------------------------------
-lieferergebnisse:
-  - { id: le_stakeholder, name: "Stakeholder-Liste", salience: 0.9 }
-  - { id: le_studie, name: "Studie (mit Variantenvergleich)", salience: 0.95 }
-  - { id: le_rechtsgrundlagen, name: "Rechtsgrundlagenanalyse", salience: 0.85 }
-  - { id: le_schutzbedarf, name: "Schutzbedarfsanalyse (ISDS)", salience: 0.9 }
-  - { id: le_pmplan, name: "Projektmanagementplan", salience: 0.9 }
-  - { id: le_durchfuehrungsauftrag, name: "Durchfuehrungsauftrag", salience: 0.9 }
+termine:
+  - { ergebnis: "Stakeholder-Liste", abnahme: "Projektleiter" }
+  - { ergebnis: "Studie", abnahme: "Projektleiter" }
+  - { ergebnis: "Rechtsgrundlagenanalyse", abnahme: "Projektleiter" }
+  - { ergebnis: "Schutzbedarfsanalyse", abnahme: "ISDS-Verantwortlicher" }
+  - { ergebnis: "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen; Liste Projektentscheide Führung)", abnahme: "Projektleiter" }
+  - { ergebnis: "Projektmanagementplan", abnahme: "Projektleiter" }
+  - { ergebnis: "Durchführungsauftrag", abnahme: "Projektleiter" }
+  - { ergebnis: "Meilenstein Durchführungsfreigabe (Checkliste Durchführungsfreigabe; Liste Projektentscheide Steuerung)", abnahme: "Auftraggeber" }
 
 # ---------------------------------------------------------------------
 # Typische RISIKEN (Abschnitt 7) - das Herzstueck der Demo
@@ -58,6 +65,9 @@ risiken:
   - id: r_schluesselpersonen
     beschreibung: "Verfuegbarkeit von Schluesselpersonen / Fachexperten nicht gesichert"
     kategorie: "Ressourcen"
+    ew: "Mittel"
+    ag: "Hoch"
+    massnahmen: "Frühzeitig verbindliche Ressourcenzusagen einholen; Stellvertretungen definieren"
     salience: 0.9
     nachfrage: >
       In vergleichbaren Fachanwendungs-Einfuehrungen ist die Verfuegbarkeit
@@ -68,6 +78,9 @@ risiken:
   - id: r_akzeptanz
     beschreibung: "Geringe Akzeptanz der Anwender / Widerstand gegen die Organisationsaenderung"
     kategorie: "Change / Organisation"
+    ew: "Mittel"
+    ag: "Hoch"
+    massnahmen: "Change-Management aufsetzen; Betroffene früh einbinden und transparent informieren"
     salience: 0.9
     nachfrage: >
       Da das Vorhaben Organisationsanpassungen umfasst, ist Anwenderakzeptanz
@@ -77,6 +90,9 @@ risiken:
   - id: r_datenmigration
     beschreibung: "Datenmigration / Datenqualitaet aus Altsystemen unzureichend"
     kategorie: "Daten"
+    ew: "Mittel"
+    ag: "Mittel"
+    massnahmen: "Frühe Datenanalyse und -bereinigung; Migrationskonzept erarbeiten"
     salience: 0.85
     nachfrage: >
       Bei der Abloesung bestehender Loesungen ist Datenmigration/-qualitaet
@@ -86,6 +102,9 @@ risiken:
   - id: r_anforderungen
     beschreibung: "Unklare oder instabile fachliche Anforderungen"
     kategorie: "Anforderungen"
+    ew: "Mittel"
+    ag: "Mittel"
+    massnahmen: "Anforderungsworkshops; klare Priorisierung; iteratives Schärfen der Anforderungen"
     salience: 0.8
     nachfrage: >
       Unklare Anforderungen sind in der Initialisierung ein klassisches Risiko.
@@ -95,6 +114,9 @@ risiken:
   - id: r_datenschutz
     beschreibung: "Datenschutz- und Informationssicherheitsauflagen (Schutzbedarf) unterschaetzt"
     kategorie: "Recht / Sicherheit"
+    ew: "Mittel"
+    ag: "Hoch"
+    massnahmen: "ISDS-/Datenschutzverantwortliche früh einbinden; Schutzbedarfsanalyse durchführen"
     salience: 0.8
     nachfrage: >
       Fachanwendungen mit Personendaten unterliegen oft hohen Schutzbedarfs-
@@ -104,6 +126,9 @@ risiken:
   - id: r_beschaffung
     beschreibung: "Verzoegerung durch oeffentliche Beschaffung / Lieferantenabhaengigkeit"
     kategorie: "Beschaffung"
+    ew: "Mittel"
+    ag: "Mittel"
+    massnahmen: "Frühe Abstimmung mit Beschaffung; realistische Vergabetermine einplanen"
     salience: 0.7
     nachfrage: >
       Bei externer Beschaffung ist das Vergabe-/Lieferantenrisiko oft relevant.
@@ -116,3 +141,30 @@ risiken:
 rahmenbedingungen:
   - { id: rb_hermes, vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022", salience: 0.99 }
   - { id: rb_isds, vorgaben: "Informationssicherheit und Datenschutz", beschreibung: "ISDS-Vorgaben der Stammorganisation", salience: 0.8 }
+
+# ---------------------------------------------------------------------
+# Typische KOMMUNIKATION (Abschnitt 6)
+# Fallback fuer den proaktiven Vorschlag, wenn das LLM nichts liefert.
+# Feldnamen = Spalten-IDs der method.yaml (empfaenger/verantwortlich/...).
+# ---------------------------------------------------------------------
+kommunikation:
+  - empfaenger: "Auftraggeber"
+    verantwortlich: "Projektleiter"
+    inhalt: "Status, Entscheide und Eskalationen"
+    medium: "Sitzung / Statusbericht"
+    termin: "monatlich"
+  - empfaenger: "Projektausschuss"
+    verantwortlich: "Projektleiter"
+    inhalt: "Steuerung und Freigaben"
+    medium: "Sitzung"
+    termin: "monatlich"
+  - empfaenger: "Projektteam"
+    verantwortlich: "Projektleiter"
+    inhalt: "Operative Abstimmung"
+    medium: "Teams / Workshop"
+    termin: "woechentlich"
+  - empfaenger: "Betroffene Organisationseinheiten"
+    verantwortlich: "Auftraggeber"
+    inhalt: "Information ueber Vorhaben und Auswirkungen"
+    medium: "Intranet / Informationsveranstaltung"
+    termin: "nach Bedarf"

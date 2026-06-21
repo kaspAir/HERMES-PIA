@@ -32,14 +32,19 @@ ziele:
     salience: 0.85
 
 # ---------------------------------------------------------------------
-# Typische LIEFERERGEBNISSE der Initialisierung (Abschnitt 4.1)
+# Lieferergebnisse + 3 Entscheid-Meilensteine der Initialisierung (Abschnitt 4.1),
+# gemaess HERMES 2022: Mandat = Durchführungsauftrag (kein Projektauftrag),
+# kein Phasenbericht, Verantwortung (Abnahme) auf Rollenebene.
 # ---------------------------------------------------------------------
-lieferergebnisse:
-  - { id: le_studie,          name: "Studie (mit Variantenvergleich)",    salience: 0.95 }
-  - { id: le_governance,      name: "Governance-Konzept / Trägerschaft",  salience: 0.9 }
-  - { id: le_isds,            name: "Schutzbedarfsanalyse (ISDS)",        salience: 0.9 }
-  - { id: le_stakeholder,     name: "Stakeholder-Analyse (nutzende Stellen)", salience: 0.85 }
-  - { id: le_rechtsgrundlagen, name: "Rechtsgrundlagenanalyse",           salience: 0.8 }
+termine:
+  - { ergebnis: "Stakeholder-Liste", abnahme: "Projektleiter" }
+  - { ergebnis: "Studie", abnahme: "Projektleiter" }
+  - { ergebnis: "Rechtsgrundlagenanalyse", abnahme: "Projektleiter" }
+  - { ergebnis: "Schutzbedarfsanalyse", abnahme: "ISDS-Verantwortlicher" }
+  - { ergebnis: "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen; Liste Projektentscheide Führung)", abnahme: "Projektleiter" }
+  - { ergebnis: "Projektmanagementplan", abnahme: "Projektleiter" }
+  - { ergebnis: "Durchführungsauftrag", abnahme: "Projektleiter" }
+  - { ergebnis: "Meilenstein Durchführungsfreigabe (Checkliste Durchführungsfreigabe; Liste Projektentscheide Steuerung)", abnahme: "Auftraggeber" }
 
 # ---------------------------------------------------------------------
 # Typische RISIKEN (Abschnitt 7)

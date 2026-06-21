@@ -15,12 +15,21 @@ Klare Aufgabentrennung:
 """
 import json
 
-from app.domains.interview.extraction import detect_project_type, extract_fields, generate_followups
+from app.domains.interview.extraction import (
+    detect_project_type,
+    estimate_risk_assessment,
+    extract_fields,
+    generate_followups,
+    generate_suggestion,
+)
 from app.domains.interview.gap_check import build_followups, find_missing_risks
 from app.domains.interview.models import InterviewSession
 from app.shared.database import SessionLocal
 
 _INTERVIEWABLE = {"free_text", "table"}
+# Abschnitte, deren Inhalt durch HERMES verbindlich vorgegeben ist: hier ist der
+# Referenzkatalog massgebend, nicht die freie LLM-Erfindung.
+CATALOG_FIRST_SECTIONS = {"termine"}
 _AVAILABLE_PROJECT_TYPES = [
     {
         "id": "fachanwendung_einfuehrung",
@@ -84,13 +93,17 @@ class InterviewService:
     # ------------------------------------------------------------------ #
 
     def start_session(self, method_id, project_name, created_by=None,
-                      projektnummer=None, auftraggeber=None, verwaltungseinheit=None):
+                      projektnummer=None, auftraggeber=None, verwaltungseinheit=None,
+                      geschaeftsbereich=None, innenauftragsnummer=None, start_datum=None):
         session = InterviewSession(
             method_id=method_id,
             project_name=project_name,
             projektnummer=projektnummer,
             auftraggeber=auftraggeber,
             verwaltungseinheit=verwaltungseinheit,
+            geschaeftsbereich=geschaeftsbereich,
+            innenauftragsnummer=innenauftragsnummer,
+            start_datum=start_datum,
             created_by=created_by,
             answers_json="{}",
         )
@@ -172,7 +185,7 @@ class InterviewService:
             raise ValueError("Kein offener Frageabschnitt")
 
         section = state["section"]
-        extracted = self._extract(section, raw_text)
+        extracted = self._extract(section, raw_text, self._vocabularies(session.method_id))
 
         entry = {
             "raw_text": raw_text,
@@ -193,25 +206,179 @@ class InterviewService:
         # Nachfragen: KI für alle Abschnitte + Katalog-Gap-Check für Risiken
         entry["followups"] = self._build_followups(section, extracted, raw_text, session.project_type_id)
 
+        # Hat der PL nichts geliefert und entstand auch keine andere Nachfrage,
+        # bietet HERMES PIA proaktiv einen Vorschlag an ("Soll ich einen machen?").
+        if self.llm and not entry["followups"] and self._is_empty(extracted):
+            entry["followups"].append({
+                "risk_id": f"offer_{section['id']}",
+                "frage": f"Für \"{section['title']}\" liegt noch nichts vor. "
+                         f"Soll ich aus dem bisherigen Projektkontext einen Vorschlag erstellen?",
+                "type": "offer",
+                "status": "pending",
+            })
+
         answers[section["id"]] = entry
         self._persist_answers(session, answers)
         return self.current_state(session)
 
     def answer_followup(self, session_id, risk_id, accepted, raw_text=None):
-        """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen."""
+        """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen.
+
+        Beim Aufnehmen ('accepted') wird der Vorschlag – oder die vom
+        Projektleiter diktierte Ergaenzung – in die Abschnittsdaten uebernommen,
+        sodass er im Dokument und in der Live-Vorschau erscheint.
+        """
         session = self.get_session(session_id)
         answers = self._answers(session)
 
-        for section_answer in answers.values():
+        for sid, section_answer in answers.items():
             for followup in section_answer.get("followups", []):
                 if followup.get("risk_id") == risk_id and followup.get("status") == "pending":
                     followup["status"] = "accepted" if accepted else "dismissed"
                     if raw_text:
                         followup["raw_text"] = raw_text
+                    if accepted:
+                        section = self._section_by_id(session.method_id, sid)
+                        if section and followup.get("type") == "offer":
+                            self._fill_from_suggestion(session, section, section_answer, answers)
+                        elif section:
+                            self._apply_followup(section, section_answer, followup, raw_text)
                     self._persist_answers(session, answers)
                     return self.current_state(session)
 
         raise ValueError(f"Kein offenes Followup fuer Risiko '{risk_id}'")
+
+    def _fill_from_suggestion(self, session, section, section_answer, answers):
+        """Erzeugt einen proaktiven Vorschlag (LLM, sonst Katalog) und übernimmt ihn."""
+        context = self._suggestion_context(session, answers)
+        vocabularies = self._vocabularies(session.method_id)
+
+        # Für Abschnitte mit verbindlicher HERMES-Vorgabe (Ergebnisse/Termine)
+        # ist der Katalog massgebend – das LLM darf hier nicht frei erfinden.
+        catalog_first = section.get("id") in CATALOG_FIRST_SECTIONS
+
+        suggestion = None
+        if catalog_first:
+            suggestion = self._catalog_suggestion(session.project_type_id, section)
+        if not suggestion and self.llm:
+            suggestion = generate_suggestion(self.llm, section, context, vocabularies)
+        # Fallback auf den Referenzkatalog, wenn das LLM nichts Brauchbares liefert.
+        if not suggestion:
+            suggestion = self._catalog_suggestion(session.project_type_id, section)
+
+        if not suggestion:
+            return
+
+        # Ergebnisse/Termine: Liefertermine relativ zum Start der Initialisierung
+        # berechnen (Startdatum aus dem Formular, sonst heute).
+        if section.get("id") == "termine" and isinstance(suggestion, list):
+            _assign_termine_dates(suggestion, session.start_datum)
+
+        # Anhängen statt ersetzen: vorhandene Einträge dürfen nie verloren gehen,
+        # auch wenn der Vorschlag versehentlich für einen gefüllten Abschnitt käme.
+        if section.get("type") == "table" and isinstance(suggestion, list):
+            existing = section_answer.get("extracted")
+            if not isinstance(existing, list):
+                existing = []
+            existing.extend(suggestion)
+            section_answer["extracted"] = existing
+        elif section.get("type") == "free_text" and isinstance(suggestion, dict):
+            existing = section_answer.get("extracted")
+            old_text = existing.get("text", "") if isinstance(existing, dict) else ""
+            new_text = suggestion.get("text", "")
+            section_answer["extracted"] = {
+                "text": f"{old_text}\n{new_text}".strip() if old_text else new_text
+            }
+
+    def _suggestion_context(self, session, answers):
+        """Baut einen Kurzkontext aus dem bisher Bekannten für die LLM-Vorschläge."""
+        parts = []
+        if session.project_name:
+            parts.append(f"Projektname: {session.project_name}")
+        if session.project_type_id:
+            parts.append(f"Projekttyp: {session.project_type_id}")
+        if session.auftraggeber:
+            parts.append(f"Auftraggeber: {session.auftraggeber}")
+        for sid in ("ausgangslage", "ziele"):
+            entry = answers.get(sid)
+            if not entry:
+                continue
+            extracted = entry.get("extracted")
+            if isinstance(extracted, dict) and extracted.get("text"):
+                parts.append(f"{sid}: {extracted['text']}")
+            elif isinstance(extracted, list) and extracted:
+                joined = "; ".join(
+                    str(r.get("beschreibung") or next(iter(r.values()), "")) for r in extracted
+                )
+                parts.append(f"{sid}: {joined}")
+        return "\n".join(parts) or "(noch keine weiteren Angaben)"
+
+    def _vocabularies(self, method_id):
+        return self.methods.get(method_id).get("vocabularies", {})
+
+    def _catalog_suggestion(self, project_type_id, section):
+        """Liest einen Vorschlag aus dem Referenzkatalog (Fallback)."""
+        # Falls der Projekttyp (noch) nicht erkannt wurde, trotzdem einen
+        # sinnvollen Standard-Katalog heranziehen, damit Vorschläge nie leer sind.
+        if not project_type_id:
+            project_type_id = _AVAILABLE_PROJECT_TYPES[0]["id"]
+        catalog = self.catalogs.get(project_type_id) or {}
+        entries = catalog.get(section["id"])
+        if not entries or not isinstance(entries, list):
+            return None
+        col_ids = {c["id"] for c in section.get("columns", []) if c.get("id") != "nr"}
+        rows = []
+        for e in entries:
+            row = {k: v for k, v in e.items() if k in col_ids}
+            if row:
+                rows.append(row)
+        return rows or None
+
+    def _section_by_id(self, method_id, sid):
+        for s in self.methods.sections(method_id):
+            if s.get("id") == sid:
+                return s
+        return None
+
+    def _apply_followup(self, section, section_answer, followup, raw_text):
+        """Uebernimmt einen akzeptierten Vorschlag in die Abschnittsdaten."""
+        suggestion = (raw_text or "").strip() or (followup.get("vorschlag") or "").strip()
+        if not suggestion:
+            return
+
+        if section.get("type") == "table":
+            rows = section_answer.get("extracted")
+            if not isinstance(rows, list):
+                rows = []
+                section_answer["extracted"] = rows
+            cols = [c["id"] for c in section.get("columns", []) if c.get("id") != "nr"]
+            if not cols:
+                return
+            # Hauptspalte: 'beschreibung' bevorzugt, sonst erste Nicht-Nr-Spalte
+            target = "beschreibung" if "beschreibung" in cols else cols[0]
+            # Strukturierte Felder aus dem Katalog (z.B. ew/ag/massnahmen)
+            # übernehmen; Hauptspalte ggf. mit diktiertem Text überschreiben.
+            row_data = followup.get("row") or {}
+            new_row = {k: v for k, v in row_data.items() if k in cols and v}
+            new_row[target] = suggestion
+
+            # Risiken: fehlende Eintrittswahrscheinlichkeit / Auswirkungsgrad /
+            # Massnahmen per LLM schätzen (Katalog liefert sie nicht für alle Typen).
+            if section.get("id") == "risiken" and self.llm \
+                    and (not new_row.get("ew") or not new_row.get("ag")):
+                est = estimate_risk_assessment(self.llm, new_row.get("beschreibung", "") or suggestion)
+                for k in ("ew", "ag", "massnahmen"):
+                    if k in cols and not new_row.get(k) and est.get(k):
+                        new_row[k] = est[k]
+
+            rows.append(new_row)
+        elif section.get("type") == "free_text":
+            extracted = section_answer.get("extracted")
+            if not isinstance(extracted, dict):
+                extracted = {"text": ""}
+                section_answer["extracted"] = extracted
+            existing = extracted.get("text", "")
+            extracted["text"] = f"{existing}\n{suggestion}".strip() if existing else suggestion
 
     # ------------------------------------------------------------------ #
     # Bestehende oeffentliche API (Rueckwaertskompatibilitaet / Tests)    #
@@ -245,17 +412,29 @@ class InterviewService:
     def _pending_followups(self, section_answer):
         return [f for f in section_answer.get("followups", []) if f.get("status") == "pending"]
 
-    def _extract(self, section, raw_text):
+    def _extract(self, section, raw_text, vocabularies=None):
         if not raw_text or not raw_text.strip():
             return {"text": ""} if section.get("type") == "free_text" else []
         if not self.llm:
             return {"text": raw_text} if section.get("type") == "free_text" else []
-        return extract_fields(self.llm, section, raw_text)
+        return extract_fields(self.llm, section, raw_text, vocabularies or {})
 
     def _detect_type(self, text):
         if not self.llm:
             return _AVAILABLE_PROJECT_TYPES[0]["id"]
         return detect_project_type(self.llm, _AVAILABLE_PROJECT_TYPES, text)
+
+    def _is_empty(self, extracted):
+        if not extracted:
+            return True
+        if isinstance(extracted, dict):
+            return not (extracted.get("text") or "").strip()
+        if isinstance(extracted, list):
+            return not any(
+                any(str(v).strip() for v in row.values())
+                for row in extracted if isinstance(row, dict)
+            )
+        return False
 
     def _is_complete(self, section, extracted):
         criteria = section.get("interview", {}).get("completeness", [])
@@ -384,6 +563,27 @@ class InterviewService:
 # ------------------------------------------------------------------ #
 # Modul-Hilfsfunktionen                                                #
 # ------------------------------------------------------------------ #
+
+def _assign_termine_dates(rows, start_datum_str):
+    """Setzt je Ergebnis einen Liefertermin relativ zum Initialisierungs-Start.
+
+    Basis: angegebenes Startdatum (ISO), sonst heute. Die Default-Dauern
+    (Wochen ab Start) sind Heuristik – später aus Mnemosyne ableitbar.
+    """
+    from datetime import date as _date, timedelta as _timedelta
+    try:
+        base = _date.fromisoformat(start_datum_str) if start_datum_str else _date.today()
+    except (ValueError, TypeError):
+        base = _date.today()
+    # An die 8 kanonischen Initialisierungs-Ergebnisse angelehnte Wochen-Offsets.
+    wochen = [1, 4, 4, 5, 6, 7, 8, 9]
+    for i, r in enumerate(rows):
+        if not isinstance(r, dict) or r.get("termin"):
+            continue
+        w = wochen[i] if i < len(wochen) else (i + 1)
+        r["termin"] = (base + _timedelta(weeks=w)).strftime("%d.%m.%Y")
+    return rows
+
 
 def _bump_version(version_str, bump_type):
     """

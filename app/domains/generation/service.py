@@ -35,6 +35,8 @@ COVER_FIELDS = {
     'Auftraggeber/in':              'auftraggeber',
     'Verwaltungseinheit':           'verwaltungseinheit',
     'Geschäftsbereich':             'geschaeftsbereich',
+    'Innenauftragsnr.':             'innenauftragsnummer',
+    'Projektnummer':                'projektnummer',
 }
 
 STYLE_H1 = 'Hberschrift1105pt'
@@ -43,6 +45,26 @@ STYLE_NORMAL = 'Normal'
 STYLE_HELP = 'HHilfstextfarbigkursiv105ptF'
 STYLE_EXAMPLE = 'HTabBeispiel85ptF'
 STYLE_DATA = 'HTabText85pt'
+
+# Rollenbezeichnungen, die für Projektleiter bzw. Auftraggeber stehen (normalisiert).
+PL_ROLLEN = {'projektleiter', 'projektleiterin', 'projektleiter/in',
+             'projektleitung', 'pl'}
+AG_ROLLEN = {'auftraggeber', 'auftraggeberin', 'auftraggeber/in', 'ag'}
+
+# Risikostufen -> Zahlenwert für die Risikozahl (EW × AG).
+RISK_LEVELS = {'tief': 1, 'niedrig': 1, 'gering': 1, 'klein': 1,
+               'mittel': 2, 'hoch': 3, 'gross': 3, 'sehr hoch': 3}
+
+
+def _risk_num(value):
+    """Wandelt eine Risikostufe (Tief/Mittel/Hoch oder Zahl) in eine Zahl."""
+    s = _normalize(str(value))
+    if s in RISK_LEVELS:
+        return RISK_LEVELS[s]
+    try:
+        return int(str(value).strip())
+    except (ValueError, TypeError):
+        return 0
 
 
 class GenerationService:
@@ -68,7 +90,8 @@ class GenerationService:
         doc = self._open_template(template)
 
         self._fill_cover(doc, metadata)
-        self._fill_body(doc, method, session_answers)
+        self._fill_headers(doc, metadata)
+        self._fill_body(doc, method, session_answers, metadata)
         if changelog:
             self._fill_aenderungskontrolle(doc, changelog)
         self._delete_style(doc, STYLE_HELP)
@@ -110,7 +133,7 @@ class GenerationService:
         # ist robuster für spätere Template-Änderungen).
         W_R   = f'{{{W}}}r'
         W_T   = f'{{{W}}}t'
-        W_TAB = f'{{{W}}}tab'
+        W_FLD = f'{{{W}}}fldSimple'
         W_SDT = f'{{{W}}}sdt'
         W_SDT_PR      = f'{{{W}}}sdtPr'
         W_SDT_CONTENT = f'{{{W}}}sdtContent'
@@ -131,6 +154,19 @@ class GenerationService:
                 continue
             value = metadata.get(key, '')
             if not value:
+                continue
+
+            # Word-Feld (z.B. DATE bei Bearbeitungsdatum) durch den statischen
+            # Wert ersetzen – sonst zeigt Word das gecachte Vorlagendatum.
+            fld = p_el.find(W_FLD)
+            if fld is not None:
+                idx = list(p_el).index(fld)
+                p_el.remove(fld)
+                r = etree.Element(W_R)
+                t = etree.SubElement(r, W_T)
+                t.text = value
+                p_el.insert(idx, r)
+                filled.add(key)
                 continue
 
             # Prüfe ob ein w:sdt-Kindelement den Wert enthält (z.B. Version-Feld)
@@ -154,24 +190,46 @@ class GenerationService:
                     t.text = value
                     break
             elif len(direct_runs) == 1:
-                # Einzelner Label-Run (Projektname): Tab + Wert-Run anhängen
-                tab_r = etree.SubElement(p_el, W_R)
-                tab_r.append(etree.Element(W_TAB))
-
-                val_r = etree.SubElement(p_el, W_R)
-                val_t = etree.SubElement(val_r, W_T)
-                val_t.text = value
-                if value and (value[0] == ' ' or value[-1] == ' '):
-                    val_t.set(XML_SPACE, 'preserve')
+                # Einzelner Label-Run (z.B. "Projektname / Projektnummer" in Magenta):
+                # Label-Text durch Wert ersetzen und Farb-Formatierung entfernen.
+                label_run = direct_runs[0]
+                rPr = label_run.find(f'{{{W}}}rPr')
+                if rPr is not None:
+                    color_el = rPr.find(f'{{{W}}}color')
+                    if color_el is not None:
+                        rPr.remove(color_el)
+                for t in label_run.iter(W_T):
+                    t.text = value
+                    if value and (value[0] == ' ' or value[-1] == ' '):
+                        t.set(XML_SPACE, 'preserve')
+                    break
             # len(direct_runs)==2: Label+Tab mit fldSimple-Wert (Bearbeitungsdatum) → unberührt lassen
 
             filled.add(key)
 
     # ------------------------------------------------------------------ #
+    # Kopfzeilen befüllen                                                  #
+    # ------------------------------------------------------------------ #
+
+    def _fill_headers(self, doc, metadata):
+        """Ersetzt 'Projektname / Projektnummer' in allen Kopfzeilen."""
+        projektname = metadata.get('projektname', '')
+        if not projektname:
+            return
+        W_T = f'{{{W}}}t'
+        placeholder = 'Projektname / Projektnummer'
+        for section in doc.sections:
+            for t_el in section.header._element.iter(W_T):
+                if (t_el.text or '').strip() == placeholder:
+                    t_el.text = projektname
+                    if projektname[0] == ' ' or projektname[-1] == ' ':
+                        t_el.set(XML_SPACE, 'preserve')
+
+    # ------------------------------------------------------------------ #
     # Abschnitte (Fliesstext + Tabellen)                                  #
     # ------------------------------------------------------------------ #
 
-    def _fill_body(self, doc, method, session_answers):
+    def _fill_body(self, doc, method, session_answers, metadata=None):
         sections = {s['id']: s for s in method.get('sections', [])}
         body = doc.element.body
         children = list(body)
@@ -189,7 +247,7 @@ class GenerationService:
                     sect = sections[current_sid]
                     if sect.get('type') == 'table':
                         extracted = session_answers[current_sid].get('extracted') or []
-                        self._fill_table(el, sect, extracted)
+                        self._fill_table(el, sect, extracted, metadata)
                     current_sid = None
             elif tag == 'sdt':
                 current_sid = None
@@ -218,9 +276,11 @@ class GenerationService:
                     break
 
     def _match_section(self, heading, sections):
-        h = heading.lower()
+        # Umlaut-tolerant vergleichen: Vorlage schreibt "Abkürzungen",
+        # die method.yaml transkribiert als "Abkuerzungen" (ASCII).
+        h = _normalize(heading)
         for sid, sect in sections.items():
-            title = sect.get('title', '').lower()
+            title = _normalize(sect.get('title', ''))
             if title and (h == title or h.endswith(title) or title in h):
                 return sid
         return None
@@ -229,46 +289,114 @@ class GenerationService:
     # Tabellen befüllen                                                    #
     # ------------------------------------------------------------------ #
 
-    def _fill_table(self, tbl_el, section, data_rows):
+    def _fill_table(self, tbl_el, section, data_rows, metadata=None):
         if not data_rows:
             return
 
+        # Rolle -> Personenname (Projektleiter/Auftraggeber), wo bekannt, plus
+        # geschlechtsgerechte Rollenbezeichnung (Projektleiter/in, Auftraggeber/in).
+        md = metadata or {}
+        name_by_role = {}
+        gendered_label = {}
+        pl_name = md.get('projektleiter', '')
+        ag_name = md.get('auftraggeber', '')
+        if pl_name:
+            name_by_role.update({r: pl_name for r in PL_ROLLEN})
+            pl_lbl = 'Projektleiterin' if md.get('projektleiter_weiblich') else 'Projektleiter'
+            gendered_label.update({r: pl_lbl for r in PL_ROLLEN})
+        if ag_name:
+            name_by_role.update({r: ag_name for r in AG_ROLLEN})
+            ag_lbl = 'Auftraggeberin' if md.get('auftraggeber_weiblich') else 'Auftraggeber'
+            gendered_label.update({r: ag_lbl for r in AG_ROLLEN})
+
+        has_nr = any(c.get('id') == 'nr' for c in section.get('columns', []))
         columns = [c['id'] for c in section.get('columns', []) if c.get('id') != 'nr']
+        col_defs = {c['id']: c for c in section.get('columns', [])}
+
         W_TR = f'{{{W}}}tr'
         W_TC = f'{{{W}}}tc'
+        W_SDT = f'{{{W}}}sdt'
+        W_SDT_CONTENT = f'{{{W}}}sdtContent'
+        W_SDT_PR = f'{{{W}}}sdtPr'
+        W_SHOWING_PLH = f'{{{W}}}showingPlcHdr'
 
-        # Template-Datenzeile (erster HTabText85pt-Row, kein Example)
-        template_row = None
-        for row in tbl_el:
-            if row.tag != W_TR:
-                continue
-            if _row_style(row) == STYLE_DATA and template_row is None:
-                template_row = row
-
-        if template_row is None:
+        # Alle Vorlage-Datenzeilen (HTabText85pt) sammeln. Manche Tabellen
+        # liefern mehrere mit – z.B. Ergebnisse (8 Beispielzeilen) oder
+        # Personalaufwand (AG + PL). Die erste dient als Klonvorlage, ALLE
+        # werden am Ende entfernt – sonst bleiben Geisterzeilen stehen.
+        template_rows = [
+            row for row in tbl_el
+            if row.tag == W_TR and _row_style(row) == STYLE_DATA
+        ]
+        if not template_rows:
             return
 
+        template_row = template_rows[0]
         insert_pos = list(tbl_el).index(template_row)
 
         for idx, data in enumerate(data_rows):
             new_row = copy.deepcopy(template_row)
-            cells = [c for c in new_row if c.tag == W_TC]
+            data = dict(data) if isinstance(data, dict) else {}
 
-            # Erste Spalte: Nummer
-            if cells:
-                _set_tc_text(cells[0], f'{idx + 1:02d}')
+            # Computed fields vorberechnen (z.B. risikozahl = ew * ag)
+            for col in section.get('columns', []):
+                cid = col.get('id', '')
+                expr = col.get('computed', '')
+                if expr and not data.get(cid):
+                    parts = [p.strip() for p in expr.split('*')]
+                    result = 1
+                    for p in parts:
+                        result *= _risk_num(data.get(p))
+                    data[cid] = str(result) if result else ''
 
-            # Weitere Spalten nach Reihenfolge
+            # Personenname + geschlechtsgerechte Rolle eintragen, wo die Rolle
+            # bekannt ist und eine Name-Spalte existiert (z.B. Personalaufwand-
+            # Zeile "Projektleiter"/"Auftraggeber").
+            if name_by_role and 'name' in columns and 'rolle' in columns:
+                norm_rolle = _normalize(str(data.get('rolle', '')))
+                nm = name_by_role.get(norm_rolle)
+                if nm:
+                    if not str(data.get('name', '')).strip():
+                        data['name'] = nm
+                    if norm_rolle in gendered_label:
+                        data['rolle'] = gendered_label[norm_rolle]
+
+            # Alle Zellen in Reihenfolge sammeln – inkl. SDT-umhüllter Zellen
+            # (Dropdown-/Combobox-Spalten liegen als <w:sdt><w:sdtContent><w:tc> vor)
+            all_cells = []
+            for child in new_row:
+                if child.tag == W_TC:
+                    all_cells.append(child)
+                elif child.tag == W_SDT:
+                    sdt_pr = child.find(W_SDT_PR)
+                    sdt_content = child.find(W_SDT_CONTENT)
+                    if sdt_content is not None:
+                        tc = sdt_content.find(W_TC)
+                        if tc is not None:
+                            if sdt_pr is not None:
+                                showing = sdt_pr.find(W_SHOWING_PLH)
+                                if showing is not None:
+                                    sdt_pr.remove(showing)
+                            all_cells.append(tc)
+
+            # Erste Spalte: Nummer (nur wenn Nr-Spalte im Schema vorhanden)
+            start_idx = 0
+            if has_nr and all_cells:
+                _set_tc_text(all_cells[0], f'{idx + 1:02d}')
+                start_idx = 1
+
+            # Datenspalten in Reihenfolge
             for col_offset, col_id in enumerate(columns):
-                cell_idx = col_offset + 1
-                if cell_idx < len(cells):
-                    val = data.get(col_id, '') if isinstance(data, dict) else ''
-                    _set_tc_text(cells[cell_idx], str(val) if val else '')
+                cell_idx = col_offset + start_idx
+                if cell_idx < len(all_cells):
+                    val = data.get(col_id, '')
+                    _set_tc_text(all_cells[cell_idx], str(val) if val else '')
 
             tbl_el.insert(insert_pos + idx, new_row)
 
-        # Originale Template-Zeile entfernen
-        tbl_el.remove(template_row)
+        # Alle originalen Vorlage-Datenzeilen entfernen (nicht nur die erste)
+        for row in template_rows:
+            tbl_el.remove(row)
 
     # ------------------------------------------------------------------ #
     # Änderungskontrolle (Kapitel 8)                                       #
@@ -284,6 +412,8 @@ class GenerationService:
 
         W_TR = f'{{{W}}}tr'
         W_TC = f'{{{W}}}tc'
+        W_SDT = f'{{{W}}}sdt'
+        W_SDT_CONTENT = f'{{{W}}}sdtContent'
 
         body = doc.element.body
         children = list(body)
@@ -306,29 +436,39 @@ class GenerationService:
         if target_tbl is None:
             return
 
-        # Template-Datenzeile suchen (erste HTabText85pt-Zeile)
-        template_row = None
-        for row in target_tbl:
-            if row.tag == W_TR and _row_style(row) == STYLE_DATA:
-                template_row = row
-                break
-
-        if template_row is None:
+        # Template-Datenzeilen suchen (HTabText85pt). Erste = Klonvorlage,
+        # alle werden am Ende entfernt (die Vorlage liefert eine Leerzeile mit).
+        template_rows = [
+            row for row in target_tbl
+            if row.tag == W_TR and _row_style(row) == STYLE_DATA
+        ]
+        if not template_rows:
             return
 
+        template_row = template_rows[0]
         insert_pos = list(target_tbl).index(template_row)
         col_keys = ['version', 'name', 'datum', 'bemerkungen']
 
         for idx, entry in enumerate(changelog):
             new_row = copy.deepcopy(template_row)
-            cells = [c for c in new_row if c.tag == W_TC]
+            all_cells = []
+            for child in new_row:
+                if child.tag == W_TC:
+                    all_cells.append(child)
+                elif child.tag == W_SDT:
+                    sdt_content = child.find(W_SDT_CONTENT)
+                    if sdt_content is not None:
+                        tc = sdt_content.find(W_TC)
+                        if tc is not None:
+                            all_cells.append(tc)
             for j, key in enumerate(col_keys):
-                if j < len(cells):
-                    _set_tc_text(cells[j], entry.get(key, ''))
+                if j < len(all_cells):
+                    _set_tc_text(all_cells[j], entry.get(key, ''))
             target_tbl.insert(insert_pos + idx, new_row)
 
-        # Template-Zeile entfernen (war leer / Platzhalter)
-        target_tbl.remove(template_row)
+        # Alle originalen Vorlage-Datenzeilen entfernen
+        for row in template_rows:
+            target_tbl.remove(row)
 
     # ------------------------------------------------------------------ #
     # Hilfe-/Beispieltexte löschen                                        #
@@ -355,6 +495,14 @@ class GenerationService:
 # XML-Hilfsfunktionen                                                  #
 # ------------------------------------------------------------------ #
 
+def _normalize(s):
+    """Kleinschreibung + Umlaut-Transkription für robusten Titelvergleich."""
+    s = (s or '').lower().strip()
+    for a, b in (('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue'), ('ß', 'ss')):
+        s = s.replace(a, b)
+    return s
+
+
 def _tag(el):
     return el.tag.split('}')[-1] if '}' in el.tag else el.tag
 
@@ -371,8 +519,27 @@ def _p_text(p_el):
     return ''.join(t.text or '' for t in p_el.iter(f'{{{W}}}t'))
 
 
+# Nicht-HERMES-Begriffe -> HERMES-2022-Term (deterministisches Sicherheitsnetz,
+# falls das LLM trotz Prompt-Vorgabe einen falschen Begriff verwendet).
+HERMES_TERM_FIXES = {
+    'Steuerungsausschuss': 'Projektausschuss',
+    'Lenkungsausschuss':   'Projektausschuss',
+    'Steuerungsgremium':   'Projektausschuss',
+}
+
+
+def _fix_hermes_terms(text):
+    if not text:
+        return text
+    for wrong, right in HERMES_TERM_FIXES.items():
+        if wrong in text:
+            text = text.replace(wrong, right)
+    return text
+
+
 def _set_p_text(p_el, text):
     """Ersetzt den Textinhalt eines Paragraphen, erhält Stil."""
+    text = _fix_hermes_terms(text)
     for r in list(p_el):
         if r.tag == f'{{{W}}}r':
             p_el.remove(r)

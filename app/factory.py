@@ -11,6 +11,7 @@ import app.domains.interview.models  # noqa: F401 – ensures models are registe
 from app.shared.database import Base, SessionLocal, init_engine
 from app.shared.errors import register_error_handlers
 from app.shared.logging import configure_logging, register_request_logging
+from app.shared.version import get_version
 from app.web.ui_routes import bp as ui_bp
 
 
@@ -27,6 +28,9 @@ def _migrate_db(engine):
         ("doc_version",         "VARCHAR(20)"),
         ("changelog_json",      "TEXT"),
         ("last_snapshot_json",  "TEXT"),
+        ("geschaeftsbereich",   "VARCHAR(200)"),
+        ("innenauftragsnummer", "VARCHAR(100)"),
+        ("start_datum",         "VARCHAR(20)"),
     ]
     with engine.connect() as conn:
         for col, dtype in new_cols:
@@ -61,6 +65,13 @@ def create_app(config_class=None):
     app.generation_service = GenerationService(app.method_service)
 
     app.register_blueprint(ui_bp)
+
+    # Laufende Code-Version in allen Templates verfügbar machen.
+    app_version = get_version()
+
+    @app.context_processor
+    def inject_version():
+        return {"app_version": app_version}
 
     @app.teardown_appcontext
     def remove_session(exception=None):

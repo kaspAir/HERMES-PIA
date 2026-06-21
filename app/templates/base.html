@@ -7,12 +7,20 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/methodos.css') }}">
 </head>
 <body>
+  <div class="brand-bar">
+    <img src="{{ url_for('static', filename='img/bki-logo.png') }}"
+         alt="BKI &ndash; Project Management Consulting &amp; Training"
+         class="brand-logo">
+  </div>
   {% if ':8001' in request.host %}
-  <div class="env-banner env-banner--test">&#9888; Testsystem &mdash; test.hermespia.ch</div>
+  <div class="env-banner env-banner--test">&#9888; Testsystem &mdash; test.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>
   {% elif ':8002' in request.host %}
-  <div class="env-banner env-banner--int">&#9432; Integrationssystem &mdash; int.hermespia.ch</div>
+  <div class="env-banner env-banner--int">&#9432; Integrationssystem &mdash; int.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>
   {% endif %}
   <header><strong>HERMES PIA</strong> &mdash; vom Gespräch zum strukturierten Ergebnis</header>
   <main class="{% block main_class %}{% endblock %}">{% block content %}{% endblock %}</main>
+  <div class="app-version-badge" title="{{ app_version.subject }}">
+    Version {{ app_version.sha }}{% if app_version.date %} &middot; {{ app_version.date }}{% endif %}
+  </div>
 </body>
 </html>

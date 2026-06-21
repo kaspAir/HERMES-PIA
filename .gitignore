@@ -20,3 +20,6 @@ tools/mnemosyne/output/
 **/extraction_log.json
 pias/
 pias_original/
+
+# Claude Code lokale Einstellungen
+.claude/

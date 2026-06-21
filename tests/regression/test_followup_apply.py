@@ -1,0 +1,108 @@
+"""Beweist: ein akzeptierter Vorschlag landet in den Abschnittsdaten."""
+from app.config import get_config
+from app.domains.catalog.service import CatalogService
+from app.domains.interview.service import InterviewService
+from app.domains.method.service import MethodService
+
+
+def _interview():
+    cfg = get_config()
+    return InterviewService(MethodService(cfg.METHODS_DIR), CatalogService(cfg.CATALOGS_DIR))
+
+
+def _risiken_section(svc):
+    return svc._section_by_id("hermes_pia", "risiken")
+
+
+def test_accepted_catalog_risk_is_added_as_row():
+    svc = _interview()
+    section = _risiken_section(svc)
+    assert section is not None
+
+    section_answer = {"extracted": [{"beschreibung": "Beschaffungsrisiko"}]}
+    followup = {"risk_id": "r_akzeptanz", "vorschlag": "Geringe Akzeptanz der Anwender"}
+
+    svc._apply_followup(section, section_answer, followup, raw_text=None)
+
+    rows = section_answer["extracted"]
+    assert len(rows) == 2
+    assert rows[1]["beschreibung"] == "Geringe Akzeptanz der Anwender"
+
+
+def test_dictated_refinement_overrides_suggestion():
+    svc = _interview()
+    section = _risiken_section(svc)
+
+    section_answer = {"extracted": []}
+    followup = {"risk_id": "r_akzeptanz", "vorschlag": "Geringe Akzeptanz der Anwender"}
+
+    svc._apply_followup(section, section_answer, followup,
+                        raw_text="Widerstand der Fachabteilung gegen den neuen Prozess")
+
+    rows = section_answer["extracted"]
+    assert len(rows) == 1
+    assert rows[0]["beschreibung"] == "Widerstand der Fachabteilung gegen den neuen Prozess"
+
+
+def test_free_text_followup_appends_to_text():
+    svc = _interview()
+    section = {"id": "ausgangslage", "type": "free_text"}
+    section_answer = {"extracted": {"text": "Bestehender Text."}}
+    followup = {"risk_id": "ai_ausgangslage_0", "vorschlag": "Ergaenzender Hinweis."}
+
+    svc._apply_followup(section, section_answer, followup, raw_text=None)
+
+    assert section_answer["extracted"]["text"] == "Bestehender Text.\nErgaenzender Hinweis."
+
+
+def test_is_empty_detects_blank_and_filled():
+    svc = _interview()
+    assert svc._is_empty(None) is True
+    assert svc._is_empty([]) is True
+    assert svc._is_empty({"text": "  "}) is True
+    assert svc._is_empty([{"empfaenger": ""}]) is True
+    assert svc._is_empty({"text": "etwas"}) is False
+    assert svc._is_empty([{"empfaenger": "Auftraggeber"}]) is False
+
+
+def test_catalog_suggestion_kommunikation_fallback():
+    svc = _interview()
+    section = svc._section_by_id("hermes_pia", "kommunikation")
+    assert section is not None
+
+    rows = svc._catalog_suggestion("fachanwendung_einfuehrung", section)
+    assert rows and len(rows) >= 3
+    # Nur Spalten-IDs der method.yaml, keine Katalog-internen Felder wie 'id'/'salience'
+    allowed = {c["id"] for c in section["columns"] if c["id"] != "nr"}
+    for r in rows:
+        assert set(r.keys()) <= allowed
+    assert rows[0]["empfaenger"] == "Auftraggeber"
+
+
+def test_catalog_suggestion_none_when_no_block():
+    svc = _interview()
+    section = svc._section_by_id("hermes_pia", "sachmittel")
+    # Kein 'sachmittel'-Block im Katalog -> kein Fallback
+    assert svc._catalog_suggestion("fachanwendung_einfuehrung", section) is None
+
+
+class _Sess:
+    method_id = "hermes_pia"
+    project_type_id = "fachanwendung_einfuehrung"
+    project_name = "Demo"
+    auftraggeber = "Amt X"
+
+
+def test_fill_from_suggestion_appends_not_replaces():
+    """Ein proaktiver Vorschlag darf vorhandene Einträge nie überschreiben."""
+    svc = _interview()  # ohne LLM -> Katalog-Fallback
+    section = svc._section_by_id("hermes_pia", "kommunikation")
+
+    # Abschnitt enthält bereits einen selbst erfassten Eintrag
+    section_answer = {"extracted": [{"empfaenger": "Gemeinderat"}]}
+    svc._fill_from_suggestion(_Sess(), section, section_answer, {"kommunikation": section_answer})
+
+    rows = section_answer["extracted"]
+    # Bestehender Eintrag bleibt erhalten, Katalog-Vorschläge kommen dazu
+    assert rows[0]["empfaenger"] == "Gemeinderat"
+    assert len(rows) > 1

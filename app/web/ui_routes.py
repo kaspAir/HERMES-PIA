@@ -23,13 +23,26 @@ def interview_start():
     def _get(name, fallback=""):
         return request.form.get(name, "").strip() or fallback
 
+    # Pflichtfelder: Projektname + Projektleiter
+    project_name = _get("project_name")
+    projektleiter = _get("projektleiter")
+    if not project_name or not projektleiter:
+        method = current_app.method_service.get("hermes_pia")
+        sessions = current_app.interview_service.all_sessions()
+        return render_template("index.html", method=method, sessions=sessions,
+                               error="Projektname und Projektleiter/in sind erforderlich.",
+                               form=request.form), 400
+
     session = current_app.interview_service.start_session(
         method_id="hermes_pia",
-        project_name=_get("project_name", "Unbenanntes Projekt"),
+        project_name=project_name,
         projektnummer=_get("projektnummer") or None,
         auftraggeber=_get("auftraggeber") or None,
         verwaltungseinheit=_get("verwaltungseinheit") or None,
-        created_by=_get("projektleiter") or None,
+        geschaeftsbereich=_get("geschaeftsbereich") or None,
+        innenauftragsnummer=_get("innenauftragsnummer") or None,
+        start_datum=_get("start_datum") or None,
+        created_by=projektleiter,
     )
     return redirect(url_for("ui.interview_workspace", session_id=session.id))
 
@@ -97,10 +110,14 @@ def interview_version(session_id):
     return render_template("version_bump.html", session=session, info=info)
 
 
+def _safe_filename(name_part):
+    cleaned = "".join(c if c.isalnum() or c in " -_" else "_" for c in name_part).strip()
+    return cleaned.replace(" ", "_")
+
+
 @bp.post("/interview/<int:session_id>/version")
 def interview_version_post(session_id):
     svc = current_app.interview_service
-    gen = current_app.generation_service
     session = svc.get_session(session_id)
     if not session:
         return "Session nicht gefunden", 404
@@ -108,33 +125,64 @@ def interview_version_post(session_id):
     bump_type  = request.form.get("bump_type", "minor")
     bemerkungen = request.form.get("bemerkungen", "").strip()
 
-    new_version, changelog = svc.record_version_bump(
+    new_version, _ = svc.record_version_bump(
         session_id,
         bump_type=bump_type,
         projektleiter=session.created_by or "",
         bemerkungen=bemerkungen,
     )
 
+    # Dateiname in den URL-Pfad legen, damit der Browser den Download korrekt
+    # benennt – auch wenn der PHP-Proxy den Content-Disposition-Header entfernt.
+    safe_name = _safe_filename(session.project_name or "Projekt")
+    filename = f"{safe_name}_PIA_v{new_version}.docx"
+    return redirect(url_for("ui.interview_download", session_id=session_id, filename=filename))
+
+
+@bp.get("/interview/<int:session_id>/download/<path:filename>")
+def interview_download(session_id, filename):
+    """Generiert den PIA aus dem aktuellen Stand und liefert ihn als Download.
+
+    Der Dateiname steht im URL-Pfad (filename), damit der Browser ihn auch dann
+    übernimmt, wenn ein Proxy den Content-Disposition-Header verwirft.
+    """
+    svc = current_app.interview_service
+    gen = current_app.generation_service
+    session = svc.get_session(session_id)
+    if not session:
+        return "Session nicht gefunden", 404
+
     answers = json.loads(session.answers_json or "{}")
+    changelog = json.loads(session.changelog_json or "[]")
 
     name_part = session.project_name or "Projekt"
     name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
+
+    # Geschlecht für korrekte Rollenbezeichnung (Projektleiter/in, Auftraggeber/in)
+    pl_weiblich = ag_weiblich = False
+    if getattr(svc, "llm", None):
+        from app.domains.interview.extraction import detect_gender
+        pl_weiblich = detect_gender(svc.llm, session.created_by or "") == "w"
+        ag_weiblich = detect_gender(svc.llm, session.auftraggeber or "") == "w"
 
     metadata = {
         "projektname":        name_display,
         "projektleiter":      session.created_by or "",
         "auftraggeber":       session.auftraggeber or "",
+        "projektleiter_weiblich": pl_weiblich,
+        "auftraggeber_weiblich":  ag_weiblich,
+        "autor":              session.created_by or "",   # Autor = Projektleiter
         "verwaltungseinheit": session.verwaltungseinheit or "",
+        "geschaeftsbereich":  session.geschaeftsbereich or "",
+        "innenauftragsnummer": session.innenauftragsnummer or "",
+        "projektnummer":      session.projektnummer or "",
         "datum":              date.today().strftime("%d.%m.%Y"),
-        "version":            new_version,
+        "version":            session.doc_version or "0.1",
         "status":             "in Arbeit",
         "klassifizierung":    "Nicht klassifiziert",
     }
 
     buf = gen.generate(session.method_id, answers, metadata, changelog=changelog)
-
-    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in name_part).strip()
-    filename = f"{safe_name}_Projektinitialisierungsauftrag_v{new_version}.docx"
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
