@@ -23,13 +23,26 @@ def interview_start():
     def _get(name, fallback=""):
         return request.form.get(name, "").strip() or fallback
 
+    # Pflichtfelder: Projektname + Projektleiter
+    project_name = _get("project_name")
+    projektleiter = _get("projektleiter")
+    if not project_name or not projektleiter:
+        method = current_app.method_service.get("hermes_pia")
+        sessions = current_app.interview_service.all_sessions()
+        return render_template("index.html", method=method, sessions=sessions,
+                               error="Projektname und Projektleiter/in sind erforderlich.",
+                               form=request.form), 400
+
     session = current_app.interview_service.start_session(
         method_id="hermes_pia",
-        project_name=_get("project_name", "Unbenanntes Projekt"),
+        project_name=project_name,
         projektnummer=_get("projektnummer") or None,
         auftraggeber=_get("auftraggeber") or None,
         verwaltungseinheit=_get("verwaltungseinheit") or None,
-        created_by=_get("projektleiter") or None,
+        geschaeftsbereich=_get("geschaeftsbereich") or None,
+        innenauftragsnummer=_get("innenauftragsnummer") or None,
+        start_datum=_get("start_datum") or None,
+        created_by=projektleiter,
     )
     return redirect(url_for("ui.interview_workspace", session_id=session.id))
 
@@ -151,6 +164,9 @@ def interview_download(session_id, filename):
         "auftraggeber":       session.auftraggeber or "",
         "autor":              session.created_by or "",   # Autor = Projektleiter
         "verwaltungseinheit": session.verwaltungseinheit or "",
+        "geschaeftsbereich":  session.geschaeftsbereich or "",
+        "innenauftragsnummer": session.innenauftragsnummer or "",
+        "projektnummer":      session.projektnummer or "",
         "datum":              date.today().strftime("%d.%m.%Y"),
         "version":            session.doc_version or "0.1",
         "status":             "in Arbeit",

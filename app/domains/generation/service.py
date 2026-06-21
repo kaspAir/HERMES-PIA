@@ -35,6 +35,8 @@ COVER_FIELDS = {
     'Auftraggeber/in':              'auftraggeber',
     'Verwaltungseinheit':           'verwaltungseinheit',
     'Geschäftsbereich':             'geschaeftsbereich',
+    'Innenauftragsnr.':             'innenauftragsnummer',
+    'Projektnummer':                'projektnummer',
 }
 
 STYLE_H1 = 'Hberschrift1105pt'
@@ -116,6 +118,7 @@ class GenerationService:
         # ist robuster für spätere Template-Änderungen).
         W_R   = f'{{{W}}}r'
         W_T   = f'{{{W}}}t'
+        W_FLD = f'{{{W}}}fldSimple'
         W_SDT = f'{{{W}}}sdt'
         W_SDT_PR      = f'{{{W}}}sdtPr'
         W_SDT_CONTENT = f'{{{W}}}sdtContent'
@@ -136,6 +139,19 @@ class GenerationService:
                 continue
             value = metadata.get(key, '')
             if not value:
+                continue
+
+            # Word-Feld (z.B. DATE bei Bearbeitungsdatum) durch den statischen
+            # Wert ersetzen – sonst zeigt Word das gecachte Vorlagendatum.
+            fld = p_el.find(W_FLD)
+            if fld is not None:
+                idx = list(p_el).index(fld)
+                p_el.remove(fld)
+                r = etree.Element(W_R)
+                t = etree.SubElement(r, W_T)
+                t.text = value
+                p_el.insert(idx, r)
+                filled.add(key)
                 continue
 
             # Prüfe ob ein w:sdt-Kindelement den Wert enthält (z.B. Version-Feld)

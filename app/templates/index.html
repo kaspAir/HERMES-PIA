@@ -8,31 +8,54 @@
   <p class="hero-desc">{{ method.method.description }}</p>
 
   <form method="post" action="/interview/start" class="start-form-card">
+    {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
     <div class="form-row form-row-wide">
       <label for="project_name">Projektname <span class="required">*</span></label>
       <input type="text" id="project_name" name="project_name"
              placeholder="z.B. Digitalisierung Baubewilligungen"
+             value="{{ form.project_name if form else '' }}"
              required autofocus>
     </div>
     <div class="form-row">
-      <label for="projektnummer">Projektnummer</label>
-      <input type="text" id="projektnummer" name="projektnummer"
-             placeholder="z.B. P-2024-042">
+      <label for="projektleiter">Projektleiter/in <span class="required">*</span></label>
+      <input type="text" id="projektleiter" name="projektleiter"
+             placeholder="Name der Projektleiterin / des Projektleiters"
+             value="{{ form.projektleiter if form else '' }}" required>
     </div>
     <div class="form-row">
       <label for="auftraggeber">Auftraggeber/in</label>
       <input type="text" id="auftraggeber" name="auftraggeber"
-             placeholder="Name oder Funktion">
+             placeholder="Name oder Funktion"
+             value="{{ form.auftraggeber if form else '' }}">
     </div>
     <div class="form-row">
       <label for="verwaltungseinheit">Verwaltungseinheit</label>
       <input type="text" id="verwaltungseinheit" name="verwaltungseinheit"
-             placeholder="z.B. Amt für Digitalisierung">
+             placeholder="z.B. Amt für Digitalisierung"
+             value="{{ form.verwaltungseinheit if form else '' }}">
     </div>
     <div class="form-row">
-      <label for="projektleiter">Projektleiter/in</label>
-      <input type="text" id="projektleiter" name="projektleiter"
-             placeholder="Name der Projektleiterin / des Projektleiters">
+      <label for="geschaeftsbereich">Geschäftsbereich</label>
+      <input type="text" id="geschaeftsbereich" name="geschaeftsbereich"
+             placeholder="optional"
+             value="{{ form.geschaeftsbereich if form else '' }}">
+    </div>
+    <div class="form-row">
+      <label for="projektnummer">Projektnummer</label>
+      <input type="text" id="projektnummer" name="projektnummer"
+             placeholder="z.B. P-2024-042 (optional)"
+             value="{{ form.projektnummer if form else '' }}">
+    </div>
+    <div class="form-row">
+      <label for="innenauftragsnummer">Innenauftragsnummer</label>
+      <input type="text" id="innenauftragsnummer" name="innenauftragsnummer"
+             placeholder="optional"
+             value="{{ form.innenauftragsnummer if form else '' }}">
+    </div>
+    <div class="form-row">
+      <label for="start_datum">Start Initialisierungsphase</label>
+      <input type="date" id="start_datum" name="start_datum"
+             value="{{ form.start_datum if form else '' }}">
     </div>
     <div class="form-row-action">
       <button type="submit" class="btn-primary btn-large">
