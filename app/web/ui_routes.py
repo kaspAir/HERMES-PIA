@@ -97,10 +97,14 @@ def interview_version(session_id):
     return render_template("version_bump.html", session=session, info=info)
 
 
+def _safe_filename(name_part):
+    cleaned = "".join(c if c.isalnum() or c in " -_" else "_" for c in name_part).strip()
+    return cleaned.replace(" ", "_")
+
+
 @bp.post("/interview/<int:session_id>/version")
 def interview_version_post(session_id):
     svc = current_app.interview_service
-    gen = current_app.generation_service
     session = svc.get_session(session_id)
     if not session:
         return "Session nicht gefunden", 404
@@ -108,14 +112,35 @@ def interview_version_post(session_id):
     bump_type  = request.form.get("bump_type", "minor")
     bemerkungen = request.form.get("bemerkungen", "").strip()
 
-    new_version, changelog = svc.record_version_bump(
+    new_version, _ = svc.record_version_bump(
         session_id,
         bump_type=bump_type,
         projektleiter=session.created_by or "",
         bemerkungen=bemerkungen,
     )
 
+    # Dateiname in den URL-Pfad legen, damit der Browser den Download korrekt
+    # benennt – auch wenn der PHP-Proxy den Content-Disposition-Header entfernt.
+    safe_name = _safe_filename(session.project_name or "Projekt")
+    filename = f"{safe_name}_PIA_v{new_version}.docx"
+    return redirect(url_for("ui.interview_download", session_id=session_id, filename=filename))
+
+
+@bp.get("/interview/<int:session_id>/download/<path:filename>")
+def interview_download(session_id, filename):
+    """Generiert den PIA aus dem aktuellen Stand und liefert ihn als Download.
+
+    Der Dateiname steht im URL-Pfad (filename), damit der Browser ihn auch dann
+    übernimmt, wenn ein Proxy den Content-Disposition-Header verwirft.
+    """
+    svc = current_app.interview_service
+    gen = current_app.generation_service
+    session = svc.get_session(session_id)
+    if not session:
+        return "Session nicht gefunden", 404
+
     answers = json.loads(session.answers_json or "{}")
+    changelog = json.loads(session.changelog_json or "[]")
 
     name_part = session.project_name or "Projekt"
     name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
@@ -126,15 +151,12 @@ def interview_version_post(session_id):
         "auftraggeber":       session.auftraggeber or "",
         "verwaltungseinheit": session.verwaltungseinheit or "",
         "datum":              date.today().strftime("%d.%m.%Y"),
-        "version":            new_version,
+        "version":            session.doc_version or "0.1",
         "status":             "in Arbeit",
         "klassifizierung":    "Nicht klassifiziert",
     }
 
     buf = gen.generate(session.method_id, answers, metadata, changelog=changelog)
-
-    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in name_part).strip()
-    filename = f"{safe_name}_PIA_v{new_version}.docx"
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

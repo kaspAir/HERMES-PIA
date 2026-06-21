@@ -84,3 +84,25 @@ def test_catalog_suggestion_none_when_no_block():
     section = svc._section_by_id("hermes_pia", "sachmittel")
     # Kein 'sachmittel'-Block im Katalog -> kein Fallback
     assert svc._catalog_suggestion("fachanwendung_einfuehrung", section) is None
+
+
+class _Sess:
+    method_id = "hermes_pia"
+    project_type_id = "fachanwendung_einfuehrung"
+    project_name = "Demo"
+    auftraggeber = "Amt X"
+
+
+def test_fill_from_suggestion_appends_not_replaces():
+    """Ein proaktiver Vorschlag darf vorhandene Einträge nie überschreiben."""
+    svc = _interview()  # ohne LLM -> Katalog-Fallback
+    section = svc._section_by_id("hermes_pia", "kommunikation")
+
+    # Abschnitt enthält bereits einen selbst erfassten Eintrag
+    section_answer = {"extracted": [{"empfaenger": "Gemeinderat"}]}
+    svc._fill_from_suggestion(_Sess(), section, section_answer, {"kommunikation": section_answer})
+
+    rows = section_answer["extracted"]
+    # Bestehender Eintrag bleibt erhalten, Katalog-Vorschläge kommen dazu
+    assert rows[0]["empfaenger"] == "Gemeinderat"
+    assert len(rows) > 1
