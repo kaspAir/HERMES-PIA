@@ -149,6 +149,7 @@ def interview_download(session_id, filename):
         "projektname":        name_display,
         "projektleiter":      session.created_by or "",
         "auftraggeber":       session.auftraggeber or "",
+        "autor":              session.created_by or "",   # Autor = Projektleiter
         "verwaltungseinheit": session.verwaltungseinheit or "",
         "datum":              date.today().strftime("%d.%m.%Y"),
         "version":            session.doc_version or "0.1",

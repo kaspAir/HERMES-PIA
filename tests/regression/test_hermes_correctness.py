@@ -36,12 +36,19 @@ def test_initialisierung_has_no_phasenbericht():
         assert not any("Phasenbericht" in r.get("ergebnis", "") for r in rows), t
 
 
-def test_termine_has_three_decision_milestones():
+def test_termine_matches_template_results_and_roles():
+    # Kanonische Vorlage (Abschnitt 4.1): 8 Ergebnisse mit Abnahme-Rollen.
     rows = _catalogs().get("fachanwendung_einfuehrung").get("termine") or []
-    meilensteine = [r["ergebnis"] for r in rows if "Meilenstein" in r.get("ergebnis", "")]
-    assert len(meilensteine) == 3
-    assert any("Durchführungsfreigabe" in m for m in meilensteine)
-    assert any("Weiteres Vorgehen" in m for m in meilensteine)
+    by_ergebnis = {r["ergebnis"]: r.get("abnahme") for r in rows}
+    assert len(rows) == 8
+    assert by_ergebnis.get("Studie") == "Projektleiter"
+    assert by_ergebnis.get("Schutzbedarfsanalyse") == "ISDS-Verantwortlicher"
+    assert by_ergebnis.get("Durchführungsauftrag") == "Projektleiter"
+    # Die zwei Entscheid-Meilensteine der Ergebnistabelle
+    meilensteine = [r for r in rows if "Meilenstein" in r["ergebnis"]]
+    assert len(meilensteine) == 2
+    durchf = next(r for r in meilensteine if "Durchführungsfreigabe" in r["ergebnis"])
+    assert durchf["abnahme"] == "Auftraggeber"
 
 
 def test_no_projektauftrag_term_in_any_catalog():
