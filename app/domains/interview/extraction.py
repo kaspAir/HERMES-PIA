@@ -20,8 +20,43 @@ HERMES_RULES = (
     "- Die drei Entscheidaufgaben enden je mit einem Meilenstein: "
     "Projektinitialisierungsfreigabe, Entscheid 'Weiteres Vorgehen', Durchfuehrungsfreigabe.\n"
     "- Verantwortlichkeiten werden auf Rollenebene angegeben "
-    "(z.B. Auftraggeber, Projektleiter), nicht mit Personennamen."
+    "(z.B. Auftraggeber, Projektleiter), nicht mit Personennamen.\n"
+    "- Das steuernde Gremium heisst in HERMES 2022 'Projektausschuss' - "
+    "NIEMALS 'Steuerungsausschuss' oder 'Lenkungsausschuss'."
 )
+
+
+def estimate_risk_assessment(llm_client, beschreibung):
+    """Schaetzt EW, AG (je Tief/Mittel/Hoch) und eine Massnahme zu einem Risiko.
+
+    Interim per LLM; spaeter aus dem Mnemosyne-Korpus ableitbar.
+    """
+    if not beschreibung or not beschreibung.strip() or llm_client is None:
+        return {}
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Risikoexperte. Schaetze zu einem Risiko "
+        "die Eintrittswahrscheinlichkeit und den Auswirkungsgrad (je Tief, Mittel oder "
+        "Hoch) und schlage eine konkrete, wirksame Massnahme vor. "
+        "Antworte ausschliesslich mit validem JSON."
+    )
+    user = (
+        f"Risiko: {beschreibung}\n\n"
+        f'Rueckgabe als JSON: {{"ew": "Tief|Mittel|Hoch", "ag": "Tief|Mittel|Hoch", '
+        f'"massnahmen": "..."}}'
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=256)
+        d = _parse_json(raw) or {}
+        out = {}
+        if d.get("ew") in ("Tief", "Mittel", "Hoch"):
+            out["ew"] = d["ew"]
+        if d.get("ag") in ("Tief", "Mittel", "Hoch"):
+            out["ag"] = d["ag"]
+        if d.get("massnahmen"):
+            out["massnahmen"] = str(d["massnahmen"]).strip()
+        return out
+    except Exception:
+        return {}
 
 
 def _vocab_values(col, vocabularies):

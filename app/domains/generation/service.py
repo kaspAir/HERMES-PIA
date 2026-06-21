@@ -519,8 +519,27 @@ def _p_text(p_el):
     return ''.join(t.text or '' for t in p_el.iter(f'{{{W}}}t'))
 
 
+# Nicht-HERMES-Begriffe -> HERMES-2022-Term (deterministisches Sicherheitsnetz,
+# falls das LLM trotz Prompt-Vorgabe einen falschen Begriff verwendet).
+HERMES_TERM_FIXES = {
+    'Steuerungsausschuss': 'Projektausschuss',
+    'Lenkungsausschuss':   'Projektausschuss',
+    'Steuerungsgremium':   'Projektausschuss',
+}
+
+
+def _fix_hermes_terms(text):
+    if not text:
+        return text
+    for wrong, right in HERMES_TERM_FIXES.items():
+        if wrong in text:
+            text = text.replace(wrong, right)
+    return text
+
+
 def _set_p_text(p_el, text):
     """Ersetzt den Textinhalt eines Paragraphen, erhält Stil."""
+    text = _fix_hermes_terms(text)
     for r in list(p_el):
         if r.tag == f'{{{W}}}r':
             p_el.remove(r)

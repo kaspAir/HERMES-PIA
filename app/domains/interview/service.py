@@ -17,6 +17,7 @@ import json
 
 from app.domains.interview.extraction import (
     detect_project_type,
+    estimate_risk_assessment,
     extract_fields,
     generate_followups,
     generate_suggestion,
@@ -360,6 +361,16 @@ class InterviewService:
             row_data = followup.get("row") or {}
             new_row = {k: v for k, v in row_data.items() if k in cols and v}
             new_row[target] = suggestion
+
+            # Risiken: fehlende Eintrittswahrscheinlichkeit / Auswirkungsgrad /
+            # Massnahmen per LLM schätzen (Katalog liefert sie nicht für alle Typen).
+            if section.get("id") == "risiken" and self.llm \
+                    and (not new_row.get("ew") or not new_row.get("ag")):
+                est = estimate_risk_assessment(self.llm, new_row.get("beschreibung", "") or suggestion)
+                for k in ("ew", "ag", "massnahmen"):
+                    if k in cols and not new_row.get(k) and est.get(k):
+                        new_row[k] = est[k]
+
             rows.append(new_row)
         elif section.get("type") == "free_text":
             extracted = section_answer.get("extracted")
