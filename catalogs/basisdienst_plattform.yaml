@@ -37,16 +37,14 @@ ziele:
 # kein Phasenbericht, Verantwortung (Abnahme) auf Rollenebene.
 # ---------------------------------------------------------------------
 termine:
-  - { ergebnis: "Projektinitialisierungsfreigabe (Meilenstein)", abnahme: "Auftraggeber" }
-  - { ergebnis: "Stakeholderliste", abnahme: "Auftraggeber" }
-  - { ergebnis: "Studie (mit Variantenvergleich)", abnahme: "Auftraggeber" }
-  - { ergebnis: "Rechtsgrundlagenanalyse", abnahme: "Auftraggeber" }
-  - { ergebnis: "Schutzbedarfsanalyse (ISDS)", abnahme: "Auftraggeber" }
-  - { ergebnis: "Beschaffungsanalyse (sofern Beschaffung)", abnahme: "Auftraggeber" }
-  - { ergebnis: "Entscheid Weiteres Vorgehen (Meilenstein)", abnahme: "Auftraggeber" }
-  - { ergebnis: "Projektmanagementplan", abnahme: "Auftraggeber" }
-  - { ergebnis: "Durchführungsauftrag", abnahme: "Auftraggeber" }
-  - { ergebnis: "Durchführungsfreigabe (Meilenstein)", abnahme: "Auftraggeber / Stammorganisation" }
+  - { ergebnis: "Stakeholder-Liste", abnahme: "Projektleiter" }
+  - { ergebnis: "Studie", abnahme: "Projektleiter" }
+  - { ergebnis: "Rechtsgrundlagenanalyse", abnahme: "Projektleiter" }
+  - { ergebnis: "Schutzbedarfsanalyse", abnahme: "ISDS-Verantwortlicher" }
+  - { ergebnis: "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen; Liste Projektentscheide Führung)", abnahme: "Projektleiter" }
+  - { ergebnis: "Projektmanagementplan", abnahme: "Projektleiter" }
+  - { ergebnis: "Durchführungsauftrag", abnahme: "Projektleiter" }
+  - { ergebnis: "Meilenstein Durchführungsfreigabe (Checkliste Durchführungsfreigabe; Liste Projektentscheide Steuerung)", abnahme: "Auftraggeber" }
 
 # ---------------------------------------------------------------------
 # Typische RISIKEN (Abschnitt 7)

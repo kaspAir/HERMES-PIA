@@ -44,9 +44,10 @@ STYLE_HELP = 'HHilfstextfarbigkursiv105ptF'
 STYLE_EXAMPLE = 'HTabBeispiel85ptF'
 STYLE_DATA = 'HTabText85pt'
 
-# Rollenbezeichnungen, die für den Projektleiter stehen (normalisiert).
+# Rollenbezeichnungen, die für Projektleiter bzw. Auftraggeber stehen (normalisiert).
 PL_ROLLEN = {'projektleiter', 'projektleiterin', 'projektleiter/in',
              'projektleitung', 'pl'}
+AG_ROLLEN = {'auftraggeber', 'auftraggeberin', 'auftraggeber/in', 'ag'}
 
 
 class GenerationService:
@@ -261,7 +262,14 @@ class GenerationService:
         if not data_rows:
             return
 
+        # Rolle -> Personenname (Projektleiter/Auftraggeber), wo bekannt.
+        name_by_role = {}
         pl_name = (metadata or {}).get('projektleiter', '')
+        ag_name = (metadata or {}).get('auftraggeber', '')
+        if pl_name:
+            name_by_role.update({r: pl_name for r in PL_ROLLEN})
+        if ag_name:
+            name_by_role.update({r: ag_name for r in AG_ROLLEN})
 
         has_nr = any(c.get('id') == 'nr' for c in section.get('columns', []))
         columns = [c['id'] for c in section.get('columns', []) if c.get('id') != 'nr']
@@ -306,12 +314,14 @@ class GenerationService:
                     except (ValueError, TypeError):
                         pass
 
-            # Projektleiter-Name eintragen, wo die Rolle bekannt ist und eine
-            # Name-Spalte existiert (z.B. Personalaufwand-Zeile "Projektleiter").
-            if pl_name and 'name' in columns and 'rolle' in columns \
-                    and not str(data.get('name', '')).strip() \
-                    and _normalize(str(data.get('rolle', ''))) in PL_ROLLEN:
-                data['name'] = pl_name
+            # Personenname eintragen, wo die Rolle bekannt ist und eine
+            # Name-Spalte existiert (z.B. Personalaufwand-Zeile "Projektleiter"
+            # oder "Auftraggeber").
+            if name_by_role and 'name' in columns and 'rolle' in columns \
+                    and not str(data.get('name', '')).strip():
+                nm = name_by_role.get(_normalize(str(data.get('rolle', ''))))
+                if nm:
+                    data['name'] = nm
 
             # Alle Zellen in Reihenfolge sammeln – inkl. SDT-umhüllter Zellen
             # (Dropdown-/Combobox-Spalten liegen als <w:sdt><w:sdtContent><w:tc> vor)

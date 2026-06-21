@@ -24,11 +24,28 @@ HERMES_RULES = (
 )
 
 
-def extract_fields(llm_client, section, raw_text):
+def _vocab_values(col, vocabularies):
+    """Loest den Vokabular-Verweis einer Spalte in die erlaubten Werte auf.
+
+    In der method.yaml steht `vocabulary: zielkategorie` (ein NAME). Die echten
+    Werte liegen unter `vocabularies[name]`. Ohne diese Aufloesung wuerde der
+    Name als String zeichenweise zerlegt (z, i, e, l, ...) und das LLM ein
+    einzelnes Zeichen waehlen.
+    """
+    vocab = col.get("vocabulary")
+    if isinstance(vocab, str):
+        return list((vocabularies or {}).get(vocab, []))
+    if isinstance(vocab, list):
+        return vocab
+    return []
+
+
+def extract_fields(llm_client, section, raw_text, vocabularies=None):
     if section.get("type") == "free_text":
         return _extract_free_text(llm_client, section["title"], raw_text)
     if section.get("type") == "table":
-        return _extract_table(llm_client, section["title"], section.get("columns", []), raw_text)
+        return _extract_table(llm_client, section["title"], section.get("columns", []),
+                              raw_text, vocabularies or {})
     return {}
 
 
@@ -84,15 +101,15 @@ def _extract_free_text(llm_client, section_title, raw_text):
         return {"text": raw_text}
 
 
-def _extract_table(llm_client, section_title, columns, raw_text):
+def _extract_table(llm_client, section_title, columns, raw_text, vocabularies=None):
     col_parts = []
     for c in columns:
         if c["id"] == "nr":
             continue
         label = c.get("label", c["id"])
-        vocab = c.get("vocabulary", [])
-        if vocab:
-            col_parts.append(f"{c['id']} ({label}) [erlaubte Werte: {', '.join(vocab)}]")
+        values = _vocab_values(c, vocabularies)
+        if values:
+            col_parts.append(f"{c['id']} ({label}) [erlaubte Werte: {', '.join(values)}]")
         else:
             col_parts.append(f"{c['id']} ({label})")
     col_desc = "\n".join(f"  - {p}" for p in col_parts)
@@ -165,7 +182,7 @@ def generate_followups(llm_client, section, raw_text):
         return []
 
 
-def generate_suggestion(llm_client, section, context):
+def generate_suggestion(llm_client, section, context, vocabularies=None):
     """Erzeugt einen proaktiven Vorschlag fuer einen leeren Abschnitt.
 
     'context' ist ein Kurztext mit dem bisher Bekannten (Projektname, -typ,
@@ -176,20 +193,20 @@ def generate_suggestion(llm_client, section, context):
     oder None/[] wenn nichts Sinnvolles erzeugt werden konnte.
     """
     if section.get("type") == "table":
-        return _suggest_table(llm_client, section, context)
+        return _suggest_table(llm_client, section, context, vocabularies or {})
     if section.get("type") == "free_text":
         return _suggest_free_text(llm_client, section, context)
     return None
 
 
-def _suggest_table(llm_client, section, context):
+def _suggest_table(llm_client, section, context, vocabularies=None):
     columns = [c for c in section.get("columns", []) if c.get("id") != "nr"]
     col_parts = []
     for c in columns:
         label = c.get("label", c["id"])
-        vocab = c.get("vocabulary", [])
-        if vocab:
-            col_parts.append(f"{c['id']} ({label}) [erlaubte Werte: {', '.join(vocab)}]")
+        values = _vocab_values(c, vocabularies)
+        if values:
+            col_parts.append(f"{c['id']} ({label}) [erlaubte Werte: {', '.join(values)}]")
         else:
             col_parts.append(f"{c['id']} ({label})")
     col_desc = "\n".join(f"  - {p}" for p in col_parts)

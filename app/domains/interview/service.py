@@ -26,6 +26,9 @@ from app.domains.interview.models import InterviewSession
 from app.shared.database import SessionLocal
 
 _INTERVIEWABLE = {"free_text", "table"}
+# Abschnitte, deren Inhalt durch HERMES verbindlich vorgegeben ist: hier ist der
+# Referenzkatalog massgebend, nicht die freie LLM-Erfindung.
+CATALOG_FIRST_SECTIONS = {"termine"}
 _AVAILABLE_PROJECT_TYPES = [
     {
         "id": "fachanwendung_einfuehrung",
@@ -177,7 +180,7 @@ class InterviewService:
             raise ValueError("Kein offener Frageabschnitt")
 
         section = state["section"]
-        extracted = self._extract(section, raw_text)
+        extracted = self._extract(section, raw_text, self._vocabularies(session.method_id))
 
         entry = {
             "raw_text": raw_text,
@@ -243,10 +246,17 @@ class InterviewService:
     def _fill_from_suggestion(self, session, section, section_answer, answers):
         """Erzeugt einen proaktiven Vorschlag (LLM, sonst Katalog) und übernimmt ihn."""
         context = self._suggestion_context(session, answers)
-        suggestion = None
-        if self.llm:
-            suggestion = generate_suggestion(self.llm, section, context)
+        vocabularies = self._vocabularies(session.method_id)
 
+        # Für Abschnitte mit verbindlicher HERMES-Vorgabe (Ergebnisse/Termine)
+        # ist der Katalog massgebend – das LLM darf hier nicht frei erfinden.
+        catalog_first = section.get("id") in CATALOG_FIRST_SECTIONS
+
+        suggestion = None
+        if catalog_first:
+            suggestion = self._catalog_suggestion(session.project_type_id, section)
+        if not suggestion and self.llm:
+            suggestion = generate_suggestion(self.llm, section, context, vocabularies)
         # Fallback auf den Referenzkatalog, wenn das LLM nichts Brauchbares liefert.
         if not suggestion:
             suggestion = self._catalog_suggestion(session.project_type_id, section)
@@ -293,10 +303,15 @@ class InterviewService:
                 parts.append(f"{sid}: {joined}")
         return "\n".join(parts) or "(noch keine weiteren Angaben)"
 
+    def _vocabularies(self, method_id):
+        return self.methods.get(method_id).get("vocabularies", {})
+
     def _catalog_suggestion(self, project_type_id, section):
         """Liest einen Vorschlag aus dem Referenzkatalog (Fallback)."""
+        # Falls der Projekttyp (noch) nicht erkannt wurde, trotzdem einen
+        # sinnvollen Standard-Katalog heranziehen, damit Vorschläge nie leer sind.
         if not project_type_id:
-            return None
+            project_type_id = _AVAILABLE_PROJECT_TYPES[0]["id"]
         catalog = self.catalogs.get(project_type_id) or {}
         entries = catalog.get(section["id"])
         if not entries or not isinstance(entries, list):
@@ -372,12 +387,12 @@ class InterviewService:
     def _pending_followups(self, section_answer):
         return [f for f in section_answer.get("followups", []) if f.get("status") == "pending"]
 
-    def _extract(self, section, raw_text):
+    def _extract(self, section, raw_text, vocabularies=None):
         if not raw_text or not raw_text.strip():
             return {"text": ""} if section.get("type") == "free_text" else []
         if not self.llm:
             return {"text": raw_text} if section.get("type") == "free_text" else []
-        return extract_fields(self.llm, section, raw_text)
+        return extract_fields(self.llm, section, raw_text, vocabularies or {})
 
     def _detect_type(self, text):
         if not self.llm:
