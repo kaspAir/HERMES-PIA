@@ -92,13 +92,17 @@ class InterviewService:
     # ------------------------------------------------------------------ #
 
     def start_session(self, method_id, project_name, created_by=None,
-                      projektnummer=None, auftraggeber=None, verwaltungseinheit=None):
+                      projektnummer=None, auftraggeber=None, verwaltungseinheit=None,
+                      geschaeftsbereich=None, innenauftragsnummer=None, start_datum=None):
         session = InterviewSession(
             method_id=method_id,
             project_name=project_name,
             projektnummer=projektnummer,
             auftraggeber=auftraggeber,
             verwaltungseinheit=verwaltungseinheit,
+            geschaeftsbereich=geschaeftsbereich,
+            innenauftragsnummer=innenauftragsnummer,
+            start_datum=start_datum,
             created_by=created_by,
             answers_json="{}",
         )
@@ -264,6 +268,11 @@ class InterviewService:
         if not suggestion:
             return
 
+        # Ergebnisse/Termine: Liefertermine relativ zum Start der Initialisierung
+        # berechnen (Startdatum aus dem Formular, sonst heute).
+        if section.get("id") == "termine" and isinstance(suggestion, list):
+            _assign_termine_dates(suggestion, session.start_datum)
+
         # Anhängen statt ersetzen: vorhandene Einträge dürfen nie verloren gehen,
         # auch wenn der Vorschlag versehentlich für einen gefüllten Abschnitt käme.
         if section.get("type") == "table" and isinstance(suggestion, list):
@@ -341,12 +350,17 @@ class InterviewService:
             if not isinstance(rows, list):
                 rows = []
                 section_answer["extracted"] = rows
-            cols = [c for c in section.get("columns", []) if c.get("id") != "nr"]
+            cols = [c["id"] for c in section.get("columns", []) if c.get("id") != "nr"]
             if not cols:
                 return
             # Hauptspalte: 'beschreibung' bevorzugt, sonst erste Nicht-Nr-Spalte
-            target = next((c["id"] for c in cols if c["id"] == "beschreibung"), cols[0]["id"])
-            rows.append({target: suggestion})
+            target = "beschreibung" if "beschreibung" in cols else cols[0]
+            # Strukturierte Felder aus dem Katalog (z.B. ew/ag/massnahmen)
+            # übernehmen; Hauptspalte ggf. mit diktiertem Text überschreiben.
+            row_data = followup.get("row") or {}
+            new_row = {k: v for k, v in row_data.items() if k in cols and v}
+            new_row[target] = suggestion
+            rows.append(new_row)
         elif section.get("type") == "free_text":
             extracted = section_answer.get("extracted")
             if not isinstance(extracted, dict):
@@ -538,6 +552,27 @@ class InterviewService:
 # ------------------------------------------------------------------ #
 # Modul-Hilfsfunktionen                                                #
 # ------------------------------------------------------------------ #
+
+def _assign_termine_dates(rows, start_datum_str):
+    """Setzt je Ergebnis einen Liefertermin relativ zum Initialisierungs-Start.
+
+    Basis: angegebenes Startdatum (ISO), sonst heute. Die Default-Dauern
+    (Wochen ab Start) sind Heuristik – später aus Mnemosyne ableitbar.
+    """
+    from datetime import date as _date, timedelta as _timedelta
+    try:
+        base = _date.fromisoformat(start_datum_str) if start_datum_str else _date.today()
+    except (ValueError, TypeError):
+        base = _date.today()
+    # An die 8 kanonischen Initialisierungs-Ergebnisse angelehnte Wochen-Offsets.
+    wochen = [1, 4, 4, 5, 6, 7, 8, 9]
+    for i, r in enumerate(rows):
+        if not isinstance(r, dict) or r.get("termin"):
+            continue
+        w = wochen[i] if i < len(wochen) else (i + 1)
+        r["termin"] = (base + _timedelta(weeks=w)).strftime("%d.%m.%Y")
+    return rows
+
 
 def _bump_version(version_str, bump_type):
     """

@@ -14,6 +14,10 @@ class InterviewSession(Base, GovernanceMixin):
     projektnummer = Column(String(100), nullable=True)
     auftraggeber = Column(String(200), nullable=True)
     verwaltungseinheit = Column(String(200), nullable=True)
+    geschaeftsbereich = Column(String(200), nullable=True)
+    innenauftragsnummer = Column(String(100), nullable=True)
+    # Geplanter Start der Phase Initialisierung (ISO-Datum); leer -> heute
+    start_datum = Column(String(20), nullable=True)
     # Antworten je Abschnitt als JSON-Text (MVP - bewusst simpel).
     answers_json = Column(Text, default="{}")
     # Versionsverwaltung

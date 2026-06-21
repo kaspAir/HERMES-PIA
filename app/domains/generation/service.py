@@ -35,6 +35,8 @@ COVER_FIELDS = {
     'Auftraggeber/in':              'auftraggeber',
     'Verwaltungseinheit':           'verwaltungseinheit',
     'Geschäftsbereich':             'geschaeftsbereich',
+    'Innenauftragsnr.':             'innenauftragsnummer',
+    'Projektnummer':                'projektnummer',
 }
 
 STYLE_H1 = 'Hberschrift1105pt'
@@ -48,6 +50,21 @@ STYLE_DATA = 'HTabText85pt'
 PL_ROLLEN = {'projektleiter', 'projektleiterin', 'projektleiter/in',
              'projektleitung', 'pl'}
 AG_ROLLEN = {'auftraggeber', 'auftraggeberin', 'auftraggeber/in', 'ag'}
+
+# Risikostufen -> Zahlenwert für die Risikozahl (EW × AG).
+RISK_LEVELS = {'tief': 1, 'niedrig': 1, 'gering': 1, 'klein': 1,
+               'mittel': 2, 'hoch': 3, 'gross': 3, 'sehr hoch': 3}
+
+
+def _risk_num(value):
+    """Wandelt eine Risikostufe (Tief/Mittel/Hoch oder Zahl) in eine Zahl."""
+    s = _normalize(str(value))
+    if s in RISK_LEVELS:
+        return RISK_LEVELS[s]
+    try:
+        return int(str(value).strip())
+    except (ValueError, TypeError):
+        return 0
 
 
 class GenerationService:
@@ -116,6 +133,7 @@ class GenerationService:
         # ist robuster für spätere Template-Änderungen).
         W_R   = f'{{{W}}}r'
         W_T   = f'{{{W}}}t'
+        W_FLD = f'{{{W}}}fldSimple'
         W_SDT = f'{{{W}}}sdt'
         W_SDT_PR      = f'{{{W}}}sdtPr'
         W_SDT_CONTENT = f'{{{W}}}sdtContent'
@@ -136,6 +154,19 @@ class GenerationService:
                 continue
             value = metadata.get(key, '')
             if not value:
+                continue
+
+            # Word-Feld (z.B. DATE bei Bearbeitungsdatum) durch den statischen
+            # Wert ersetzen – sonst zeigt Word das gecachte Vorlagendatum.
+            fld = p_el.find(W_FLD)
+            if fld is not None:
+                idx = list(p_el).index(fld)
+                p_el.remove(fld)
+                r = etree.Element(W_R)
+                t = etree.SubElement(r, W_T)
+                t.text = value
+                p_el.insert(idx, r)
+                filled.add(key)
                 continue
 
             # Prüfe ob ein w:sdt-Kindelement den Wert enthält (z.B. Version-Feld)
@@ -262,14 +293,21 @@ class GenerationService:
         if not data_rows:
             return
 
-        # Rolle -> Personenname (Projektleiter/Auftraggeber), wo bekannt.
+        # Rolle -> Personenname (Projektleiter/Auftraggeber), wo bekannt, plus
+        # geschlechtsgerechte Rollenbezeichnung (Projektleiter/in, Auftraggeber/in).
+        md = metadata or {}
         name_by_role = {}
-        pl_name = (metadata or {}).get('projektleiter', '')
-        ag_name = (metadata or {}).get('auftraggeber', '')
+        gendered_label = {}
+        pl_name = md.get('projektleiter', '')
+        ag_name = md.get('auftraggeber', '')
         if pl_name:
             name_by_role.update({r: pl_name for r in PL_ROLLEN})
+            pl_lbl = 'Projektleiterin' if md.get('projektleiter_weiblich') else 'Projektleiter'
+            gendered_label.update({r: pl_lbl for r in PL_ROLLEN})
         if ag_name:
             name_by_role.update({r: ag_name for r in AG_ROLLEN})
+            ag_lbl = 'Auftraggeberin' if md.get('auftraggeber_weiblich') else 'Auftraggeber'
+            gendered_label.update({r: ag_lbl for r in AG_ROLLEN})
 
         has_nr = any(c.get('id') == 'nr' for c in section.get('columns', []))
         columns = [c['id'] for c in section.get('columns', []) if c.get('id') != 'nr']
@@ -306,22 +344,22 @@ class GenerationService:
                 expr = col.get('computed', '')
                 if expr and not data.get(cid):
                     parts = [p.strip() for p in expr.split('*')]
-                    try:
-                        result = 1
-                        for p in parts:
-                            result *= int(data.get(p) or 0)
-                        data[cid] = str(result) if result else ''
-                    except (ValueError, TypeError):
-                        pass
+                    result = 1
+                    for p in parts:
+                        result *= _risk_num(data.get(p))
+                    data[cid] = str(result) if result else ''
 
-            # Personenname eintragen, wo die Rolle bekannt ist und eine
-            # Name-Spalte existiert (z.B. Personalaufwand-Zeile "Projektleiter"
-            # oder "Auftraggeber").
-            if name_by_role and 'name' in columns and 'rolle' in columns \
-                    and not str(data.get('name', '')).strip():
-                nm = name_by_role.get(_normalize(str(data.get('rolle', ''))))
+            # Personenname + geschlechtsgerechte Rolle eintragen, wo die Rolle
+            # bekannt ist und eine Name-Spalte existiert (z.B. Personalaufwand-
+            # Zeile "Projektleiter"/"Auftraggeber").
+            if name_by_role and 'name' in columns and 'rolle' in columns:
+                norm_rolle = _normalize(str(data.get('rolle', '')))
+                nm = name_by_role.get(norm_rolle)
                 if nm:
-                    data['name'] = nm
+                    if not str(data.get('name', '')).strip():
+                        data['name'] = nm
+                    if norm_rolle in gendered_label:
+                        data['rolle'] = gendered_label[norm_rolle]
 
             # Alle Zellen in Reihenfolge sammeln – inkl. SDT-umhüllter Zellen
             # (Dropdown-/Combobox-Spalten liegen als <w:sdt><w:sdtContent><w:tc> vor)

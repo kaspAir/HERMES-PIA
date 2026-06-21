@@ -56,6 +56,17 @@ body {
   user-select: text;
 }
 
+/* ---- Formular-Fehlermeldung ---- */
+.form-error {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+
 /* ---- Marken-Leiste (Logo) ---- */
 .brand-bar {
   background: #ffffff;

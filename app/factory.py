@@ -28,6 +28,9 @@ def _migrate_db(engine):
         ("doc_version",         "VARCHAR(20)"),
         ("changelog_json",      "TEXT"),
         ("last_snapshot_json",  "TEXT"),
+        ("geschaeftsbereich",   "VARCHAR(200)"),
+        ("innenauftragsnummer", "VARCHAR(100)"),
+        ("start_datum",         "VARCHAR(20)"),
     ]
     with engine.connect() as conn:
         for col, dtype in new_cols:

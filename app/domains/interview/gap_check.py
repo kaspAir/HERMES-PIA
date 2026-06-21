@@ -32,13 +32,24 @@ def find_missing_risks(entered_risks, catalog_risks):
 
 
 def build_followups(missing_risks):
-    """Verwandelt fehlende Risiken in konkrete Nachfragen fuer das Interview."""
+    """Verwandelt fehlende Risiken in konkrete Nachfragen fuer das Interview.
+
+    'row' traegt die strukturierten Felder (Eintrittswahrscheinlichkeit,
+    Auswirkungsgrad, Massnahmen) mit, damit sie beim Aufnehmen direkt in die
+    Risikotabelle uebernommen werden koennen.
+    """
     return [
         {
             "risk_id": r["id"],
             "frage": r.get("nachfrage", "").strip()
             or f"Das Risiko \"{r['beschreibung']}\" ist typisch - bewusst weggelassen?",
             "vorschlag": r["beschreibung"],
+            "row": {
+                "beschreibung": r["beschreibung"],
+                "ew": r.get("ew", ""),
+                "ag": r.get("ag", ""),
+                "massnahmen": r.get("massnahmen", ""),
+            },
         }
         for r in missing_risks
     ]
