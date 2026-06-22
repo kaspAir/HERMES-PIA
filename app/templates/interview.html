@@ -32,11 +32,8 @@
           <span class="section-number">{{ s.number }}</span>
           <span class="section-title-short">{{ s.title }}</span>
           {% if s.status == 'done' %}
-            <form method="post"
-                  action="{{ url_for('ui.interview_edit', session_id=session.id, section_id=s.id) }}"
-                  class="edit-section-form">
-              <button type="submit" class="btn-edit-section" title="Abschnitt bearbeiten">&#9998;</button>
-            </form>
+            <a href="{{ url_for('ui.interview_edit', session_id=session.id, section_id=s.id) }}"
+               class="btn-edit-section" title="Abschnitt bearbeiten">&#9998;</a>
           {% endif %}
         </li>
       {% endfor %}
