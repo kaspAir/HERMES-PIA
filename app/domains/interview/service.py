@@ -121,6 +121,17 @@ class InterviewService:
             InterviewSession.created_at.desc()
         ).all()
 
+    def delete_session(self, session_id):
+        """Löscht eine Session (PIA) endgültig. Archivierung folgt später mit
+        Benutzerverwaltung."""
+        db = SessionLocal()
+        s = db.get(InterviewSession, int(session_id))
+        if s is None:
+            return False
+        db.delete(s)
+        db.commit()
+        return True
+
     # ------------------------------------------------------------------ #
     # Zustand                                                              #
     # ------------------------------------------------------------------ #
@@ -378,7 +389,13 @@ class InterviewService:
                 extracted = {"text": ""}
                 section_answer["extracted"] = extracted
             existing = extracted.get("text", "")
-            extracted["text"] = f"{existing}\n{suggestion}".strip() if existing else suggestion
+            combined = f"{existing}\n{suggestion}".strip() if existing else suggestion
+            # Antwort auf eine Rückfrage NICHT 1:1 übernehmen, sondern den
+            # gesamten Abschnitt neu sauber formulieren lassen.
+            if self.llm:
+                result = extract_fields(self.llm, section, combined)
+                combined = (result or {}).get("text") or combined
+            extracted["text"] = combined
 
     # ------------------------------------------------------------------ #
     # Bestehende oeffentliche API (Rueckwaertskompatibilitaet / Tests)    #
@@ -455,6 +472,33 @@ class InterviewService:
         if section_id in answers:
             del answers[section_id]
             self._persist_answers(session, answers)
+
+    def section_text(self, session, section_id):
+        """Aktuell formulierter Freitext eines Abschnitts (zum Vorladen beim Bearbeiten)."""
+        entry = self._answers(session).get(section_id) or {}
+        extracted = entry.get("extracted")
+        if isinstance(extracted, dict):
+            return extracted.get("text", "") or entry.get("raw_text", "")
+        return ""
+
+    def update_free_text(self, session_id, section_id, raw_text):
+        """Übernimmt den bearbeiteten Freitext und lässt ihn neu sauber formulieren."""
+        session = self.get_session(session_id)
+        section = self._section_by_id(session.method_id, section_id)
+        if not section or section.get("type") != "free_text":
+            return False
+        text = raw_text or ""
+        if self.llm and text.strip():
+            result = extract_fields(self.llm, section, text)
+            text = (result or {}).get("text") or text
+        answers = self._answers(session)
+        entry = answers.get(section_id) or {}
+        entry["extracted"] = {"text": text}
+        entry["raw_text"] = raw_text
+        entry["complete"] = bool(text.strip())
+        answers[section_id] = entry
+        self._persist_answers(session, answers)
+        return True
 
     # ------------------------------------------------------------------ #
     # Preview-Daten für die Live-Vorschau                                  #

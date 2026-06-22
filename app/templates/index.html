@@ -85,7 +85,15 @@
         <td>{{ s.project_type_id or '–' }}</td>
         <td>{{ s.status }}</td>
         <td>{{ s.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-        <td><a href="/interview/{{ s.id }}" class="btn-link">Weiter</a></td>
+        <td class="session-actions">
+          <a href="/interview/{{ s.id }}" class="btn-link">Weiter</a>
+          <form method="post"
+                action="{{ url_for('ui.interview_delete', session_id=s.id) }}"
+                onsubmit="return confirm('PIA «{{ s.project_name }}» wirklich löschen? Das kann nicht rückgängig gemacht werden.');"
+                class="inline-form">
+            <button type="submit" class="btn-link btn-delete" title="PIA löschen">Löschen</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

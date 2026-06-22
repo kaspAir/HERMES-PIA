@@ -91,10 +91,36 @@ def interview_followup(session_id):
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
-@bp.post("/interview/<int:session_id>/edit/<section_id>")
+@bp.post("/interview/<int:session_id>/delete")
+def interview_delete(session_id):
+    """Löscht eine Session (PIA) endgültig."""
+    current_app.interview_service.delete_session(session_id)
+    return redirect(url_for("ui.index"))
+
+
+@bp.get("/interview/<int:session_id>/edit/<section_id>")
 def interview_edit(session_id, section_id):
-    """Setzt einen Abschnitt zurück, damit er neu beantwortet werden kann."""
-    current_app.interview_service.reset_section(session_id, section_id)
+    """Bearbeiten: Freitext mit vorgeladenem Inhalt; Tabellen werden zurückgesetzt."""
+    svc = current_app.interview_service
+    session = svc.get_session(session_id)
+    if not session:
+        return "Session nicht gefunden", 404
+    section = svc._section_by_id(session.method_id, section_id)
+    if not section:
+        return "Abschnitt nicht gefunden", 404
+    if section.get("type") == "free_text":
+        return render_template("edit_section.html", session=session, section=section,
+                               text=svc.section_text(session, section_id))
+    # Tabellen: wie bisher zurücksetzen und neu beantworten
+    svc.reset_section(session_id, section_id)
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
+@bp.post("/interview/<int:session_id>/edit/<section_id>")
+def interview_edit_save(session_id, section_id):
+    """Speichert den bearbeiteten Freitext und lässt ihn neu formulieren."""
+    raw_text = request.form.get("raw_text", "").strip()
+    current_app.interview_service.update_free_text(session_id, section_id, raw_text)
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 

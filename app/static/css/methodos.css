@@ -302,8 +302,9 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
 
 /* ---- Edit-Button in Fortschrittsliste ---- */
 .section-item { position: relative; }
-.edit-section-form { display: inline; margin-left: auto; flex-shrink: 0; }
 .btn-edit-section {
+  margin-left: auto;
+  flex-shrink: 0;
   background: none;
   border: none;
   color: rgba(255,255,255,.35);
@@ -311,6 +312,7 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
   font-size: 12px;
   padding: 1px 4px;
   border-radius: 3px;
+  text-decoration: none;
   transition: color .15s, background .15s;
 }
 .btn-edit-section:hover { color: #fff; background: rgba(255,255,255,.12); }
@@ -624,14 +626,80 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
 
 .vb-actions { display: flex; gap: 12px; align-items: center; }
 
-/* ---- Responsive ---- */
-@media (max-width: 900px) {
-  .preview-panel { display: none; }
-  .interview-main { flex: 1; max-width: 100%; border-right: none; }
+/* ---- Aktionen in der Sessions-Liste (Weiter / Löschen) ---- */
+.session-actions { display: flex; gap: 14px; align-items: center; }
+.inline-form { display: inline; margin: 0; }
+.btn-delete {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  color: var(--color-primary);
 }
-@media (max-width: 700px) {
-  .interview-layout { flex-direction: column; }
-  .progress-panel   { width: 100%; min-width: unset; flex-direction: row; flex-wrap: wrap; }
-  .section-list     { display: none; }
-  .interview-main   { padding: 20px 16px; }
+.btn-delete:hover { text-decoration: underline; }
+
+/* ---- Abschnitt bearbeiten ---- */
+.edit-page { max-width: 720px; padding: 32px 28px; margin: 0 auto; }
+.edit-hint {
+  color: var(--color-muted);
+  font-size: 14px;
+  margin: 10px 0 18px;
+  line-height: 1.5;
+}
+
+/* ---- Responsive ---- */
+/* Tablet: alles vertikal stapeln, Vorschau bleibt sichtbar (statt versteckt) */
+@media (max-width: 980px) {
+  .interview-layout { flex-direction: column; min-height: 0; }
+  .progress-panel {
+    width: 100%;
+    min-width: 0;
+    padding: 16px 18px;
+  }
+  .section-list { max-height: 200px; }
+  .interview-main {
+    flex: 1 1 auto;
+    max-width: 100%;
+    border-right: none;
+    padding: 26px 22px;
+  }
+  .preview-panel {
+    flex: 1 1 auto;
+    max-width: 100%;
+    min-width: 0;
+    border-top: 2px solid var(--color-border);
+    max-height: 60vh;
+  }
+  .preview-section { overflow-x: auto; }
+}
+
+/* Smartphone: einspaltiges Startformular, kompakter Header */
+@media (max-width: 600px) {
+  main { padding: 20px 16px; }
+  main.wide { padding: 0; }
+  header { padding: 12px 16px; font-size: 14px; }
+  .brand-bar { padding: 8px 16px; }
+  .brand-logo { height: 30px; }
+  .env-banner { padding: 6px 16px; font-size: 12px; }
+
+  .start-form-card {
+    grid-template-columns: 1fr;
+    max-width: 100%;
+    padding: 20px 18px;
+  }
+
+  .interview-main { padding: 18px 14px; }
+  .preview-panel { max-height: none; }
+  .preview-table { font-size: 11px; }
+
+  .sessions-table { font-size: 13px; }
+  .sessions-table th, .sessions-table td { padding: 9px 10px; }
+  .session-actions { gap: 10px; flex-wrap: wrap; }
+
+  .edit-page { padding: 20px 16px; }
+
+  /* Versions-Badge auf sehr kleinen Screens ausblenden – stört sonst */
+  .app-version-badge { display: none; }
 }

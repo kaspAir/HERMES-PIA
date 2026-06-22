@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Bearbeiten – {{ section.title }}{% endblock %}
+
+{% block content %}
+<div class="edit-page">
+  <div class="section-header">
+    <span class="section-num-badge">{{ section.number }}</span>
+    <h2>{{ section.title }} bearbeiten</h2>
+  </div>
+
+  <p class="edit-hint">
+    Setzen Sie den Cursor an die Stelle, an der Sie etwas ergänzen möchten (auch am
+    Ende), und sprechen oder tippen Sie den Zusatz. Beim Speichern formuliert
+    HERMES&nbsp;PIA den gesamten Abschnitt neu und sauber.
+  </p>
+
+  <form method="post"
+        action="{{ url_for('ui.interview_edit_save', session_id=session.id, section_id=section.id) }}">
+    <div class="answer-area">
+      <textarea id="answer-text" name="raw_text" rows="12">{{ text }}</textarea>
+      <button type="button" id="voice-btn" class="btn-voice" title="Spracheingabe starten">
+        &#127908; Sprechen
+      </button>
+      <div id="voice-status" class="voice-status"></div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Speichern &amp; neu formulieren</button>
+      <a href="{{ url_for('ui.interview_workspace', session_id=session.id) }}"
+         class="btn-link">Abbrechen</a>
+    </div>
+  </form>
+</div>
+
+<script>
+(function () {
+  var ta = document.getElementById('answer-text');
+  var btn = document.getElementById('voice-btn');
+  var statusEl = document.getElementById('voice-status');
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { if (btn) btn.style.display = 'none'; return; }
+
+  var rec = new SR();
+  rec.lang = 'de-CH';
+  rec.continuous = true;
+  rec.interimResults = false;   // nur finale Ergebnisse an der Cursorposition einfügen
+  var active = false;
+
+  function insertAtCursor(text) {
+    var start = ta.selectionStart, end = ta.selectionEnd;
+    var before = ta.value.substring(0, start);
+    var after = ta.value.substring(end);
+    var sep = (before && !/\s$/.test(before)) ? ' ' : '';
+    ta.value = before + sep + text + after;
+    var pos = (before + sep + text).length;
+    ta.selectionStart = ta.selectionEnd = pos;
+    ta.focus();
+  }
+
+  rec.onresult = function (e) {
+    var finalT = '';
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) finalT += e.results[i][0].transcript;
+    }
+    finalT = finalT.trim();
+    if (finalT) insertAtCursor(finalT);
+  };
+  rec.onend = function () { if (active) rec.start(); };
+
+  btn.addEventListener('click', function () {
+    active = !active;
+    if (active) {
+      try { rec.start(); } catch (err) {}
+      btn.classList.add('recording');
+      statusEl.textContent = 'Aufnahme läuft – Cursor bestimmt die Einfügestelle …';
+    } else {
+      rec.stop();
+      btn.classList.remove('recording');
+      statusEl.textContent = '';
+    }
+  });
+})();
+</script>
+{% endblock %}
