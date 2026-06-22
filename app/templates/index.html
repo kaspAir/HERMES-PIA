@@ -7,6 +7,7 @@
   </h1>
   <p class="hero-desc">{{ method.method.description }}</p>
 
+  {% if current_user and current_user.can_write %}
   <form method="post" action="/interview/start" class="start-form-card">
     {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
     <div class="form-row form-row-wide">
@@ -63,6 +64,7 @@
       </button>
     </div>
   </form>
+  {% endif %}
 </div>
 
 {% if sessions %}
@@ -86,13 +88,15 @@
         <td>{{ s.status }}</td>
         <td>{{ s.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
         <td class="session-actions">
-          <a href="/interview/{{ s.id }}" class="btn-link">Weiter</a>
+          <a href="/interview/{{ s.id }}" class="btn-link">{{ 'Weiter' if current_user.can_write else 'Ansehen' }}</a>
+          {% if current_user and current_user.can_delete %}
           <form method="post"
                 action="{{ url_for('ui.interview_delete', session_id=s.id) }}"
                 onsubmit="return confirm('PIA «{{ s.project_name }}» wirklich löschen? Das kann nicht rückgängig gemacht werden.');"
                 class="inline-form">
             <button type="submit" class="btn-link btn-delete" title="PIA löschen">Löschen</button>
           </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

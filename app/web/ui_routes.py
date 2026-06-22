@@ -1,7 +1,16 @@
 import json
 from datetime import date
 
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request, send_file, url_for
+from flask import (
+    Blueprint, abort, current_app, jsonify, redirect, render_template, request,
+    send_file, url_for,
+)
+
+from app.domains.auth.models import ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from app.web.auth import (
+    current_user, login_required, login_user, logout_user, permission_required,
+    roles_required,
+)
 
 bp = Blueprint("ui", __name__)
 
@@ -11,24 +20,74 @@ def health():
     return jsonify({"status": "ok", "service": "methodos"})
 
 
+# ---- Mandantentrennung: Session laden + Zugriff prüfen ---------------- #
+
+def _load_session(session_id):
+    """Lädt eine PIA und stellt sicher, dass sie zur Organisation des
+    angemeldeten Benutzers gehört (Super-Admin darf alle)."""
+    session = current_app.interview_service.get_session(session_id)
+    if not session:
+        abort(404)
+    user = current_user()
+    if user is None:
+        abort(401)
+    if not user.is_super_admin and session.org_id != user.org_id:
+        abort(403)
+    return session
+
+
+# ---- Authentifizierung ----------------------------------------------- #
+
+@bp.get("/login")
+def login():
+    if current_user():
+        return redirect(url_for("ui.index"))
+    return render_template("login.html")
+
+
+@bp.post("/login")
+def login_post():
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    user = current_app.auth_service.authenticate(email, password)
+    if not user:
+        return render_template("login.html", error="E-Mail oder Passwort falsch.",
+                               email=email), 401
+    login_user(user)
+    return redirect(url_for("ui.index"))
+
+
+@bp.post("/logout")
+def logout():
+    logout_user()
+    return redirect(url_for("ui.login"))
+
+
+# ---- Startseite ------------------------------------------------------- #
+
 @bp.get("/")
+@login_required
 def index():
+    user = current_user()
+    if user.is_super_admin:
+        return redirect(url_for("ui.admin_orgs"))
     method = current_app.method_service.get("hermes_pia")
-    sessions = current_app.interview_service.all_sessions()
+    sessions = current_app.interview_service.sessions_for_org(user.org_id)
     return render_template("index.html", method=method, sessions=sessions)
 
 
 @bp.post("/interview/start")
+@permission_required("write")
 def interview_start():
     def _get(name, fallback=""):
         return request.form.get(name, "").strip() or fallback
 
-    # Pflichtfelder: Projektname + Projektleiter
+    user = current_user()
     project_name = _get("project_name")
     projektleiter = _get("projektleiter")
     if not project_name or not projektleiter:
         method = current_app.method_service.get("hermes_pia")
-        sessions = current_app.interview_service.all_sessions()
+        sessions = current_app.interview_service.sessions_for_org(user.org_id)
         return render_template("index.html", method=method, sessions=sessions,
                                error="Projektname und Projektleiter/in sind erforderlich.",
                                form=request.form), 400
@@ -36,6 +95,7 @@ def interview_start():
     session = current_app.interview_service.start_session(
         method_id="hermes_pia",
         project_name=project_name,
+        org_id=user.org_id,
         projektnummer=_get("projektnummer") or None,
         auftraggeber=_get("auftraggeber") or None,
         verwaltungseinheit=_get("verwaltungseinheit") or None,
@@ -48,90 +108,87 @@ def interview_start():
 
 
 @bp.get("/interview/<int:session_id>")
+@permission_required("read")
 def interview_workspace(session_id):
     svc = current_app.interview_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
     state = svc.current_state(session)
     sections = svc.section_summary(session)
     preview = svc.preview_data(session)
     method = current_app.method_service.get(session.method_id)
     return render_template(
         "interview.html",
-        session=session,
-        state=state,
-        sections=sections,
-        preview=preview,
-        method=method,
+        session=session, state=state, sections=sections, preview=preview, method=method,
     )
 
 
 @bp.post("/interview/<int:session_id>/answer")
+@permission_required("write")
 def interview_answer(session_id):
+    _load_session(session_id)
     raw_text = request.form.get("raw_text", "").strip()
-    svc = current_app.interview_service
     try:
-        svc.submit_answer(session_id, raw_text)
+        current_app.interview_service.submit_answer(session_id, raw_text)
     except ValueError as e:
         return str(e), 400
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
 @bp.post("/interview/<int:session_id>/followup")
+@permission_required("write")
 def interview_followup(session_id):
+    _load_session(session_id)
     risk_id = request.form.get("risk_id", "")
     accepted = request.form.get("accepted", "0") == "1"
     raw_text = request.form.get("raw_text", "").strip() or None
-    svc = current_app.interview_service
     try:
-        svc.answer_followup(session_id, risk_id, accepted, raw_text)
+        current_app.interview_service.answer_followup(session_id, risk_id, accepted, raw_text)
     except ValueError as e:
         return str(e), 400
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
 @bp.post("/interview/<int:session_id>/delete")
+@permission_required("delete")
 def interview_delete(session_id):
-    """Löscht eine Session (PIA) endgültig."""
+    _load_session(session_id)
     current_app.interview_service.delete_session(session_id)
     return redirect(url_for("ui.index"))
 
 
 @bp.get("/interview/<int:session_id>/edit/<section_id>")
+@permission_required("write")
 def interview_edit(session_id, section_id):
     """Bearbeiten: Freitext mit vorgeladenem Inhalt; Tabellen werden zurückgesetzt."""
     svc = current_app.interview_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
     section = svc._section_by_id(session.method_id, section_id)
     if not section:
         return "Abschnitt nicht gefunden", 404
     if section.get("type") == "free_text":
         return render_template("edit_section.html", session=session, section=section,
                                text=svc.section_text(session, section_id))
-    # Tabellen: wie bisher zurücksetzen und neu beantworten
     svc.reset_section(session_id, section_id)
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
 @bp.post("/interview/<int:session_id>/edit/<section_id>")
+@permission_required("write")
 def interview_edit_save(session_id, section_id):
     """Speichert den bearbeiteten Freitext und lässt ihn neu formulieren."""
+    _load_session(session_id)
     raw_text = request.form.get("raw_text", "").strip()
     current_app.interview_service.update_free_text(session_id, section_id, raw_text)
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
-# ---- Versionsverwaltung ----
+# ---- Versionsverwaltung ---------------------------------------------- #
 
 @bp.get("/interview/<int:session_id>/version")
+@permission_required("write")
 def interview_version(session_id):
     svc = current_app.interview_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
     info = svc.version_info(session)
     return render_template("version_bump.html", session=session, info=info)
 
@@ -142,41 +199,30 @@ def _safe_filename(name_part):
 
 
 @bp.post("/interview/<int:session_id>/version")
+@permission_required("write")
 def interview_version_post(session_id):
     svc = current_app.interview_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
 
-    bump_type  = request.form.get("bump_type", "minor")
+    bump_type = request.form.get("bump_type", "minor")
     bemerkungen = request.form.get("bemerkungen", "").strip()
-
     new_version, _ = svc.record_version_bump(
-        session_id,
-        bump_type=bump_type,
-        projektleiter=session.created_by or "",
-        bemerkungen=bemerkungen,
+        session_id, bump_type=bump_type,
+        projektleiter=session.created_by or "", bemerkungen=bemerkungen,
     )
 
-    # Dateiname in den URL-Pfad legen, damit der Browser den Download korrekt
-    # benennt – auch wenn der PHP-Proxy den Content-Disposition-Header entfernt.
     safe_name = _safe_filename(session.project_name or "Projekt")
     filename = f"{safe_name}_PIA_v{new_version}.docx"
     return redirect(url_for("ui.interview_download", session_id=session_id, filename=filename))
 
 
 @bp.get("/interview/<int:session_id>/download/<path:filename>")
+@permission_required("read")
 def interview_download(session_id, filename):
-    """Generiert den PIA aus dem aktuellen Stand und liefert ihn als Download.
-
-    Der Dateiname steht im URL-Pfad (filename), damit der Browser ihn auch dann
-    übernimmt, wenn ein Proxy den Content-Disposition-Header verwirft.
-    """
+    """Generiert den PIA aus dem aktuellen Stand und liefert ihn als Download."""
     svc = current_app.interview_service
     gen = current_app.generation_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
 
     answers = json.loads(session.answers_json or "{}")
     changelog = json.loads(session.changelog_json or "[]")
@@ -184,7 +230,6 @@ def interview_download(session_id, filename):
     name_part = session.project_name or "Projekt"
     name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
 
-    # Geschlecht für korrekte Rollenbezeichnung (Projektleiter/in, Auftraggeber/in)
     pl_weiblich = ag_weiblich = False
     if getattr(svc, "llm", None):
         from app.domains.interview.extraction import detect_gender
@@ -197,7 +242,7 @@ def interview_download(session_id, filename):
         "auftraggeber":       session.auftraggeber or "",
         "projektleiter_weiblich": pl_weiblich,
         "auftraggeber_weiblich":  ag_weiblich,
-        "autor":              session.created_by or "",   # Autor = Projektleiter
+        "autor":              session.created_by or "",
         "verwaltungseinheit": session.verwaltungseinheit or "",
         "geschaeftsbereich":  session.geschaeftsbereich or "",
         "innenauftragsnummer": session.innenauftragsnummer or "",
@@ -217,10 +262,95 @@ def interview_download(session_id, filename):
     )
 
 
-@bp.get("/demo/followups")
-def demo_followups():
-    entered = ["Verzoegerung durch oeffentliche Beschaffung"]
-    followups = current_app.interview_service.followups_for_risks(
-        "fachanwendung_einfuehrung", entered
-    )
-    return jsonify({"erfasst": entered, "nachfragen": followups})
+# ===================================================================== #
+# Verwaltung: Betreiber (Super-Admin) – Organisationseinheiten          #
+# ===================================================================== #
+
+@bp.get("/admin/organisationen")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_orgs():
+    auth = current_app.auth_service
+    orgs = auth.list_orgs()
+    org_admins = {o.id: [u for u in auth.list_users(o.id) if u.role == ROLE_ORG_ADMIN]
+                  for o in orgs}
+    return render_template("admin_orgs.html", orgs=orgs, org_admins=org_admins)
+
+
+@bp.post("/admin/organisationen/neu")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_create():
+    name = request.form.get("name", "").strip()
+    if name:
+        current_app.auth_service.create_org(name)
+    return redirect(url_for("ui.admin_orgs"))
+
+
+@bp.post("/admin/organisationen/<int:org_id>/admin")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_admin_create(org_id):
+    auth = current_app.auth_service
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    name = request.form.get("name", "").strip()
+    if email and password and not auth.get_user_by_email(email):
+        auth.create_user(email, password, name=name, role=ROLE_ORG_ADMIN, org_id=org_id,
+                         can_read=True, can_write=True, can_delete=True)
+    return redirect(url_for("ui.admin_orgs"))
+
+
+# ===================================================================== #
+# Verwaltung: Org-Admin – Benutzer der eigenen Organisationseinheit      #
+# ===================================================================== #
+
+@bp.get("/admin/benutzer")
+@roles_required(ROLE_ORG_ADMIN)
+def admin_users():
+    auth = current_app.auth_service
+    user = current_user()
+    org = auth.get_org(user.org_id)
+    users = auth.list_users(user.org_id)
+    return render_template("admin_users.html", org=org, users=users)
+
+
+@bp.post("/admin/benutzer/neu")
+@roles_required(ROLE_ORG_ADMIN)
+def admin_user_create():
+    auth = current_app.auth_service
+    user = current_user()
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    name = request.form.get("name", "").strip()
+    if email and password and not auth.get_user_by_email(email):
+        auth.create_user(
+            email, password, name=name, org_id=user.org_id,
+            can_read=request.form.get("can_read") == "on",
+            can_write=request.form.get("can_write") == "on",
+            can_delete=request.form.get("can_delete") == "on",
+        )
+    return redirect(url_for("ui.admin_users"))
+
+
+@bp.post("/admin/benutzer/<int:user_id>/rechte")
+@roles_required(ROLE_ORG_ADMIN)
+def admin_user_permissions(user_id):
+    auth = current_app.auth_service
+    target = auth.get_user(user_id)
+    # Nur Benutzer der eigenen Organisationseinheit verwalten.
+    if target and target.org_id == current_user().org_id:
+        auth.set_permissions(
+            user_id,
+            request.form.get("can_read") == "on",
+            request.form.get("can_write") == "on",
+            request.form.get("can_delete") == "on",
+        )
+    return redirect(url_for("ui.admin_users"))
+
+
+@bp.post("/admin/benutzer/<int:user_id>/loeschen")
+@roles_required(ROLE_ORG_ADMIN)
+def admin_user_delete(user_id):
+    auth = current_app.auth_service
+    target = auth.get_user(user_id)
+    if target and target.org_id == current_user().org_id:
+        auth.delete_user(user_id)
+    return redirect(url_for("ui.admin_users"))

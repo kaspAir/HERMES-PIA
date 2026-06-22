@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Anmelden – HERMES PIA{% endblock %}
+
+{% block content %}
+<div class="login-page">
+  <h1>Anmelden</h1>
+  <p class="login-sub">Bitte melden Sie sich an, um HERMES&nbsp;PIA zu nutzen.</p>
+
+  <form method="post" action="{{ url_for('ui.login_post') }}" class="login-card">
+    {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
+    <div class="form-row form-row-wide">
+      <label for="email">E-Mail</label>
+      <input type="email" id="email" name="email" value="{{ email or '' }}"
+             autocomplete="username" required autofocus>
+    </div>
+    <div class="form-row form-row-wide">
+      <label for="password">Passwort</label>
+      <input type="password" id="password" name="password"
+             autocomplete="current-password" required>
+    </div>
+    <div class="form-row-action">
+      <button type="submit" class="btn-primary btn-large">Anmelden</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
