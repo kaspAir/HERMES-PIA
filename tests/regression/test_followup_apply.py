@@ -5,9 +5,26 @@ from app.domains.interview.service import InterviewService
 from app.domains.method.service import MethodService
 
 
-def _interview():
+def _interview(llm=None):
     cfg = get_config()
-    return InterviewService(MethodService(cfg.METHODS_DIR), CatalogService(cfg.CATALOGS_DIR))
+    return InterviewService(MethodService(cfg.METHODS_DIR), CatalogService(cfg.CATALOGS_DIR), llm)
+
+
+class _ReformLLM:
+    """Gibt einen sauber formulierten Text zurück (statt 1:1)."""
+    def complete(self, system, messages, max_tokens=1024):
+        return '{"text": "Sauber formulierter Behoerdentext."}'
+
+
+def test_free_text_followup_reformuliert_statt_eins_zu_eins():
+    svc = _interview(_ReformLLM())
+    section = {"id": "ausgangslage", "type": "free_text", "title": "Ausgangslage"}
+    section_answer = {"extracted": {"text": "Bestehender Text."}}
+    followup = {"risk_id": "ai_ausgangslage_0", "vorschlag": None, "status": "pending"}
+    svc._apply_followup(section, section_answer, followup, raw_text="roh gesprochener Zusatz")
+    # Nicht 1:1 angehaengt, sondern durchs LLM reformuliert:
+    assert section_answer["extracted"]["text"] == "Sauber formulierter Behoerdentext."
+    assert "roh gesprochener" not in section_answer["extracted"]["text"]
 
 
 def _risiken_section(svc):
