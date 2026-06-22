@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Benutzer – {{ org.name if org else '' }}{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+  <h1>Benutzer{% if org %} – {{ org.name }}{% endif %}</h1>
+  <p class="hero-desc">Erfassen Sie Benutzer Ihrer Organisationseinheit und vergeben Sie die Rechte
+    (Lesen / Schreiben / Löschen).</p>
+
+  <div class="admin-card">
+    <h2>Neuen Benutzer anlegen</h2>
+    <form method="post" action="{{ url_for('ui.admin_user_create') }}" class="admin-grid-form">
+      <input type="text" name="name" placeholder="Name (optional)">
+      <input type="email" name="email" placeholder="E-Mail" required>
+      <input type="password" name="password" placeholder="Initialpasswort" required>
+      <label class="chk"><input type="checkbox" name="can_read" checked> Lesen</label>
+      <label class="chk"><input type="checkbox" name="can_write"> Schreiben</label>
+      <label class="chk"><input type="checkbox" name="can_delete"> Löschen</label>
+      <button type="submit" class="btn-primary">Anlegen</button>
+    </form>
+  </div>
+
+  {% if users %}
+  <table class="sessions-table users-table">
+    <thead>
+      <tr>
+        <th>Benutzer</th><th>Rolle</th><th>Rechte</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>
+          <strong>{{ u.email }}</strong>
+          {% if u.name %}<br><span class="muted">{{ u.name }}</span>{% endif %}
+        </td>
+        <td>
+          {% if u.role == 'org_admin' %}<span class="badge badge-type">Admin</span>
+          {% else %}<span class="badge badge-pending">Benutzer</span>{% endif %}
+        </td>
+        {% if u.role == 'org_admin' %}
+          <td class="muted">volle Rechte</td>
+          <td></td>
+        {% else %}
+          <td>
+            <form method="post" action="{{ url_for('ui.admin_user_permissions', user_id=u.id) }}"
+                  class="rights-form">
+              <label class="chk"><input type="checkbox" name="can_read" {{ 'checked' if u.can_read }}> Lesen</label>
+              <label class="chk"><input type="checkbox" name="can_write" {{ 'checked' if u.can_write }}> Schreiben</label>
+              <label class="chk"><input type="checkbox" name="can_delete" {{ 'checked' if u.can_delete }}> Löschen</label>
+              <button type="submit" class="btn-link">Speichern</button>
+            </form>
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('ui.admin_user_delete', user_id=u.id) }}"
+                  class="inline-form"
+                  onsubmit="return confirm('Benutzer «{{ u.email }}» löschen?');">
+              <button type="submit" class="btn-link btn-delete">Löschen</button>
+            </form>
+          </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

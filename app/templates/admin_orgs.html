@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Organisationen – Verwaltung{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+  <h1>Organisationseinheiten</h1>
+  <p class="hero-desc">Legen Sie Organisationseinheiten an und benennen Sie je Einheit eine:n Admin.</p>
+
+  <form method="post" action="{{ url_for('ui.admin_org_create') }}" class="admin-inline-form">
+    <input type="text" name="name" placeholder="Name der Organisationseinheit" required>
+    <button type="submit" class="btn-primary">Anlegen</button>
+  </form>
+
+  {% if orgs %}
+  <div class="admin-orgs">
+    {% for org in orgs %}
+    <div class="admin-card">
+      <div class="admin-card-head">
+        <h2>{{ org.name }}</h2>
+      </div>
+
+      {% set admins = org_admins.get(org.id, []) %}
+      {% if admins %}
+        <div class="admin-sub">Admin(s):
+          {% for a in admins %}<span class="badge badge-type">{{ a.email }}</span>{% endfor %}
+        </div>
+      {% else %}
+        <div class="admin-sub admin-warn">Noch kein Admin – bitte anlegen.</div>
+      {% endif %}
+
+      <form method="post"
+            action="{{ url_for('ui.admin_org_admin_create', org_id=org.id) }}"
+            class="admin-grid-form">
+        <input type="text" name="name" placeholder="Name (optional)">
+        <input type="email" name="email" placeholder="E-Mail des Admins" required>
+        <input type="password" name="password" placeholder="Initialpasswort" required>
+        <button type="submit" class="btn-secondary">Admin hinzufügen</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="admin-empty">Noch keine Organisationseinheiten erfasst.</p>
+  {% endif %}
+</div>
+{% endblock %}

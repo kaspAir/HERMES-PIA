@@ -2,16 +2,19 @@ from flask import Flask
 from sqlalchemy import inspect, text
 
 from app.config import get_config
+from app.domains.auth.service import AuthService
 from app.domains.catalog.service import CatalogService
 from app.domains.generation.service import GenerationService
 from app.domains.interview.service import InterviewService
 from app.domains.llm.client import LLMClient
 from app.domains.method.service import MethodService
+import app.domains.auth.models      # noqa: F401 – Tabellen registrieren
 import app.domains.interview.models  # noqa: F401 – ensures models are registered before create_all
 from app.shared.database import Base, SessionLocal, init_engine
 from app.shared.errors import register_error_handlers
 from app.shared.logging import configure_logging, register_request_logging
 from app.shared.version import get_version
+from app.web.auth import current_user
 from app.web.ui_routes import bp as ui_bp
 
 
@@ -31,6 +34,7 @@ def _migrate_db(engine):
         ("geschaeftsbereich",   "VARCHAR(200)"),
         ("innenauftragsnummer", "VARCHAR(100)"),
         ("start_datum",         "VARCHAR(20)"),
+        ("org_id",              "INTEGER"),
     ]
     with engine.connect() as conn:
         for col, dtype in new_cols:
@@ -63,15 +67,21 @@ def create_app(config_class=None):
         app.method_service, app.catalog_service, llm_client
     )
     app.generation_service = GenerationService(app.method_service)
+    app.auth_service = AuthService()
+
+    # Betreiber-Account (Super-Admin) anlegen, falls per .env konfiguriert.
+    app.auth_service.ensure_super_admin(
+        app.config.get("SUPERADMIN_EMAIL"), app.config.get("SUPERADMIN_PASSWORD")
+    )
 
     app.register_blueprint(ui_bp)
 
-    # Laufende Code-Version in allen Templates verfügbar machen.
+    # Laufende Code-Version + angemeldeter Benutzer in allen Templates verfügbar.
     app_version = get_version()
 
     @app.context_processor
-    def inject_version():
-        return {"app_version": app_version}
+    def inject_globals():
+        return {"app_version": app_version, "current_user": current_user()}
 
     @app.teardown_appcontext
     def remove_session(exception=None):
