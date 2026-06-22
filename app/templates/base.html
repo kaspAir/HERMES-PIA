@@ -11,6 +11,20 @@
     <img src="{{ url_for('static', filename='img/bki-logo.png') }}"
          alt="BKI &ndash; Project Management Consulting &amp; Training"
          class="brand-logo">
+    {% if current_user %}
+    <div class="user-menu">
+      {% if current_user.is_super_admin %}
+        <a href="{{ url_for('ui.admin_orgs') }}" class="user-link">Organisationen</a>
+      {% elif current_user.is_org_admin %}
+        <a href="{{ url_for('ui.index') }}" class="user-link">PIAs</a>
+        <a href="{{ url_for('ui.admin_users') }}" class="user-link">Benutzer</a>
+      {% endif %}
+      <span class="user-email">{{ current_user.email }}</span>
+      <form method="post" action="{{ url_for('ui.logout') }}" class="inline-form">
+        <button type="submit" class="user-link user-logout">Abmelden</button>
+      </form>
+    </div>
+    {% endif %}
   </div>
   {% if ':8001' in request.host %}
   <div class="env-banner env-banner--test">&#9888; Testsystem &mdash; test.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>

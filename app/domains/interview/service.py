@@ -94,10 +94,12 @@ class InterviewService:
 
     def start_session(self, method_id, project_name, created_by=None,
                       projektnummer=None, auftraggeber=None, verwaltungseinheit=None,
-                      geschaeftsbereich=None, innenauftragsnummer=None, start_datum=None):
+                      geschaeftsbereich=None, innenauftragsnummer=None, start_datum=None,
+                      org_id=None):
         session = InterviewSession(
             method_id=method_id,
             project_name=project_name,
+            org_id=org_id,
             projektnummer=projektnummer,
             auftraggeber=auftraggeber,
             verwaltungseinheit=verwaltungseinheit,
@@ -120,6 +122,12 @@ class InterviewService:
         return SessionLocal().query(InterviewSession).order_by(
             InterviewSession.created_at.desc()
         ).all()
+
+    def sessions_for_org(self, org_id):
+        """PIAs einer Organisationseinheit (Mandantentrennung)."""
+        return SessionLocal().query(InterviewSession).filter(
+            InterviewSession.org_id == org_id
+        ).order_by(InterviewSession.created_at.desc()).all()
 
     def delete_session(self, session_id):
         """Löscht eine Session (PIA) endgültig. Archivierung folgt später mit

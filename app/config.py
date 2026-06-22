@@ -18,6 +18,10 @@ class Config:
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
     LLM_MODEL = os.environ.get("METHODOS_LLM_MODEL", "claude-sonnet-4-6")
 
+    # Betreiber-Account (Super-Admin) – via .env / Umgebungsvariablen setzen.
+    SUPERADMIN_EMAIL = os.environ.get("METHODOS_SUPERADMIN_EMAIL", "")
+    SUPERADMIN_PASSWORD = os.environ.get("METHODOS_SUPERADMIN_PASSWORD", "")
+
 
 def get_config():
     return Config

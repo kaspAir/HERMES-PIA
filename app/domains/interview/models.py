@@ -9,6 +9,8 @@ class InterviewSession(Base, GovernanceMixin):
 
     id = Column(Integer, primary_key=True)
     method_id = Column(String(60), nullable=False)
+    # Mandantentrennung: jede PIA gehört einer Organisationseinheit.
+    org_id = Column(Integer, nullable=True)
     project_type_id = Column(String(80), nullable=True)
     project_name = Column(String(200), nullable=True)
     projektnummer = Column(String(100), nullable=True)
