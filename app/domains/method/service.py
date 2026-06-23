@@ -16,5 +16,5 @@ class MethodService:
         return self.get(method_id).get("sections", [])
 
     def gap_check_sections(self, method_id):
-        """Abschnitte, fuer die Methodos aktiv nachfragt."""
+        """Abschnitte, fuer die HERMES PIA aktiv nachfragt."""
         return [s for s in self.sections(method_id) if s.get("gap_check")]
