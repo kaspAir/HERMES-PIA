@@ -19,6 +19,7 @@
         <a href="{{ url_for('ui.index') }}" class="user-link">PIAs</a>
         <a href="{{ url_for('ui.admin_users') }}" class="user-link">Benutzer</a>
       {% endif %}
+      <a href="{{ url_for('ui.password_change') }}" class="user-link">Passwort</a>
       <span class="user-email">{{ current_user.email }}</span>
       <form method="post" action="{{ url_for('ui.logout') }}" class="inline-form">
         <button type="submit" class="user-link user-logout">Abmelden</button>
