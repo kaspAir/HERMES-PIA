@@ -4,8 +4,18 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _env(*names, default=""):
+    """Erste gesetzte Umgebungsvariable aus 'names'. Erlaubt rückwärtskompatible
+    Aliasse (neuer Name zuerst, alter Name als Fallback)."""
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return default
+
+
 class Config:
-    DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///methodos.db")
+    DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///hermespia.db")
     SQL_ECHO = os.environ.get("SQL_ECHO", "0") == "1"
     DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-in-prod")
@@ -16,11 +26,12 @@ class Config:
 
     # LLM
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-    LLM_MODEL = os.environ.get("METHODOS_LLM_MODEL", "claude-sonnet-4-6")
+    LLM_MODEL = _env("HERMESPIA_LLM_MODEL", "METHODOS_LLM_MODEL", default="claude-sonnet-4-6")
 
     # Betreiber-Account (Super-Admin) – via .env / Umgebungsvariablen setzen.
-    SUPERADMIN_EMAIL = os.environ.get("METHODOS_SUPERADMIN_EMAIL", "")
-    SUPERADMIN_PASSWORD = os.environ.get("METHODOS_SUPERADMIN_PASSWORD", "")
+    # Neuer Name HERMESPIA_*, alter Name METHODOS_* bleibt als Fallback gültig.
+    SUPERADMIN_EMAIL = _env("HERMESPIA_SUPERADMIN_EMAIL", "METHODOS_SUPERADMIN_EMAIL")
+    SUPERADMIN_PASSWORD = _env("HERMESPIA_SUPERADMIN_PASSWORD", "METHODOS_SUPERADMIN_PASSWORD")
 
 
 def get_config():

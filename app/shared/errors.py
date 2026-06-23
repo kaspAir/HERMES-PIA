@@ -1,13 +1,13 @@
 from flask import jsonify
 
 
-class MethodosError(Exception):
+class AppError(Exception):
     status_code = 400
 
 
 def register_error_handlers(app):
-    @app.errorhandler(MethodosError)
-    def handle_methodos_error(exc):
+    @app.errorhandler(AppError)
+    def handle_app_error(exc):
         return jsonify({"error": str(exc)}), exc.status_code
 
     @app.errorhandler(404)

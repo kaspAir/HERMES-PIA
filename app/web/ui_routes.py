@@ -17,7 +17,7 @@ bp = Blueprint("ui", __name__)
 
 @bp.get("/health")
 def health():
-    return jsonify({"status": "ok", "service": "methodos"})
+    return jsonify({"status": "ok", "service": "hermes-pia"})
 
 
 # ---- Mandantentrennung: Session laden + Zugriff prüfen ---------------- #
