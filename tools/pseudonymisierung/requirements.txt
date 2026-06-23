@@ -1,4 +1,4 @@
-# Mnemosyne – Offline-Pseudonymisierung + Wissensextraktion
+# Pseudonymisierung – Offline-Pseudonymisierung + Wissensextraktion
 # Getrennt von den App-Dependencies
 
 # NLP (offline, kein Cloud-Aufruf)

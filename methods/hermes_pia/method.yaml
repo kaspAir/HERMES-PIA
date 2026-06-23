@@ -1,7 +1,7 @@
 # =====================================================================
 # Methodenmodell: HERMES 2022 - Projektinitialisierungsauftrag (PIA)
 # =====================================================================
-# Dies ist die Konfiguration, die Methodos antreibt ("Konfiguration vor
+# Dies ist die Konfiguration, die HERMES PIA antreibt ("Konfiguration vor
 # Programmierung"). Sie beschreibt die Struktur des Zieldokuments,
 # welche Felder erfragt werden, welche Tabellen mit welchen Spalten
 # existieren und welche kontrollierten Vokabulare gelten.
@@ -57,7 +57,7 @@ metadata_fields:
 #   table          - strukturierte Tabelle mit definierten Spalten
 #
 # Spaltentyp 'select' verweist auf ein Vokabular oben.
-# 'gap_check: true' markiert Abschnitte, fuer die Methodos den
+# 'gap_check: true' markiert Abschnitte, fuer die HERMES PIA den
 #   Referenzkatalog heranzieht und aktiv nachfragt.
 # ---------------------------------------------------------------------
 sections:

@@ -2,10 +2,10 @@
 # Referenzkatalog: Organisationsentwicklung
 #                  (Reorganisation, Prozessoptimierung, Kulturwandel)
 # =====================================================================
-# Erfahrungswissen aus 45 realen HERMES-PIAs (via Mnemosyne, pseudonymisiert).
+# Erfahrungswissen aus 45 realen HERMES-PIAs (via Pseudonymisierung, pseudonymisiert).
 # Keine Rohdaten – abgeleitetes, aggregiertes Wissen.
 #
-# 'salience' >= 0.8 => Methodos fragt nach wenn der Eintrag fehlt.
+# 'salience' >= 0.8 => HERMES PIA fragt nach wenn der Eintrag fehlt.
 
 project_type:
   id: organisationsentwicklung

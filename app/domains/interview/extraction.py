@@ -29,7 +29,7 @@ HERMES_RULES = (
 def estimate_risk_assessment(llm_client, beschreibung):
     """Schaetzt EW, AG (je Tief/Mittel/Hoch) und eine Massnahme zu einem Risiko.
 
-    Interim per LLM; spaeter aus dem Mnemosyne-Korpus ableitbar.
+    Interim per LLM; spaeter aus dem pseudonymisierten Korpus ableitbar.
     """
     if not beschreibung or not beschreibung.strip() or llm_client is None:
         return {}

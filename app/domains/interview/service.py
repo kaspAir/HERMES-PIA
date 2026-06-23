@@ -1,4 +1,4 @@
-"""Der Interview-Loop: der Kern von Methodos.
+"""Der Interview-Loop: der Kern von HERMES PIA.
 
 Ablauf je Abschnitt:
   1. Frage stellen  (aus method.yaml: interview.questions)
@@ -620,7 +620,7 @@ def _assign_termine_dates(rows, start_datum_str):
     """Setzt je Ergebnis einen Liefertermin relativ zum Initialisierungs-Start.
 
     Basis: angegebenes Startdatum (ISO), sonst heute. Die Default-Dauern
-    (Wochen ab Start) sind Heuristik – später aus Mnemosyne ableitbar.
+    (Wochen ab Start) sind Heuristik – später aus dem pseudonymisierten Korpus ableitbar.
     """
     from datetime import date as _date, timedelta as _timedelta
     try:

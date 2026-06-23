@@ -5,9 +5,9 @@
 # Kein direktes PIA-Korpus für diesen Typ vorhanden.
 # Katalog aus HERMES-Erfahrungswissen und Mustern verwandter Projekttypen
 # (infrastruktur_erneuerung, e_government_portal) abgeleitet.
-# Beim naechsten Mnemosyne-Lauf wird dieser Katalog ergaenzt.
+# Beim naechsten Pseudonymisierung-Lauf wird dieser Katalog ergaenzt.
 #
-# 'salience' >= 0.8 => Methodos fragt nach wenn der Eintrag fehlt.
+# 'salience' >= 0.8 => HERMES PIA fragt nach wenn der Eintrag fehlt.
 
 project_type:
   id: betriebsabloesung

@@ -1,6 +1,6 @@
 """Deterministische Lueckenpruefung - das Herzstueck des Nachfrage-Verhaltens.
 
-Idee: Methodos vergleicht die vom Projektleiter eingegebenen Risiken mit den
+Idee: HERMES PIA vergleicht die vom Projektleiter eingegebenen Risiken mit den
 fuer den Projekttyp TYPISCHEN Risiken aus dem Referenzkatalog. Was typisch ist
 (salience hoch), aber im Auftrag fehlt, wird als Luecke zurueckgegeben - mit
 einer vorformulierten Nachfrage.
