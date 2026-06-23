@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Passwort ändern – HERMES PIA{% endblock %}
+
+{% block content %}
+<div class="login-page">
+  <h1>Passwort ändern</h1>
+  <p class="login-sub">Angemeldet als {{ current_user.email }}.</p>
+
+  <form method="post" action="{{ url_for('ui.password_change_post') }}" class="login-card">
+    {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
+    {% if success %}<div class="form-success">{{ success }}</div>{% endif %}
+    <div class="form-row form-row-wide">
+      <label for="old_password">Aktuelles Passwort</label>
+      <input type="password" id="old_password" name="old_password"
+             autocomplete="current-password" required autofocus>
+    </div>
+    <div class="form-row form-row-wide">
+      <label for="new_password">Neues Passwort (mind. 8 Zeichen)</label>
+      <input type="password" id="new_password" name="new_password"
+             autocomplete="new-password" minlength="8" required>
+    </div>
+    <div class="form-row form-row-wide">
+      <label for="confirm_password">Neues Passwort wiederholen</label>
+      <input type="password" id="confirm_password" name="confirm_password"
+             autocomplete="new-password" minlength="8" required>
+    </div>
+    <div class="form-row-action">
+      <button type="submit" class="btn-primary btn-large">Passwort ändern</button>
+      <a href="{{ url_for('ui.index') }}" class="btn-link" style="margin-left:14px">Zurück</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

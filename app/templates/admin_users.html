@@ -51,7 +51,12 @@
               <button type="submit" class="btn-link">Speichern</button>
             </form>
           </td>
-          <td>
+          <td class="action-cell">
+            <form method="post" action="{{ url_for('ui.admin_reset_password', user_id=u.id) }}"
+                  class="reset-form">
+              <input type="password" name="new_password" placeholder="Neues Passwort" required>
+              <button type="submit" class="btn-link">Zurücksetzen</button>
+            </form>
             <form method="post" action="{{ url_for('ui.admin_user_delete', user_id=u.id) }}"
                   class="inline-form"
                   onsubmit="return confirm('Benutzer «{{ u.email }}» löschen?');">

@@ -4,7 +4,8 @@
 {% block content %}
 <div class="admin-page">
   <h1>Organisationseinheiten</h1>
-  <p class="hero-desc">Legen Sie Organisationseinheiten an und benennen Sie je Einheit eine:n Admin.</p>
+  <p class="hero-desc">Übersicht aller Organisationseinheiten und ihrer Benutzer (Rolle und Rechte).
+    Legen Sie Einheiten an, benennen Sie Admins und setzen Sie bei Bedarf Passwörter zurück.</p>
 
   <form method="post" action="{{ url_for('ui.admin_org_create') }}" class="admin-inline-form">
     <input type="text" name="name" placeholder="Name der Organisationseinheit" required>
@@ -14,23 +15,57 @@
   {% if orgs %}
   <div class="admin-orgs">
     {% for org in orgs %}
+    {% set users = org_users.get(org.id, []) %}
     <div class="admin-card">
       <div class="admin-card-head">
         <h2>{{ org.name }}</h2>
+        <span class="muted">{{ users | length }} Benutzer</span>
       </div>
 
-      {% set admins = org_admins.get(org.id, []) %}
-      {% if admins %}
-        <div class="admin-sub">Admin(s):
-          {% for a in admins %}<span class="badge badge-type">{{ a.email }}</span>{% endfor %}
-        </div>
+      {% if users %}
+      <table class="sessions-table users-table">
+        <thead>
+          <tr><th>Benutzer</th><th>Rolle</th><th>Rechte</th><th>Passwort zurücksetzen</th></tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>
+              <strong>{{ u.email }}</strong>
+              {% if u.name %}<br><span class="muted">{{ u.name }}</span>{% endif %}
+            </td>
+            <td>
+              {% if u.role == 'org_admin' %}<span class="badge badge-type">Admin</span>
+              {% else %}<span class="badge badge-pending">Benutzer</span>{% endif %}
+            </td>
+            <td class="muted">
+              {% if u.role == 'org_admin' %}volle Rechte
+              {% else %}
+                {% set r = [] %}
+                {% if u.can_read %}{% set _ = r.append('Lesen') %}{% endif %}
+                {% if u.can_write %}{% set _ = r.append('Schreiben') %}{% endif %}
+                {% if u.can_delete %}{% set _ = r.append('Löschen') %}{% endif %}
+                {{ r | join(', ') or '–' }}
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('ui.admin_reset_password', user_id=u.id) }}"
+                    class="reset-form">
+                <input type="password" name="new_password" placeholder="Neues Passwort" required>
+                <button type="submit" class="btn-link">Zurücksetzen</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
       {% else %}
-        <div class="admin-sub admin-warn">Noch kein Admin – bitte anlegen.</div>
+      <div class="admin-sub admin-warn">Noch kein Admin – bitte unten anlegen.</div>
       {% endif %}
 
       <form method="post"
             action="{{ url_for('ui.admin_org_admin_create', org_id=org.id) }}"
-            class="admin-grid-form">
+            class="admin-grid-form admin-add-admin">
         <input type="text" name="name" placeholder="Name (optional)">
         <input type="email" name="email" placeholder="E-Mail des Admins" required>
         <input type="password" name="password" placeholder="Initialpasswort" required>

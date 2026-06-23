@@ -63,6 +63,31 @@ def logout():
     return redirect(url_for("ui.login"))
 
 
+@bp.get("/passwort")
+@login_required
+def password_change():
+    return render_template("passwort.html")
+
+
+@bp.post("/passwort")
+@login_required
+def password_change_post():
+    user = current_user()
+    old = request.form.get("old_password", "")
+    new = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_password", "")
+    if len(new) < 8:
+        return render_template("passwort.html",
+                               error="Das neue Passwort muss mindestens 8 Zeichen haben."), 400
+    if new != confirm:
+        return render_template("passwort.html",
+                               error="Die beiden Passwörter stimmen nicht überein."), 400
+    if not current_app.auth_service.change_password(user.id, old, new):
+        return render_template("passwort.html",
+                               error="Das aktuelle Passwort ist nicht korrekt."), 400
+    return render_template("passwort.html", success="Ihr Passwort wurde geändert.")
+
+
 # ---- Startseite ------------------------------------------------------- #
 
 @bp.get("/")
@@ -271,9 +296,8 @@ def interview_download(session_id, filename):
 def admin_orgs():
     auth = current_app.auth_service
     orgs = auth.list_orgs()
-    org_admins = {o.id: [u for u in auth.list_users(o.id) if u.role == ROLE_ORG_ADMIN]
-                  for o in orgs}
-    return render_template("admin_orgs.html", orgs=orgs, org_admins=org_admins)
+    org_users = {o.id: auth.list_users(o.id) for o in orgs}
+    return render_template("admin_orgs.html", orgs=orgs, org_users=org_users)
 
 
 @bp.post("/admin/organisationen/neu")
@@ -354,3 +378,24 @@ def admin_user_delete(user_id):
     if target and target.org_id == current_user().org_id:
         auth.delete_user(user_id)
     return redirect(url_for("ui.admin_users"))
+
+
+@bp.post("/admin/benutzer/<int:user_id>/passwort")
+@roles_required(ROLE_SUPER_ADMIN, ROLE_ORG_ADMIN)
+def admin_reset_password(user_id):
+    """Admin setzt das Passwort eines Benutzers zurück.
+    Hauptadmin: alle. Org-Admin: nur Benutzer der eigenen Organisation."""
+    auth = current_app.auth_service
+    actor = current_user()
+    target = auth.get_user(user_id)
+    new_password = request.form.get("new_password", "")
+    if target and new_password:
+        allowed = actor.is_super_admin or (
+            actor.is_org_admin
+            and target.org_id == actor.org_id
+            and not target.is_super_admin
+        )
+        if allowed:
+            auth.reset_password(user_id, new_password)
+    return redirect(url_for("ui.admin_orgs") if actor.is_super_admin
+                    else url_for("ui.admin_users"))

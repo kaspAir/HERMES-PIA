@@ -90,6 +90,28 @@ class AuthService:
         db.commit()
         return True
 
+    def change_password(self, user_id, old_password, new_password):
+        """Selbstbedienung: setzt ein neues Passwort, wenn das alte stimmt."""
+        db = SessionLocal()
+        user = db.get(User, int(user_id))
+        if user is None or not new_password:
+            return False
+        if not check_password_hash(user.password_hash, old_password or ""):
+            return False
+        user.password_hash = generate_password_hash(new_password)
+        db.commit()
+        return True
+
+    def reset_password(self, user_id, new_password):
+        """Admin-Aktion: setzt ein neues Passwort (ohne Prüfung des alten)."""
+        db = SessionLocal()
+        user = db.get(User, int(user_id))
+        if user is None or not new_password:
+            return False
+        user.password_hash = generate_password_hash(new_password)
+        db.commit()
+        return True
+
     # ---- Authentifizierung -------------------------------------------- #
 
     def authenticate(self, email, password):
