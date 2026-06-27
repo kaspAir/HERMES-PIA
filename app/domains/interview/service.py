@@ -362,11 +362,19 @@ class InterviewService:
             self._ensure_deliverable_roles(rows, answers)
         elif sid == "risiken":
             for r in rows:
-                if isinstance(r, dict):
-                    if not str(r.get("verantwortung", "")).strip():
-                        r["verantwortung"] = "Projektleiter"
-                    if not str(r.get("termin", "")).strip():
-                        r["termin"] = "laufend"
+                if not isinstance(r, dict):
+                    continue
+                # Fehlende Bewertung (EW/AG) und Massnahme per LLM schätzen, damit
+                # die Risikozahl berechenbar ist und die Zeile vollständig wird.
+                if self.llm and (not r.get("ew") or not r.get("ag")):
+                    est = estimate_risk_assessment(self.llm, r.get("beschreibung", "") or "")
+                    for k in ("ew", "ag", "massnahmen"):
+                        if not r.get(k) and est.get(k):
+                            r[k] = est[k]
+                if not str(r.get("verantwortung", "")).strip():
+                    r["verantwortung"] = "Projektleiter"
+                if not str(r.get("termin", "")).strip():
+                    r["termin"] = "laufend"
 
     @staticmethod
     def _kosten_initialisierung_only(rows):
@@ -861,8 +869,14 @@ class InterviewService:
                     "status": "pending",
                 })
 
-        # Deterministischer Katalog-Gap-Check zusätzlich für Risiken
-        if section.get("gap_check") and project_type_id and section["id"] == "risiken":
+        # Deterministischer Katalog-Gap-Check für Risiken – aber NUR, wenn der PL
+        # bereits Risiken genannt hat (dann ergänzen wir typische, die fehlen).
+        # Bei leeren Risiken würde der Gap-Check das normale Vorschlags-Angebot
+        # unterdrücken; dann sollen die Risiken wie jeder andere Abschnitt per
+        # LLM (Initialisierungs-Scope) vorgeschlagen werden. Zudem sind die
+        # Katalog-Risiken typischerweise Umsetzungs-/Migrationsrisiken.
+        if (section.get("gap_check") and project_type_id and section["id"] == "risiken"
+                and not self._is_empty(extracted)):
             risk_texts = [r.get("beschreibung", "") for r in (extracted or [])]
             catalog_items = self.followups_for_risks(project_type_id, risk_texts)
             for f in catalog_items:

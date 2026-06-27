@@ -137,6 +137,33 @@ def test_postprocess_risiken_setzt_verantwortung_und_termin():
     assert r["termin"] == "laufend"
 
 
+class _RiskLLM:
+    def complete(self, system, messages, max_tokens=256):
+        return '{"ew": "Hoch", "ag": "Mittel", "massnahmen": "Frühzeitig einbinden"}'
+
+
+def test_postprocess_risiken_schaetzt_fehlende_ew_ag():
+    svc = _svc(_RiskLLM())
+    section = svc._section_by_id("hermes_pia", "risiken")
+    sa = {"extracted": [{"beschreibung": "Stakeholder nicht verfügbar"}]}
+    svc._postprocess_section(section, sa, {})
+    r = sa["extracted"][0]
+    assert r["ew"] == "Hoch" and r["ag"] == "Mittel"
+    assert r["massnahmen"] and r["verantwortung"] == "Projektleiter"
+
+
+def test_risiken_gapcheck_nur_bei_eingegebenen_risiken():
+    svc = _svc()  # ohne LLM -> Gap-Check isoliert (keine AI-/Komplexitäts-Followups)
+    section = svc._section_by_id("hermes_pia", "risiken")
+    sess = type("S", (), {"project_type_id": "betriebsabloesung",
+                          "start_datum": None, "method_id": "hermes_pia"})()
+    # Leere Risiken -> KEIN Gap-Check, damit das normale Vorschlags-Angebot greift
+    assert svc._build_followups(section, [], "", sess, {}) == []
+    # Eingegebene Risiken -> Gap-Check ergänzt typische fehlende Risiken
+    fus = svc._build_followups(section, [{"beschreibung": "Spezielles Einzelrisiko"}], "x", sess, {})
+    assert any(f.get("type") == "catalog" for f in fus)
+
+
 # --- assess_complexity Parsing -------------------------------------------- #
 
 def test_assess_complexity_parst_array():
