@@ -87,10 +87,11 @@ _AVAILABLE_PROJECT_TYPES = [
 
 
 class InterviewService:
-    def __init__(self, method_service, catalog_service, llm_client=None):
+    def __init__(self, method_service, catalog_service, llm_client=None, rag=None):
         self.methods = method_service
         self.catalogs = catalog_service
         self.llm = llm_client
+        self.rag = rag  # RAG-Wissenskorpus (optional); None/inaktiv -> kein Grounding
 
     # ------------------------------------------------------------------ #
     # Session-Lifecycle                                                    #
@@ -300,6 +301,7 @@ class InterviewService:
     def _fill_from_suggestion(self, session, section, section_answer, answers):
         """Erzeugt einen proaktiven Vorschlag (LLM, sonst Katalog) und übernimmt ihn."""
         context = self._suggestion_context(session, answers)
+        context = self._with_corpus_context(context, session, section, answers)
         vocabularies = self._vocabularies(session.method_id)
 
         # Für Abschnitte mit verbindlicher HERMES-Vorgabe (Ergebnisse/Termine)
@@ -344,6 +346,43 @@ class InterviewService:
             }
 
         self._postprocess_section(section, section_answer, answers)
+
+    def _with_corpus_context(self, context, session, section, answers):
+        """Reichert den Vorschlags-Kontext um ähnliche Passagen aus dem RAG-Korpus an
+        (vergleichbare frühere PIAs). Mandantengetrennt: geteilter Basiskorpus + eigene
+        Org. Ohne aktives RAG unverändert."""
+        if not (self.rag and self.rag.available):
+            return context
+        ausgangslage = self._section_text_from_answers(answers, "ausgangslage")
+        query = f"{section.get('title', '')}\n{ausgangslage}".strip()
+        if not query:
+            return context
+        try:
+            hits = self.rag.search(query, org_id=getattr(session, "org_id", None),
+                                   top_k=4, ergebnistyp="PIA")
+        except Exception:
+            return context
+        if not hits:
+            return context
+        import logging
+        logging.getLogger(__name__).info(
+            "RAG-Grounding: %d Korpus-Treffer für Abschnitt '%s' (org=%s)",
+            len(hits), section.get("id"), getattr(session, "org_id", None),
+        )
+        lines = []
+        for h in hits:
+            snippet = " ".join((h.get("text") or "").split())
+            if len(snippet) > 400:
+                snippet = snippet[:400] + " …"
+            absatz = h.get("abschnitt") or ""
+            quelle = h.get("projekt", "?") + (f" / {absatz}" if absatz else "")
+            lines.append(f"- [{quelle}] {snippet}")
+        return context + (
+            "\n\nVergleichbare frühere PIAs (anonymisiert, nur als Anhaltspunkt – "
+            "Platzhalter wie [Person_x]/[Org_x] sind anonymisiert und dürfen NICHT "
+            "übernommen werden; nicht abschreiben, nur fachlich inspirieren lassen):\n"
+            + "\n".join(lines)
+        )
 
     def _postprocess_section(self, section, section_answer, answers):
         """Deterministische HERMES-Korrekturen nach dem Befüllen eines Abschnitts.

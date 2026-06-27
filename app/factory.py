@@ -66,15 +66,15 @@ def create_app(config_class=None):
         api_key=app.config.get("ANTHROPIC_API_KEY"),
         model=app.config.get("LLM_MODEL"),
     )
-    app.interview_service = InterviewService(
-        app.method_service, app.catalog_service, llm_client
-    )
-    app.generation_service = GenerationService(app.method_service)
-    app.auth_service = AuthService()
     app.rag_service = RagService(VoyageEmbedder(
         api_key=app.config.get("VOYAGE_API_KEY"),
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),
     ))
+    app.interview_service = InterviewService(
+        app.method_service, app.catalog_service, llm_client, rag=app.rag_service
+    )
+    app.generation_service = GenerationService(app.method_service)
+    app.auth_service = AuthService()
 
     # Betreiber-Account (Super-Admin) anlegen, falls per .env konfiguriert.
     app.auth_service.ensure_super_admin(
