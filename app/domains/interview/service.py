@@ -293,7 +293,9 @@ class InterviewService:
                     self._persist_answers(session, answers)
                     return self.current_state(session)
 
-        raise ValueError(f"Kein offenes Followup fuer Risiko '{risk_id}'")
+        # Idempotent: ein verspäteter Doppel-Klick trifft ein bereits verarbeitetes
+        # (nicht mehr 'pending') Followup – kein Fehler, einfach aktuellen Zustand liefern.
+        return self.current_state(session)
 
     def _fill_from_suggestion(self, session, section, section_answer, answers):
         """Erzeugt einen proaktiven Vorschlag (LLM, sonst Katalog) und übernimmt ihn."""

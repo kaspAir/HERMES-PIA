@@ -36,3 +36,13 @@ def test_submit_answer_doppelt_wirft_nicht(app):
         # Erneuter answer-Submit darf NICHT mehr werfen, sondern den Zustand liefern.
         result = svc.submit_answer(sid, "verspäteter Doppel-Submit")
         assert isinstance(result, dict) and result.get("phase") in ("followup", "complete", "question")
+
+
+def test_answer_followup_doppelklick_wirft_nicht(app):
+    svc = app.interview_service
+    with app.app_context():
+        session = svc.start_session(method_id="hermes_pia", project_name="T", org_id=1)
+        sid = session.id
+        # Bereits verarbeitetes / unbekanntes Followup -> kein Fehler, Zustand zurück.
+        result = svc.answer_followup(sid, "offer_sachmittel", accepted=True)
+        assert isinstance(result, dict) and "phase" in result
