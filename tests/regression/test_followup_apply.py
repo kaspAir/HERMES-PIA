@@ -1,6 +1,7 @@
 """Beweist: ein akzeptierter Vorschlag landet in den Abschnittsdaten."""
 from app.config import get_config
 from app.domains.catalog.service import CatalogService
+from app.domains.interview.extraction import analyze_results_options
 from app.domains.interview.service import InterviewService
 from app.domains.method.service import MethodService
 
@@ -108,6 +109,65 @@ class _Sess:
     project_type_id = "fachanwendung_einfuehrung"
     project_name = "Demo"
     auftraggeber = "Amt X"
+
+
+class _AnalyzeLLM:
+    """Liefert eine Beschaffungs-/Prototyp-Einschätzung als JSON."""
+    def complete(self, system, messages, max_tokens=512):
+        return (
+            '{"beschaffung": {"relevant": true, "frage": "Beschaffung? Ja/Nein"}, '
+            '"prototyp": {"relevant": true, "thema": "Suchmaske", '
+            '"frage": "Prototyp Suchmaske einplanen?"}}'
+        )
+
+
+def test_analyze_results_options_parst_beide_entscheidungen():
+    opts = analyze_results_options(_AnalyzeLLM(), "Wir beschaffen ein neues Fachsystem.")
+    assert opts["beschaffung"]["relevant"] is True
+    assert opts["beschaffung"]["frage"]
+    assert opts["prototyp"]["thema"] == "Suchmaske"
+
+
+def test_analyze_results_options_ohne_text_oder_llm():
+    assert analyze_results_options(_AnalyzeLLM(), "") == {}
+    assert analyze_results_options(None, "Text") == {}
+
+
+def test_decision_followups_bauen_zeilen_mit_abnahme():
+    svc = _interview()
+    opts = {
+        "beschaffung": {"relevant": True, "frage": "Beschaffungsanalyse erstellen?"},
+        "prototyp": {"relevant": True, "thema": "Suchmaske", "frage": "Prototyp?"},
+    }
+    fus = svc._decision_followups(opts, start_datum="2026-01-06")
+    assert {f["risk_id"] for f in fus} == {"decision_beschaffung", "decision_prototyp"}
+    besch = next(f for f in fus if f["risk_id"] == "decision_beschaffung")
+    assert besch["type"] == "decision"
+    assert besch["row"]["ergebnis"] == "Beschaffungsanalyse"
+    assert besch["row"]["abnahme"] == "Anwendervertreter"
+    assert besch["row"]["termin"]  # Liefertermin gesetzt
+    proto = next(f for f in fus if f["risk_id"] == "decision_prototyp")
+    assert proto["row"]["ergebnis"] == "Prototyp: Suchmaske"
+    assert proto["row"]["abnahme"] == "Entwickler"
+
+
+def test_decision_followup_wird_als_ergebnis_zeile_uebernommen():
+    """Bei 'Ja' landet die vorbereitete Zeile ohne diktierten Text in den Terminen."""
+    svc = _interview()
+    section = svc._section_by_id("hermes_pia", "termine")
+    section_answer = {"extracted": [{"ergebnis": "Studie", "termin": "01.02.2026"}]}
+    followup = {
+        "risk_id": "decision_beschaffung",
+        "type": "decision",
+        "status": "pending",
+        "row": {"ergebnis": "Beschaffungsanalyse", "termin": "01.03.2026",
+                "abnahme": "Anwendervertreter", "pruefmethode": "Inhaltliche Pruefung"},
+    }
+    svc._apply_followup(section, section_answer, followup, raw_text=None)
+    rows = section_answer["extracted"]
+    assert len(rows) == 2
+    assert rows[1]["ergebnis"] == "Beschaffungsanalyse"
+    assert rows[1]["abnahme"] == "Anwendervertreter"
 
 
 def test_fill_from_suggestion_appends_not_replaces():

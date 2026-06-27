@@ -22,7 +22,13 @@ HERMES_RULES = (
     "- Verantwortlichkeiten werden auf Rollenebene angegeben "
     "(z.B. Auftraggeber, Projektleiter), nicht mit Personennamen.\n"
     "- Das steuernde Gremium heisst in HERMES 2022 'Projektausschuss' - "
-    "NIEMALS 'Steuerungsausschuss' oder 'Lenkungsausschuss'."
+    "NIEMALS 'Steuerungsausschuss' oder 'Lenkungsausschuss'.\n"
+    "- 'Referenzierte Dokumente' und 'Mitgeltende Unterlagen' sind ausschliesslich "
+    "BESTEHENDE Grundlagen, die schon vor der Initialisierung vorliegen "
+    "(z.B. Strategien, Richtlinien, Gesetze, Weisungen, Vorgaben der Stammorganisation). "
+    "Die in der Phase Initialisierung erst erarbeiteten Ergebnisse (Stakeholderliste, "
+    "Studie, Rechtsgrundlagen-/Schutzbedarfs-/Beschaffungsanalyse, Projektmanagementplan, "
+    "Durchfuehrungsauftrag, Prototyp) gehoeren NIEMALS in diese beiden Abschnitte."
 )
 
 
@@ -54,6 +60,72 @@ def estimate_risk_assessment(llm_client, beschreibung):
             out["ag"] = d["ag"]
         if d.get("massnahmen"):
             out["massnahmen"] = str(d["massnahmen"]).strip()
+        return out
+    except Exception:
+        return {}
+
+
+def analyze_results_options(llm_client, ausgangslage_text):
+    """Schliesst aus der Ausgangslage, ob eine Beschaffungsanalyse und/oder ein
+    Prototyp als Initialisierungs-Ergebnis sinnvoll sind, und formuliert je eine
+    Entscheidungsfrage an den Projektleiter (Stil gemaess Beispielen).
+
+    Rueckgabe:
+        {"beschaffung": {"relevant": bool, "frage": str},
+         "prototyp":    {"relevant": bool, "thema": str, "frage": str}}
+    oder {} wenn keine Analyse moeglich ist.
+    """
+    if not ausgangslage_text or not ausgangslage_text.strip() or llm_client is None:
+        return {}
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Projektberater. Analysiere die Ausgangslage "
+        "eines Vorhabens hinsichtlich zweier moeglicher Initialisierungs-Ergebnisse: "
+        "einer Beschaffungsanalyse und eines Prototyps. "
+        "Antworte ausschliesslich mit validem JSON, keine weiteren Erklaerungen.\n\n"
+        + HERMES_RULES
+    )
+    user = (
+        f"Ausgangslage:\n{ausgangslage_text}\n\n"
+        "Beurteile zwei Punkte und formuliere je eine Entscheidungsfrage an den "
+        "Projektleiter (hoeflich, Sie-Form):\n\n"
+        "1) Beschaffung: Ist erkennbar, dass im Projekt etwas beschafft (gekauft) wird "
+        "- ein Produkt, ein System oder eine Dienstleistung?\n"
+        "   - Wenn ja, setze beschaffung.relevant=true und formuliere die Frage im Stil: "
+        "\"Aus der Ausgangslage ist ersichtlich, dass Sie im Projekt etwas beschaffen "
+        "wollen. Wollen Sie eine Beschaffungsanalyse erstellen?\"\n"
+        "   - Wenn nein, setze beschaffung.relevant=false und formuliere die Frage im Stil: "
+        "\"Aus der Ausgangslage ist ersichtlich, dass Sie im Projekt nichts beschaffen "
+        "wollen. Ist dennoch eine Beschaffungsanalyse notwendig?\"\n\n"
+        "2) Prototyp: Waere ein Prototyp sinnvoll, um eine Unsicherheit fruehzeitig zu "
+        "klaeren, und zu welchem Thema?\n"
+        "   - Wenn ja, setze prototyp.relevant=true, prototyp.thema=<kurzes Thema> und "
+        "formuliere die Frage im Stil: \"Auf Basis der Ausgangslage empfehle ich Ihnen, "
+        "einen Prototypen zum Thema <Thema> durchzufuehren. Wollen Sie diesen einplanen?\"\n"
+        "   - Wenn nein, setze prototyp.relevant=false, prototyp.thema=\"\" und formuliere "
+        "die Frage im Stil: \"Auf Basis der Ausgangslage scheint kein Prototyp notwendig "
+        "zu sein. Wollen Sie auf diesen verzichten?\"\n\n"
+        'Rueckgabe als JSON: {"beschaffung": {"relevant": true, "frage": "..."}, '
+        '"prototyp": {"relevant": false, "thema": "", "frage": "..."}}'
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=512)
+        d = _parse_json(raw)
+        if not isinstance(d, dict):
+            return {}
+        out = {}
+        b = d.get("beschaffung")
+        if isinstance(b, dict) and b.get("frage"):
+            out["beschaffung"] = {
+                "relevant": bool(b.get("relevant")),
+                "frage": str(b["frage"]).strip(),
+            }
+        p = d.get("prototyp")
+        if isinstance(p, dict) and p.get("frage"):
+            out["prototyp"] = {
+                "relevant": bool(p.get("relevant")),
+                "thema": str(p.get("thema") or "").strip(),
+                "frage": str(p["frage"]).strip(),
+            }
         return out
     except Exception:
         return {}
