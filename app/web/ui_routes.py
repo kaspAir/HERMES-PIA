@@ -278,6 +278,14 @@ def interview_download(session_id, filename):
         "klassifizierung":    "Nicht klassifiziert",
     }
 
+    # Komplexitätseinschätzung (aus der Ausgangslage-Vertiefung) in den Ausgangslage-
+    # Text einfliessen lassen – begründet die abgeleiteten Dauern in Kap. 4.1.
+    ausgangslage = answers.get("ausgangslage")
+    if isinstance(ausgangslage, dict) and ausgangslage.get("komplexitaet"):
+        extracted = ausgangslage.setdefault("extracted", {})
+        if isinstance(extracted, dict):
+            extracted["text"] = svc.composed_ausgangslage(answers)
+
     nachweis = svc.build_nachweis(session, answers)
     buf = gen.generate(session.method_id, answers, metadata, changelog=changelog, nachweis=nachweis)
     return send_file(

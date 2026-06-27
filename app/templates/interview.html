@@ -110,6 +110,7 @@
           {% if state.followup.type == 'catalog' %}Typisches Risiko nicht erwähnt
           {% elif state.followup.type == 'offer' %}HERMES PIA denkt mit
           {% elif state.followup.type == 'decision' %}HERMES PIA empfiehlt &ndash; Sie entscheiden
+          {% elif state.followup.type == 'complexity' %}Komplexität &ndash; bestätigen, ergänzen oder widerlegen
           {% else %}HERMES PIA hat eine Rückfrage{% endif %}
         </div>
         <p class="followup-question">{{ state.followup.frage }}</p>
@@ -149,6 +150,13 @@
           </button>
           <button type="submit" name="accepted" value="0" class="btn-secondary">
             Nein, verzichten
+          </button>
+          {% elif state.followup.type == 'complexity' %}
+          <button type="submit" name="accepted" value="1" class="btn-primary">
+            Bestätigen / Ergänzen
+          </button>
+          <button type="submit" name="accepted" value="0" class="btn-secondary">
+            Widerlegen
           </button>
           {% else %}
           <button type="submit" name="accepted" value="1" class="btn-primary">

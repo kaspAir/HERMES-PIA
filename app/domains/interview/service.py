@@ -16,7 +16,9 @@ Klare Aufgabentrennung:
 import json
 
 from app.domains.interview.extraction import (
+    COMPLEXITY_DIMENSIONS,
     analyze_results_options,
+    assess_complexity,
     detect_project_type,
     estimate_risk_assessment,
     extract_fields,
@@ -215,7 +217,7 @@ class InterviewService:
         if section["id"] == "termine" and self._is_empty(extracted):
             catalog = self._catalog_suggestion(session.project_type_id, section)
             if catalog:
-                _assign_termine_dates(catalog, session.start_datum)
+                _assign_termine_dates(catalog, session.start_datum, self._complexity_factor(answers))
                 extracted = catalog
 
         entry = {
@@ -275,7 +277,11 @@ class InterviewService:
                     followup["status"] = "accepted" if accepted else "dismissed"
                     if raw_text:
                         followup["raw_text"] = raw_text
-                    if accepted:
+                    # Komplexitäts-Einschätzung: bestätigen / ergänzen / widerlegen –
+                    # auch ein 'Widerlegen' (nicht accepted) wird verarbeitet.
+                    if followup.get("type") == "complexity":
+                        self._apply_complexity(answers, followup, raw_text, refuted=not accepted)
+                    elif accepted:
                         section = self._section_by_id(session.method_id, sid)
                         if section and followup.get("type") == "offer":
                             self._fill_from_suggestion(session, section, section_answer, answers)
@@ -296,9 +302,14 @@ class InterviewService:
         catalog_first = section.get("id") in CATALOG_FIRST_SECTIONS
 
         suggestion = None
-        if catalog_first:
+        # Projektorganisation (Kap. 6) wird deterministisch aus dem Personalaufwand
+        # (Kap. 3.1) und der Initialisierungsdauer abgeleitet – in PT pro Monat, sodass
+        # die Summe je Rolle mit Kap. 3.1 übereinstimmt (kein freier LLM-Vorschlag).
+        if section.get("id") == "projektorganisation":
+            suggestion = self._build_projektorganisation(answers, session.start_datum)
+        if not suggestion and catalog_first:
             suggestion = self._catalog_suggestion(session.project_type_id, section)
-        if not suggestion and self.llm:
+        if not suggestion and self.llm and section.get("id") != "projektorganisation":
             suggestion = generate_suggestion(self.llm, section, context, vocabularies)
         # Fallback auf den Referenzkatalog, wenn das LLM nichts Brauchbares liefert.
         if not suggestion:
@@ -307,10 +318,9 @@ class InterviewService:
         if not suggestion:
             return
 
-        # Ergebnisse/Termine: Liefertermine relativ zum Start der Initialisierung
-        # berechnen (Startdatum aus dem Formular, sonst heute).
+        # Ergebnisse/Termine: Liefertermine nach Abhängigkeitsrang × Komplexität.
         if section.get("id") == "termine" and isinstance(suggestion, list):
-            _assign_termine_dates(suggestion, session.start_datum)
+            _assign_termine_dates(suggestion, session.start_datum, self._complexity_factor(answers))
 
         # Anhängen statt ersetzen: vorhandene Einträge dürfen nie verloren gehen,
         # auch wenn der Vorschlag versehentlich für einen gefüllten Abschnitt käme.
@@ -345,6 +355,13 @@ class InterviewService:
             section_answer["extracted"] = self._kosten_initialisierung_only(rows)
         elif sid == "personalaufwand":
             self._ensure_deliverable_roles(rows, answers)
+        elif sid == "risiken":
+            for r in rows:
+                if isinstance(r, dict):
+                    if not str(r.get("verantwortung", "")).strip():
+                        r["verantwortung"] = "Projektleiter"
+                    if not str(r.get("termin", "")).strip():
+                        r["termin"] = "laufend"
 
     @staticmethod
     def _kosten_initialisierung_only(rows):
@@ -377,6 +394,59 @@ class InterviewService:
         if "entwickler" in text or "prototyp" in text:
             if not has_role("entwickler"):
                 rows.append({"rolle": "Entwickler", "name": "", "aufwand": ""})
+
+    def _build_projektorganisation(self, answers, start_datum):
+        """Leitet Kap. 6 deterministisch aus Personalaufwand (3.1) und Dauer ab:
+        je Rolle der Gesamt-PT auf die Initialisierungsmonate verteilt (in PT),
+        sodass die Monatssumme mit Kap. 3.1 übereinstimmt."""
+        personal = (answers.get("personalaufwand") or {}).get("extracted")
+        if not isinstance(personal, list) or not personal:
+            return None
+        months = self._initialisierung_monate(answers, start_datum)
+        rows = []
+        for p in personal:
+            if not isinstance(p, dict):
+                continue
+            rolle = str(p.get("rolle", "")).strip()
+            if not rolle:
+                continue
+            verteilung = _distribute_pt(self._parse_pt(p.get("aufwand")), months)
+            row = {"rolle_person": rolle, "bestaetigung": "ausstehend"}
+            for i in range(1, 10):
+                val = verteilung[i - 1] if i - 1 < len(verteilung) else 0
+                row[f"monat_{i}"] = str(val) if val else ""
+            rows.append(row)
+        return rows or None
+
+    @staticmethod
+    def _parse_pt(value):
+        import re as _re
+        m = _re.search(r"\d+", str(value or ""))
+        return int(m.group()) if m else 0
+
+    @staticmethod
+    def _initialisierung_monate(answers, start_datum, cap=9):
+        """Anzahl Monate der Initialisierung aus der Termin-Spanne (Start bis letzter Termin)."""
+        from datetime import date as _date
+        termine = (answers.get("termine") or {}).get("extracted") or []
+        dates = []
+        for r in termine:
+            if isinstance(r, dict) and r.get("termin"):
+                try:
+                    d, m, y = str(r["termin"]).split(".")
+                    dates.append(_date(int(y), int(m), int(d)))
+                except (ValueError, TypeError):
+                    pass
+        try:
+            start = _date.fromisoformat(start_datum) if start_datum else None
+        except (ValueError, TypeError):
+            start = None
+        if not dates:
+            return min(3, cap)
+        if start is None:
+            start = min(dates)
+        days = (max(dates) - start).days
+        return min(max(1, -(-days // 30)), cap)  # ceil(days/30)
 
     def _suggestion_context(self, session, answers):
         """Baut einen Kurzkontext aus dem bisher Bekannten für die LLM-Vorschläge."""
@@ -769,8 +839,10 @@ class InterviewService:
         followups = []
         project_type_id = session.project_type_id
 
-        # KI-Vollständigkeitsprüfung für alle Abschnitte mit interview-Definition
-        if self.llm and section.get("interview"):
+        # KI-Vollständigkeitsprüfung für alle Abschnitte mit interview-Definition.
+        # Ausnahme Ausgangslage: dort übernimmt die strukturierte Komplexitäts-Abfrage
+        # (siehe unten) die Vertiefung.
+        if self.llm and section.get("interview") and section["id"] != "ausgangslage":
             ai_items = generate_followups(self.llm, section, raw_text)
             for i, f in enumerate(ai_items):
                 followups.append({
@@ -794,11 +866,42 @@ class InterviewService:
         if section["id"] == "termine" and self.llm:
             ausgangslage = self._section_text_from_answers(answers, "ausgangslage")
             opts = analyze_results_options(self.llm, ausgangslage)
-            followups.extend(self._decision_followups(opts, session.start_datum))
+            factor = self._complexity_factor(answers)
+            followups.extend(self._decision_followups(opts, session.start_datum, factor))
+
+        # Ausgangslage: Komplexität aus verschiedenen Blickwinkeln einschätzen lassen,
+        # damit daraus (verlängerte) Dauern für die Ergebnisse abgeleitet werden.
+        if section["id"] == "ausgangslage" and self.llm:
+            ausgangslage = self._section_text_from_answers(answers, "ausgangslage") or raw_text
+            for i, a in enumerate(assess_complexity(self.llm, ausgangslage)):
+                followups.append({
+                    "risk_id": f"complexity_{i}",
+                    "frage": f"Komplexität «{a['dimension']}» – meine Einschätzung: "
+                             f"{a['stufe']}. {a['einschaetzung']} "
+                             f"Bestätigen, ergänzen (sprechen) oder widerlegen?",
+                    "type": "complexity",
+                    "status": "pending",
+                    "dimension": a["dimension"],
+                    "stufe": a["stufe"],
+                    "einschaetzung": a["einschaetzung"],
+                })
 
         return followups
 
-    def _decision_followups(self, opts, start_datum):
+    @staticmethod
+    def _complexity_factor(answers):
+        """Aggregiert die Komplexitäts-Stufen zu einem Dauer-Faktor (>= 1)."""
+        komplex = ((answers or {}).get("ausgangslage") or {}).get("komplexitaet") or {}
+        if not komplex:
+            return 1.0
+        weights = {"gering": 1, "mittel": 2, "hoch": 3}
+        vals = [weights.get(str(v.get("stufe") if isinstance(v, dict) else v).lower(), 2)
+                for v in komplex.values()]
+        avg = sum(vals) / len(vals) if vals else 2
+        # gering -> 1.0, mittel -> 1.4, hoch -> 1.8
+        return round(1.0 + (avg - 1) * 0.4, 2)
+
+    def _decision_followups(self, opts, start_datum, factor=1.0):
         """Baut die Entscheidungs-Followups für Beschaffungsanalyse / Prototyp.
 
         Bei 'Ja' (akzeptiert) wird die hinterlegte `row` als zusätzliches
@@ -814,9 +917,9 @@ class InterviewService:
                 "status": "pending",
                 "row": {
                     "ergebnis": "Beschaffungsanalyse",
-                    "termin": _single_termin(start_datum, "Beschaffungsanalyse"),
+                    "termin": _single_termin(start_datum, "Beschaffungsanalyse", factor),
                     "abnahme": "Anwendervertreter",
-                    "pruefmethode": "Inhaltliche Pruefung",
+                    "pruefmethode": "Inhaltliche Prüfung",
                 },
             })
         p = opts.get("prototyp") or {}
@@ -830,9 +933,9 @@ class InterviewService:
                 "status": "pending",
                 "row": {
                     "ergebnis": ergebnis,
-                    "termin": _single_termin(start_datum, ergebnis),
+                    "termin": _single_termin(start_datum, ergebnis, factor),
                     "abnahme": "Entwickler",
-                    "pruefmethode": "Inhaltliche Pruefung",
+                    "pruefmethode": "Inhaltliche Prüfung",
                 },
             })
         return out
@@ -844,6 +947,44 @@ class InterviewService:
         if isinstance(extracted, dict):
             return extracted.get("text", "") or entry.get("raw_text", "")
         return entry.get("raw_text", "")
+
+    def _apply_complexity(self, answers, followup, raw_text, refuted=False):
+        """Übernimmt die Antwort auf eine Komplexitäts-Einschätzung (bestätigt /
+        ergänzt / widerlegt) in die Ausgangslage; daraus folgt der Dauer-Faktor."""
+        entry = answers.get("ausgangslage")
+        if not entry:
+            return
+        komplex = entry.setdefault("komplexitaet", {})
+        dim = followup.get("dimension") or "Allgemein"
+        stufe = followup.get("stufe", "mittel")
+        einsch = followup.get("einschaetzung", "")
+        if refuted:
+            stufe = {"hoch": "mittel", "mittel": "gering", "gering": "gering"}.get(stufe, "gering")
+            zusatz = f": {raw_text.strip()}" if raw_text else ""
+            einsch = f"{einsch} (vom Projektleiter relativiert{zusatz})"
+        elif raw_text and self.llm:
+            # Ergänzt: die Dimension mit der gesprochenen Zusatzinfo neu einschätzen.
+            base = self._section_text_from_answers(answers, "ausgangslage")
+            combined = f"{base}\n\nErgänzung des Projektleiters zu «{dim}»: {raw_text.strip()}"
+            hint = next((h for n, h in COMPLEXITY_DIMENSIONS if n == dim), "")
+            re_assessed = assess_complexity(self.llm, combined, [(dim, hint)])
+            if re_assessed:
+                stufe = re_assessed[0]["stufe"]
+                einsch = re_assessed[0]["einschaetzung"]
+        komplex[dim] = {"stufe": stufe, "einschaetzung": einsch}
+
+    def composed_ausgangslage(self, answers):
+        """Ausgangslage-Text inkl. angehängter Komplexitätseinschätzung (für die Doku)."""
+        base = self._section_text_from_answers(answers, "ausgangslage")
+        komplex = (answers.get("ausgangslage") or {}).get("komplexitaet") or {}
+        if not komplex:
+            return base
+        teile = [f"{dim} – {v.get('stufe', '')}: {v.get('einschaetzung', '')}".strip()
+                 for dim, v in komplex.items() if isinstance(v, dict)]
+        if not teile:
+            return base
+        block = "Komplexitätseinschätzung der Initialisierung: " + " ".join(teile)
+        return f"{base}\n\n{block}" if base else block
 
 
 # ------------------------------------------------------------------ #
@@ -889,31 +1030,50 @@ def _sort_termine_rows(rows):
     return rows
 
 
+def _distribute_pt(total, months):
+    """Verteilt PT möglichst gleichmässig auf die Monate (Rest vorne), Summe = total."""
+    if months <= 0 or total <= 0:
+        return []
+    base, rem = divmod(total, months)
+    return [base + (1 if i < rem else 0) for i in range(months)]
+
+
+def _pruefmethode(ergebnis):
+    """Standard-Prüfmethode je Ergebnis (Meilensteine: Entscheid, sonst inhaltlich)."""
+    t = (ergebnis or "").lower()
+    if "meilenstein" in t or "entscheid" in t or "freigabe" in t:
+        return "Formelle Abnahme (Entscheid)"
+    return "Inhaltliche Prüfung"
+
+
 def _termin_datum(start_datum_str, weeks):
     from datetime import date as _date, timedelta as _timedelta
     try:
         base = _date.fromisoformat(start_datum_str) if start_datum_str else _date.today()
     except (ValueError, TypeError):
         base = _date.today()
-    return (base + _timedelta(weeks=weeks)).strftime("%d.%m.%Y")
+    return (base + _timedelta(weeks=round(weeks))).strftime("%d.%m.%Y")
 
 
-def _single_termin(start_datum_str, ergebnis):
+def _single_termin(start_datum_str, ergebnis, factor=1.0):
     """Liefertermin für ein Zusatz-Ergebnis (Beschaffungsanalyse/Prototyp), nach Rang."""
-    return _termin_datum(start_datum_str, _termin_woche(ergebnis))
+    return _termin_datum(start_datum_str, _termin_woche(ergebnis) * factor)
 
 
-def _assign_termine_dates(rows, start_datum_str):
-    """Setzt je Ergebnis einen Liefertermin nach HERMES-Abhängigkeitsrang und
-    sortiert die Zeilen entsprechend (Studie nach den einfliessenden Analysen usw.).
+def _assign_termine_dates(rows, start_datum_str, factor=1.0):
+    """Setzt je Ergebnis Liefertermin (nach HERMES-Abhängigkeitsrang × Komplexitäts-
+    faktor) und Prüfmethode, und sortiert die Zeilen in Abhängigkeitsreihenfolge.
 
-    Basis: angegebenes Startdatum (ISO), sonst heute. Die Wochen-Raenge bilden die
-    Abhängigkeiten ab; absolute Dauern bleiben Heuristik (später aus Korpus ableitbar).
+    `factor` >= 1 streckt die Dauern bei höherer Komplexität (die Phase Initialisierung
+    wird erfahrungsgemäss zu kurz geplant).
     """
     for r in rows:
-        if not isinstance(r, dict) or r.get("termin"):
+        if not isinstance(r, dict):
             continue
-        r["termin"] = _termin_datum(start_datum_str, _termin_woche(r.get("ergebnis", "")))
+        if not r.get("termin"):
+            r["termin"] = _termin_datum(start_datum_str, _termin_woche(r.get("ergebnis", "")) * factor)
+        if not r.get("pruefmethode"):
+            r["pruefmethode"] = _pruefmethode(r.get("ergebnis", ""))
     _sort_termine_rows(rows)
     return rows
 
