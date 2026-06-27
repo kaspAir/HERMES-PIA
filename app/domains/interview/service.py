@@ -223,6 +223,12 @@ class InterviewService:
             "complete": self._is_complete(section, extracted),
         }
 
+        # Deterministische HERMES-Korrekturen (Kosten nur Initialisierung,
+        # Pflichtrollen im Personalaufwand) auch bei direkt diktierten Angaben.
+        if not self._is_empty(extracted):
+            self._postprocess_section(section, entry, answers)
+            entry["complete"] = self._is_complete(section, entry["extracted"])
+
         # Nach der Ausgangslage: Projekttyp aus dem Text ableiten
         if section["id"] == "ausgangslage" and not session.project_type_id:
             pt = self._detect_type(raw_text)
@@ -321,6 +327,56 @@ class InterviewService:
                 "text": f"{old_text}\n{new_text}".strip() if old_text else new_text
             }
 
+        self._postprocess_section(section, section_answer, answers)
+
+    def _postprocess_section(self, section, section_answer, answers):
+        """Deterministische HERMES-Korrekturen nach dem Befüllen eines Abschnitts.
+
+        - Kosten: nur die Phase Initialisierung behalten (nie Konzept/Realisierung/…).
+        - Personalaufwand: Pflichtrollen aus den Lieferergebnissen sicherstellen
+          (Beschaffungsanalyse -> Anwendervertreter, Prototyp -> Entwickler).
+        """
+        sid = section.get("id")
+        rows = section_answer.get("extracted")
+        if not isinstance(rows, list):
+            return
+        if sid == "kosten":
+            section_answer["extracted"] = self._kosten_initialisierung_only(rows)
+        elif sid == "personalaufwand":
+            self._ensure_deliverable_roles(rows, answers)
+
+    @staticmethod
+    def _kosten_initialisierung_only(rows):
+        """Behält ausschliesslich die Initialisierungs-Kosten (HERMES-Vorgabe)."""
+        keep = [r for r in rows
+                if isinstance(r, dict) and "initial" in str(r.get("phase", "")).lower()]
+        if keep:
+            return keep
+        # Keine als Initialisierung erkannte Zeile -> einen leeren Initialisierungs-
+        # Eintrag setzen (Betrag durch den PL zu ergänzen), statt fremde Phasen zu zeigen.
+        return [{"phase": "Initialisierung", "betrag": ""}]
+
+    @staticmethod
+    def _ensure_deliverable_roles(rows, answers):
+        """Stellt sicher, dass Anwendervertreter (bei Beschaffungsanalyse) und
+        Entwickler (bei Prototyp) im Personalaufwand vertreten sind."""
+        termine = (answers.get("termine") or {}).get("extracted") or []
+        text = " ".join(
+            f"{r.get('ergebnis','')} {r.get('abnahme','')}"
+            for r in termine if isinstance(r, dict)
+        ).lower()
+
+        def has_role(key):
+            return any(key in str(r.get("rolle", "")).lower()
+                       for r in rows if isinstance(r, dict))
+
+        if "anwendervertreter" in text or "beschaffungsanalyse" in text:
+            if not has_role("anwendervertreter"):
+                rows.append({"rolle": "Anwendervertreter", "name": "", "aufwand": ""})
+        if "entwickler" in text or "prototyp" in text:
+            if not has_role("entwickler"):
+                rows.append({"rolle": "Entwickler", "name": "", "aufwand": ""})
+
     def _suggestion_context(self, session, answers):
         """Baut einen Kurzkontext aus dem bisher Bekannten für die LLM-Vorschläge."""
         parts = []
@@ -342,6 +398,16 @@ class InterviewService:
                     str(r.get("beschreibung") or next(iter(r.values()), "")) for r in extracted
                 )
                 parts.append(f"{sid}: {joined}")
+        # Geplante Lieferergebnisse (Kap. 4.1) mit Abnahme-Rolle in den Kontext geben –
+        # daraus leitet das LLM u.a. die noetigen Rollen im Personalaufwand ab.
+        termine = (answers.get("termine") or {}).get("extracted")
+        if isinstance(termine, list) and termine:
+            erg = "; ".join(
+                f"{r.get('ergebnis','')} (Abnahme: {r.get('abnahme','')})".strip()
+                for r in termine if isinstance(r, dict) and r.get("ergebnis")
+            )
+            if erg:
+                parts.append(f"Geplante Lieferergebnisse mit Abnahme-Rolle: {erg}")
         return "\n".join(parts) or "(noch keine weiteren Angaben)"
 
     def _vocabularies(self, method_id):

@@ -28,7 +28,19 @@ HERMES_RULES = (
     "(z.B. Strategien, Richtlinien, Gesetze, Weisungen, Vorgaben der Stammorganisation). "
     "Die in der Phase Initialisierung erst erarbeiteten Ergebnisse (Stakeholderliste, "
     "Studie, Rechtsgrundlagen-/Schutzbedarfs-/Beschaffungsanalyse, Projektmanagementplan, "
-    "Durchfuehrungsauftrag, Prototyp) gehoeren NIEMALS in diese beiden Abschnitte."
+    "Durchfuehrungsauftrag, Prototyp) gehoeren NIEMALS in diese beiden Abschnitte.\n"
+    "- KOSTEN/BUDGET betreffen im PIA AUSSCHLIESSLICH die Phase Initialisierung. "
+    "Budgetiere NIEMALS die Phasen Konzept, Realisierung, Einfuehrung, Abschluss oder "
+    "Umsetzung. Ob das Projekt klassisch (mit diesen Phasen) oder agil (nur Initialisierung, "
+    "Umsetzung, Abschluss) gefuehrt wird, entscheidet sich erst im Meilenstein 'Weiteres "
+    "Vorgehen' WAEHREND der Initialisierung. Die Kostentabelle enthaelt daher nur die Zeile "
+    "'Initialisierung'.\n"
+    "- Der Personalaufwand muss alle Rollen enthalten, die fuer die geplanten "
+    "Lieferergebnisse (Kap. 4.1) noetig sind. Verwende die HERMES-2022-Rollenbezeichnungen. "
+    "Insbesondere: Schutzbedarfsanalyse -> ISDS-Verantwortlicher; Beschaffungsanalyse -> "
+    "Anwendervertreter; Prototyp -> Entwickler; Rechtsgrundlagenanalyse/Studie/Stakeholderliste/"
+    "Projektmanagementplan/Durchfuehrungsauftrag -> Projektleiter; Entscheide der Steuerung -> "
+    "Auftraggeber."
 )
 
 

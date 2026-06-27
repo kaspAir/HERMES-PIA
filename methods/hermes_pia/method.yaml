@@ -156,6 +156,26 @@ sections:
     defaults:
       - { nr: "01", vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022" }
 
+  # Ergebnisse/Termine werden VOR dem Personalaufwand erhoben: erst wenn die
+  # Lieferergebnisse (inkl. Beschaffungsanalyse/Prototyp) feststehen, sind die
+  # dafuer noetigen Rollen (z.B. Anwendervertreter, Entwickler) bekannt.
+  - id: termine
+    number: "4.1"
+    title: "Ergebnisse und Termine"
+    type: table
+    required: true
+    gap_check: true
+    columns:
+      - { id: nr,         label: "Nr." }
+      - { id: ergebnis,   label: "Lieferergebnisse (abnahmerelevant)" }
+      - { id: termin,     label: "Liefertermin" }
+      - { id: abnahme,    label: "Abnahme durch (Rolle)" }
+      - { id: pruefmethode, label: "Pruefmethode" }
+    interview:
+      intent: "Abnahmerelevante Lieferergebnisse der Initialisierung terminieren."
+      completeness:
+        - "Geplantes Enddatum der Phase Initialisierung ist gesetzt"
+
   - id: personalaufwand
     number: "3.1"
     title: "Personalaufwand"
@@ -185,23 +205,6 @@ sections:
       - { id: phase,  label: "Phase" }
       - { id: betrag, label: "Betrag" }
 
-  - id: termine
-    number: "4.1"
-    title: "Ergebnisse und Termine"
-    type: table
-    required: true
-    gap_check: true
-    columns:
-      - { id: nr,         label: "Nr." }
-      - { id: ergebnis,   label: "Lieferergebnisse (abnahmerelevant)" }
-      - { id: termin,     label: "Liefertermin" }
-      - { id: abnahme,    label: "Abnahme durch (Rolle)" }
-      - { id: pruefmethode, label: "Pruefmethode" }
-    interview:
-      intent: "Abnahmerelevante Lieferergebnisse der Initialisierung terminieren."
-      completeness:
-        - "Geplantes Enddatum der Phase Initialisierung ist gesetzt"
-
   - id: projektorganisation
     number: "5"
     title: "Projektorganisation und Personal"
@@ -215,6 +218,9 @@ sections:
       - { id: monat_4, label: "Monat 4" }
       - { id: monat_5, label: "Monat 5" }
       - { id: monat_6, label: "Monat 6" }
+      - { id: monat_7, label: "Monat 7" }
+      - { id: monat_8, label: "Monat 8" }
+      - { id: monat_9, label: "Monat 9" }
       - { id: bestaetigung, label: "Bestaetigung Vorgesetzter" }
 
   - id: kommunikation
