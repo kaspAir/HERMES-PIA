@@ -94,6 +94,7 @@ class GenerationService:
         self._fill_cover(doc, metadata)
         self._fill_headers(doc, metadata)
         self._fill_body(doc, method, session_answers, metadata)
+        self._fill_enddatum(doc, session_answers)
         if changelog:
             self._fill_aenderungskontrolle(doc, changelog)
         self._delete_style(doc, STYLE_HELP)
@@ -475,6 +476,23 @@ class GenerationService:
             target_tbl.remove(row)
 
     # ------------------------------------------------------------------ #
+    # Geplantes Enddatum der Phase Initialisierung (Kap. 4.1)              #
+    # ------------------------------------------------------------------ #
+
+    def _fill_enddatum(self, doc, session_answers):
+        """Ersetzt den Platzhalter 'tt.mm.jjjj' beim geplanten Enddatum durch den
+        spätesten Liefertermin aus den Ergebnissen/Terminen (Kap. 4.1)."""
+        termine = (session_answers.get("termine") or {}).get("extracted") or []
+        last = _max_termin(termine)
+        if not last:
+            return
+        for p_el in doc.element.body.iter(f'{{{W}}}p'):
+            txt = _p_text(p_el)
+            if 'Geplantes Enddatum' in txt and 'tt.mm.jjjj' in txt:
+                _set_p_text(p_el, txt.replace('tt.mm.jjjj', last))
+                break
+
+    # ------------------------------------------------------------------ #
     # Nachweis-Anhang (Transparenz: Herkunft der Angaben)                  #
     # ------------------------------------------------------------------ #
 
@@ -570,6 +588,10 @@ HERMES_TERM_FIXES = {
     'Steuerungsausschuss': 'Projektausschuss',
     'Lenkungsausschuss':   'Projektausschuss',
     'Steuerungsgremium':   'Projektausschuss',
+    # Das Mandat heisst in HERMES 2022 'Durchführungsauftrag' – 'Projektauftrag'
+    # gibt es nicht (auch wenn das LLM den Begriff vereinzelt einstreut).
+    'Projektauftrags':     'Durchführungsauftrags',
+    'Projektauftrag':      'Durchführungsauftrag',
 }
 
 
@@ -580,6 +602,22 @@ def _fix_hermes_terms(text):
         if wrong in text:
             text = text.replace(wrong, right)
     return text
+
+
+def _max_termin(termine):
+    """Spätester Liefertermin (dd.mm.yyyy) aus den Termin-Zeilen als String."""
+    from datetime import date as _date
+    best, best_s = None, None
+    for r in termine:
+        if isinstance(r, dict) and r.get('termin'):
+            try:
+                d, m, y = str(r['termin']).split('.')
+                dt = _date(int(y), int(m), int(d))
+            except (ValueError, TypeError):
+                continue
+            if best is None or dt > best:
+                best, best_s = dt, r['termin']
+    return best_s
 
 
 def _set_p_text(p_el, text):

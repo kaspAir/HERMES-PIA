@@ -40,7 +40,14 @@ HERMES_RULES = (
     "Insbesondere: Schutzbedarfsanalyse -> ISDS-Verantwortlicher; Beschaffungsanalyse -> "
     "Anwendervertreter; Prototyp -> Entwickler; Rechtsgrundlagenanalyse/Studie/Stakeholderliste/"
     "Projektmanagementplan/Durchfuehrungsauftrag -> Projektleiter; Entscheide der Steuerung -> "
-    "Auftraggeber."
+    "Auftraggeber.\n"
+    "- RISIKEN im PIA betreffen AUSSCHLIESSLICH die Phase Initialisierung: also Risiken, die das "
+    "Erarbeiten der Initialisierungs-Ergebnisse gefaehrden (z.B. Schluesselpersonen/Fachexperten "
+    "nicht verfuegbar, Rechts-/Datenschutzfragen werden nicht rechtzeitig geklaert, Anforderungen "
+    "fuer die Studie bleiben unklar, Beschaffungsstrategie ungeklaert, knappe Termine der "
+    "Initialisierung, fehlende Stakeholder-Mitwirkung). NIEMALS Risiken der spaeteren Umsetzung/"
+    "Migration (Cutover, Rollback, Datenmigration, Testabdeckung, Go-Live, Parallelbetrieb) - "
+    "diese werden erst in spaeteren Phasen relevant."
 )
 
 
@@ -75,6 +82,60 @@ def estimate_risk_assessment(llm_client, beschreibung):
         return out
     except Exception:
         return {}
+
+
+COMPLEXITY_DIMENSIONS = [
+    ("Technologie", "technische Neuartigkeit, Architektur, Integrationen, Migration, Abhängigkeiten"),
+    ("Ressourcenverfügbarkeit", "Verfügbarkeit von Fachexperten/Schlüsselpersonen, Kapazität, Know-how"),
+    ("Politik & Stakeholder", "politische Brisanz, Anzahl und Interessen der Stakeholder, Behörden"),
+    ("Recht & Compliance", "rechtliche Unsicherheiten, Datenschutz, Beschaffungsrecht, Bewilligungen"),
+    ("Organisation & Prozesse", "Reorganisation, Betroffenheit, Veränderungsumfang, Prozesseingriff"),
+]
+
+_STUFEN = ("gering", "mittel", "hoch")
+
+
+def assess_complexity(llm_client, ausgangslage_text, dimensions=None):
+    """Schätzt aus der Ausgangslage je Dimension die Komplexität ('gering'|'mittel'|
+    'hoch') und formuliert eine kurze Einschätzung, die der PL bestätigen, ergänzen
+    oder widerlegen kann. Rückgabe: [{"dimension", "einschaetzung", "stufe"}].
+    """
+    if not ausgangslage_text or not ausgangslage_text.strip() or llm_client is None:
+        return []
+    dims = dimensions or COMPLEXITY_DIMENSIONS
+    dim_desc = "\n".join(f"- {name}: {hint}" for name, hint in dims)
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Projektberater. Schätze die Komplexität eines "
+        "Vorhabens je Dimension ein und begründe knapp. Erfahrungsgemäss wird die Phase "
+        "Initialisierung oft zu KURZ geplant; sei daher eher umsichtig (nicht untertreiben). "
+        "Antworte ausschliesslich mit validem JSON.\n\n" + HERMES_RULES
+    )
+    user = (
+        f"Ausgangslage:\n{ausgangslage_text}\n\n"
+        f"Dimensionen:\n{dim_desc}\n\n"
+        "Gib je Dimension eine Stufe ('gering', 'mittel' oder 'hoch') und eine Einschätzung "
+        "(1-2 Sätze, Sie-Form), die der Projektleiter bestätigen, ergänzen oder widerlegen kann. "
+        "Stütze dich nur auf die Ausgangslage; wo Information fehlt, benenne die Annahme.\n\n"
+        'Rückgabe als JSON-Array: [{"dimension": "...", "stufe": "mittel", "einschaetzung": "..."}]'
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1536)
+        data = _parse_json(raw)
+        if not isinstance(data, list):
+            return []
+        out = []
+        for d in data:
+            if not isinstance(d, dict) or not d.get("dimension") or not d.get("einschaetzung"):
+                continue
+            stufe = str(d.get("stufe", "")).lower().strip()
+            out.append({
+                "dimension": str(d["dimension"]).strip(),
+                "einschaetzung": str(d["einschaetzung"]).strip(),
+                "stufe": stufe if stufe in _STUFEN else "mittel",
+            })
+        return out
+    except Exception:
+        return []
 
 
 def analyze_results_options(llm_client, ausgangslage_text):
@@ -152,34 +213,44 @@ def nachweis_begruendungen(llm_client, items, context):
     if not items or llm_client is None:
         return {}
     bullets = []
-    for it in items:
+    for idx, it in enumerate(items, 1):
         bullets.append(
-            f"- Abschnitt: {it['abschnitt']}\n"
-            f"  Herkunft: {it['herkunft']}\n"
-            f"  Angabe des Projektleiters: {it.get('pl_eingabe') or '(keine)'}\n"
-            f"  Resultierender Inhalt: {it.get('inhalt') or '(leer)'}"
+            f"[{idx}] Abschnitt: {it['abschnitt']}\n"
+            f"     Herkunft: {it['herkunft']}\n"
+            f"     Angabe des Projektleiters: {it.get('pl_eingabe') or '(keine)'}\n"
+            f"     Resultierender Inhalt: {it.get('inhalt') or '(leer)'}"
         )
     system = (
         "Du bist ein HERMES-2022-Projektberater und dokumentierst nachvollziehbar, wie die "
         "Angaben eines Projektinitialisierungsauftrags zustande kamen. Schreibe je Abschnitt "
-        "eine knappe Begruendung (1-2 Saetze, sachlicher Behoerdenstil). "
-        "Wenn die Herkunft 'HERMES PIA (kombiniert)' lautet, nenne die KONKRETEN Gruende und "
-        "Ableitungen (woraus: Ausgangslage, Projekttyp, HERMES-2022-Standard, getroffene "
-        "Entscheidungen). Wenn 'Projektleiter (Interview)', halte fest, dass es auf seinen "
-        "Angaben beruht und nur sprachlich gefasst wurde. Bei 'Projektleiter + HERMES PIA' "
-        "trenne, was vom Projektleiter kam und was ergaenzt wurde. "
+        "eine knappe, KONKRETE Begruendung (1-2 Saetze, sachlicher Behoerdenstil). "
+        "Wenn die Herkunft 'HERMES PIA (kombiniert)' lautet, nenne die konkreten Gruende und "
+        "Ableitungen (woraus genau: welche Aussage der Ausgangslage, welcher Projekttyp, welcher "
+        "HERMES-2022-Standard, welche Entscheidung). Wenn 'Projektleiter (Interview)', halte fest, "
+        "dass es auf seinen Angaben beruht und nur sprachlich gefasst wurde. Bei 'Projektleiter + "
+        "HERMES PIA' trenne, was vom Projektleiter kam und was ergaenzt wurde. "
         "Antworte ausschliesslich mit validem JSON.\n\n" + HERMES_RULES
     )
     user = (
         f"Projektkontext:\n{context}\n\n"
         f"Abschnitte:\n" + "\n".join(bullets) + "\n\n"
-        'Rueckgabe als JSON-Objekt: {"<Abschnittstitel>": "<Begruendung>", ...} '
-        "mit exakt denselben Abschnittstiteln wie oben."
+        'Rueckgabe als JSON-Objekt mit den Nummern als Schluessel: '
+        '{"1": "<Begruendung>", "2": "<Begruendung>", ...} fuer jeden Abschnitt.'
     )
     try:
-        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
+        # Grosszuegiges Limit: bei ~13 Abschnitten wuerde ein zu kleines Limit das JSON
+        # abschneiden -> Parser scheitert -> alle fielen auf den Fallback zurueck.
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=4096)
         d = _parse_json(raw)
-        return {str(k): str(v) for k, v in d.items()} if isinstance(d, dict) else {}
+        if not isinstance(d, dict):
+            return {}
+        # Index-Keys ("1"...) zurueck auf die Abschnittstitel mappen.
+        out = {}
+        for idx, it in enumerate(items, 1):
+            val = d.get(str(idx)) or d.get(it["abschnitt"])
+            if val:
+                out[it["abschnitt"]] = str(val).strip()
+        return out
     except Exception:
         return {}
 
