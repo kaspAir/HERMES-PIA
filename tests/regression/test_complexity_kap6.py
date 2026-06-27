@@ -69,6 +69,19 @@ def test_apply_complexity_ergaenzen_reassesst():
     assert answers["ausgangslage"]["komplexitaet"]["Technologie"]["stufe"] == "hoch"
 
 
+def test_widerlegen_ohne_text_ersetzt_widerspruechlichen_volltext():
+    svc = _svc()
+    answers = {"ausgangslage": {"extracted": {"text": "x"}}}
+    fu = {"type": "complexity", "dimension": "Politik", "stufe": "mittel",
+          "einschaetzung": "Mittleres Konfliktpotenzial bei externen Einreichenden."}
+    svc._apply_complexity(answers, fu, raw_text=None, refuted=True)
+    res = answers["ausgangslage"]["komplexitaet"]["Politik"]
+    assert res["stufe"] == "gering"
+    # Der widersprechende Detail-Text ist weg, eine kurze Notiz steht da.
+    assert "Konfliktpotenzial" not in res["einschaetzung"]
+    assert "nicht" in res["einschaetzung"].lower()
+
+
 def test_apply_complexity_gesprochenes_wird_nie_woertlich_uebernommen():
     """Auch beim Widerlegen mit Sprache: sauber neu formuliert, kein Rohtext."""
     svc = _svc(_ReassessLLM())

@@ -1055,9 +1055,12 @@ class InterviewService:
                 stufe = re_assessed[0]["stufe"]
                 einsch = re_assessed[0]["einschaetzung"]
         elif refuted:
-            # Widerlegt ohne gesprochene Begründung: Stufe mechanisch senken.
+            # Widerlegt ohne gesprochene Begründung: Stufe mechanisch senken und die
+            # (jetzt zurückgewiesene) Detail-Einschätzung durch eine kurze, klare Notiz
+            # ersetzen – sonst widerspricht der ausführliche Text der gesenkten Stufe.
             stufe = {"hoch": "mittel", "mittel": "gering", "gering": "gering"}.get(stufe, "gering")
-            einsch = f"{einsch} (vom Projektleiter als nicht zutreffend eingestuft)"
+            einsch = ("Vom Projektleiter als nicht (wesentlich) zutreffend eingestuft und daher "
+                      "tiefer eingeordnet.")
         komplex[dim] = {"stufe": stufe, "einschaetzung": einsch}
 
     def composed_ausgangslage(self, answers):
