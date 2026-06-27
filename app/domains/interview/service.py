@@ -980,19 +980,26 @@ class InterviewService:
         dim = followup.get("dimension") or "Allgemein"
         stufe = followup.get("stufe", "mittel")
         einsch = followup.get("einschaetzung", "")
-        if refuted:
-            stufe = {"hoch": "mittel", "mittel": "gering", "gering": "gering"}.get(stufe, "gering")
-            zusatz = f": {raw_text.strip()}" if raw_text else ""
-            einsch = f"{einsch} (vom Projektleiter relativiert{zusatz})"
-        elif raw_text and self.llm:
-            # Ergänzt: die Dimension mit der gesprochenen Zusatzinfo neu einschätzen.
+        raw_text = (raw_text or "").strip()
+        if raw_text and self.llm:
+            # Der PL hat gesprochen (bestätigt+ergänzt ODER relativiert): die Dimension
+            # SAUBER neu einschätzen lassen – niemals den Rohtext (Spracherkennung,
+            # ungeschliffen) wörtlich ins Dokument übernehmen.
             base = self._section_text_from_answers(answers, "ausgangslage")
-            combined = f"{base}\n\nErgänzung des Projektleiters zu «{dim}»: {raw_text.strip()}"
+            haltung = "teilweise relativiert bzw. korrigiert" if refuted else "bestätigt und ergänzt"
             hint = next((h for n, h in COMPLEXITY_DIMENSIONS if n == dim), "")
+            combined = (f"{base}\n\nBisherige Einschätzung «{dim}» ({stufe}): {einsch}\n"
+                        f"Der Projektleiter hat diese Einschätzung {haltung}. "
+                        f"Seine (mündliche, ggf. ungeschliffene) Aussage: {raw_text}\n"
+                        f"Arbeite seine Aussage sachlich ein und formuliere die Einschätzung neu.")
             re_assessed = assess_complexity(self.llm, combined, [(dim, hint)])
             if re_assessed:
                 stufe = re_assessed[0]["stufe"]
                 einsch = re_assessed[0]["einschaetzung"]
+        elif refuted:
+            # Widerlegt ohne gesprochene Begründung: Stufe mechanisch senken.
+            stufe = {"hoch": "mittel", "mittel": "gering", "gering": "gering"}.get(stufe, "gering")
+            einsch = f"{einsch} (vom Projektleiter als nicht zutreffend eingestuft)"
         komplex[dim] = {"stufe": stufe, "einschaetzung": einsch}
 
     def composed_ausgangslage(self, answers):

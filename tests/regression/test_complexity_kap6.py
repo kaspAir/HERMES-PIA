@@ -69,6 +69,19 @@ def test_apply_complexity_ergaenzen_reassesst():
     assert answers["ausgangslage"]["komplexitaet"]["Technologie"]["stufe"] == "hoch"
 
 
+def test_apply_complexity_gesprochenes_wird_nie_woertlich_uebernommen():
+    """Auch beim Widerlegen mit Sprache: sauber neu formuliert, kein Rohtext."""
+    svc = _svc(_ReassessLLM())
+    answers = {"ausgangslage": {"extracted": {"text": "Basis"}}}
+    fu = {"type": "complexity", "dimension": "Technologie", "stufe": "hoch", "einschaetzung": "alt"}
+    roh = "das stimmt so nicht ganz äh es ist eigentlich einfacher judis vier"
+    svc._apply_complexity(answers, fu, raw_text=roh, refuted=True)
+    res = answers["ausgangslage"]["komplexitaet"]["Technologie"]
+    assert roh not in res["einschaetzung"]
+    assert "relativiert:" not in res["einschaetzung"]
+    assert res["einschaetzung"] == "Neu bewertet."  # vom LLM sauber formuliert
+
+
 def test_composed_ausgangslage_haengt_komplexitaet_an():
     svc = _svc()
     answers = {"ausgangslage": {"extracted": {"text": "Die Ausgangslage."},
