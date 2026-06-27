@@ -22,6 +22,7 @@ from app.domains.interview.extraction import (
     extract_fields,
     generate_followups,
     generate_suggestion,
+    nachweis_begruendungen,
 )
 from app.domains.interview.gap_check import build_followups, find_missing_risks
 from app.domains.interview.models import InterviewSession
@@ -409,6 +410,92 @@ class InterviewService:
             if erg:
                 parts.append(f"Geplante Lieferergebnisse mit Abnahme-Rolle: {erg}")
         return "\n".join(parts) or "(noch keine weiteren Angaben)"
+
+    # ------------------------------------------------------------------ #
+    # Nachweis / Herkunft der Angaben (Transparenz-Anhang)                 #
+    # ------------------------------------------------------------------ #
+
+    def build_nachweis(self, session, answers):
+        """Erstellt je Abschnitt einen Herkunfts-/Begruendungseintrag.
+
+        Herkunft wird deterministisch aus dem Entstehungsweg abgeleitet (vom
+        Projektleiter diktiert vs. von HERMES PIA generiert/ergaenzt), die
+        Begruendung per LLM formuliert (mit deterministischem Fallback).
+        Rueckgabe: [{"abschnitt", "herkunft", "begruendung"}].
+        """
+        entries = []
+        for s in self.methods.sections(session.method_id):
+            if s.get("type") not in _INTERVIEWABLE:
+                continue
+            ans = answers.get(s.get("id"))
+            if not ans:
+                continue
+            extracted = ans.get("extracted")
+            if self._is_empty(extracted):
+                continue
+            raw = (ans.get("raw_text") or "").strip()
+            accepted = [f for f in (ans.get("followups") or [])
+                        if f.get("status") == "accepted"]
+            entries.append({
+                "abschnitt": s.get("title", s.get("id")),
+                "herkunft": self._herkunft(raw, accepted),
+                "pl_eingabe": raw,
+                "inhalt": self._inhalt_summary(extracted),
+            })
+
+        context = self._suggestion_context(session, answers)
+        begr = nachweis_begruendungen(self.llm, entries, context) if self.llm else {}
+
+        result = []
+        for e in entries:
+            b = (begr.get(e["abschnitt"]) or "").strip() or self._fallback_begruendung(e["herkunft"])
+            result.append({
+                "abschnitt": e["abschnitt"],
+                "herkunft": e["herkunft"],
+                "begruendung": b,
+            })
+        return result
+
+    @staticmethod
+    def _herkunft(raw, accepted):
+        has_pl = bool(raw)
+        has_combined = (not has_pl) or any(
+            f.get("type") in ("offer", "decision", "ai", "catalog") for f in accepted
+        )
+        if has_pl and not has_combined:
+            return "Projektleiter (Interview)"
+        if has_pl and has_combined:
+            return "Projektleiter + HERMES PIA"
+        return "HERMES PIA (kombiniert)"
+
+    @staticmethod
+    def _inhalt_summary(extracted, limit=300):
+        if isinstance(extracted, dict):
+            t = (extracted.get("text") or "").strip()
+        elif isinstance(extracted, list):
+            parts = []
+            for r in extracted:
+                if isinstance(r, dict):
+                    main = next((str(v) for v in r.values() if str(v).strip()), "")
+                    if main:
+                        parts.append(main)
+            t = "; ".join(parts)
+        else:
+            t = ""
+        return (t[:limit] + "…") if len(t) > limit else t
+
+    @staticmethod
+    def _fallback_begruendung(herkunft):
+        if herkunft == "Projektleiter (Interview)":
+            return ("Beruht auf den Angaben des Projektleiters im Interview, sprachlich in "
+                    "die PIA-Form gebracht.")
+        if herkunft == "Projektleiter + HERMES PIA":
+            return ("Teils auf Angaben des Projektleiters, teils von HERMES PIA ergaenzt "
+                    "(Standard-Lieferergebnisse bzw. Vorschlaege aus Ausgangslage und "
+                    "HERMES-2022-Standard).")
+        return ("Von HERMES PIA aus Ausgangslage, Projekttyp und dem HERMES-2022-Standard fuer "
+                "die Phase Initialisierung abgeleitet, da der Projektleiter dazu keine eigenen "
+                "Angaben machte.")
 
     def _vocabularies(self, method_id):
         return self.methods.get(method_id).get("vocabularies", {})

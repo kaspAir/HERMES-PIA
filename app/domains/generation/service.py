@@ -16,6 +16,7 @@ from io import BytesIO
 from pathlib import Path
 
 from docx import Document
+from docx.shared import Inches, Pt
 from lxml import etree
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -75,7 +76,7 @@ class GenerationService:
         data = self.methods.get(method_id)
         return Path(data['_dir']) / data['method']['template']
 
-    def generate(self, method_id, session_answers, metadata, changelog=None):
+    def generate(self, method_id, session_answers, metadata, changelog=None, nachweis=None):
         """
         Füllt die .dotx-Vorlage und gibt das fertige Dokument als BytesIO zurück.
 
@@ -83,6 +84,7 @@ class GenerationService:
             session_answers: {section_id: {'extracted': ..., 'raw_text': ...}}
             metadata: {'projektname': ..., 'projektleiter': ..., ...}
             changelog: list of {version, name, datum, bemerkungen} for Änderungskontrolle
+            nachweis: list of {abschnitt, herkunft, begruendung} für den Transparenz-Anhang
         """
         template = self.template_path(method_id)
         method = self.methods.get(method_id)
@@ -96,6 +98,8 @@ class GenerationService:
             self._fill_aenderungskontrolle(doc, changelog)
         self._delete_style(doc, STYLE_HELP)
         self._delete_style(doc, STYLE_EXAMPLE)
+        if nachweis:
+            self._append_nachweis(doc, nachweis)
 
         buf = BytesIO()
         doc.save(buf)
@@ -469,6 +473,47 @@ class GenerationService:
         # Alle originalen Vorlage-Datenzeilen entfernen
         for row in template_rows:
             target_tbl.remove(row)
+
+    # ------------------------------------------------------------------ #
+    # Nachweis-Anhang (Transparenz: Herkunft der Angaben)                  #
+    # ------------------------------------------------------------------ #
+
+    def _append_nachweis(self, doc, nachweis):
+        """Hängt am Dokumentende eine Tabelle an, die je Abschnitt Herkunft und
+        Begründung der Angaben ausweist (Interview vs. von HERMES PIA kombiniert)."""
+        doc.add_paragraph()  # Abstand
+        head = doc.add_paragraph()
+        run = head.add_run("Nachweis – Herkunft der Angaben")
+        run.bold = True
+        run.font.size = Pt(14)
+        doc.add_paragraph(
+            "Diese Übersicht weist je Abschnitt aus, ob die Angaben vom Projektleiter im "
+            "Interview stammen oder von HERMES PIA kombiniert wurden – jeweils mit Begründung. "
+            "Der Anhang dient der Nachvollziehbarkeit und kann für die finale Fassung entfernt werden."
+        )
+
+        table = doc.add_table(rows=1, cols=3)
+        try:
+            table.style = 'Table Grid'
+        except KeyError:
+            pass
+
+        headers = ("Abschnitt", "Herkunft", "Begründung")
+        for cell, text in zip(table.rows[0].cells, headers):
+            cell.text = ""
+            r = cell.paragraphs[0].add_run(text)
+            r.bold = True
+
+        for item in nachweis:
+            cells = table.add_row().cells
+            cells[0].text = item.get("abschnitt", "")
+            cells[1].text = item.get("herkunft", "")
+            cells[2].text = item.get("begruendung", "")
+
+        widths = (Inches(1.7), Inches(1.7), Inches(3.6))
+        for row in table.rows:
+            for cell, width in zip(row.cells, widths):
+                cell.width = width
 
     # ------------------------------------------------------------------ #
     # Hilfe-/Beispieltexte löschen                                        #

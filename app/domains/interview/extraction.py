@@ -143,6 +143,47 @@ def analyze_results_options(llm_client, ausgangslage_text):
         return {}
 
 
+def nachweis_begruendungen(llm_client, items, context):
+    """Erzeugt je Abschnitt eine kurze Begruendung, wie die Angaben zustande kamen.
+
+    items: [{"abschnitt": str, "herkunft": str, "pl_eingabe": str, "inhalt": str}]
+    Rueckgabe: {abschnitt: begruendung}. Leeres Dict bei fehlendem LLM/Fehler.
+    """
+    if not items or llm_client is None:
+        return {}
+    bullets = []
+    for it in items:
+        bullets.append(
+            f"- Abschnitt: {it['abschnitt']}\n"
+            f"  Herkunft: {it['herkunft']}\n"
+            f"  Angabe des Projektleiters: {it.get('pl_eingabe') or '(keine)'}\n"
+            f"  Resultierender Inhalt: {it.get('inhalt') or '(leer)'}"
+        )
+    system = (
+        "Du bist ein HERMES-2022-Projektberater und dokumentierst nachvollziehbar, wie die "
+        "Angaben eines Projektinitialisierungsauftrags zustande kamen. Schreibe je Abschnitt "
+        "eine knappe Begruendung (1-2 Saetze, sachlicher Behoerdenstil). "
+        "Wenn die Herkunft 'HERMES PIA (kombiniert)' lautet, nenne die KONKRETEN Gruende und "
+        "Ableitungen (woraus: Ausgangslage, Projekttyp, HERMES-2022-Standard, getroffene "
+        "Entscheidungen). Wenn 'Projektleiter (Interview)', halte fest, dass es auf seinen "
+        "Angaben beruht und nur sprachlich gefasst wurde. Bei 'Projektleiter + HERMES PIA' "
+        "trenne, was vom Projektleiter kam und was ergaenzt wurde. "
+        "Antworte ausschliesslich mit validem JSON.\n\n" + HERMES_RULES
+    )
+    user = (
+        f"Projektkontext:\n{context}\n\n"
+        f"Abschnitte:\n" + "\n".join(bullets) + "\n\n"
+        'Rueckgabe als JSON-Objekt: {"<Abschnittstitel>": "<Begruendung>", ...} '
+        "mit exakt denselben Abschnittstiteln wie oben."
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
+        d = _parse_json(raw)
+        return {str(k): str(v) for k, v in d.items()} if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
 def _vocab_values(col, vocabularies):
     """Loest den Vokabular-Verweis einer Spalte in die erlaubten Werte auf.
 

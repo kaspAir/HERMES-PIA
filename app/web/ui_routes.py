@@ -278,7 +278,8 @@ def interview_download(session_id, filename):
         "klassifizierung":    "Nicht klassifiziert",
     }
 
-    buf = gen.generate(session.method_id, answers, metadata, changelog=changelog)
+    nachweis = svc.build_nachweis(session, answers)
+    buf = gen.generate(session.method_id, answers, metadata, changelog=changelog, nachweis=nachweis)
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
