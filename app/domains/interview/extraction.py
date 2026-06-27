@@ -33,8 +33,11 @@ HERMES_RULES = (
     "Budgetiere NIEMALS die Phasen Konzept, Realisierung, Einfuehrung, Abschluss oder "
     "Umsetzung. Ob das Projekt klassisch (mit diesen Phasen) oder agil (nur Initialisierung, "
     "Umsetzung, Abschluss) gefuehrt wird, entscheidet sich erst im Meilenstein 'Weiteres "
-    "Vorgehen' WAEHREND der Initialisierung. Die Kostentabelle enthaelt daher nur die Zeile "
-    "'Initialisierung'.\n"
+    "Vorgehen' WAEHREND der Initialisierung. Gliedere die Initialisierungskosten nach "
+    "Kostenart und trenne INTERNE von EXTERNEN Kosten (typisch: 'Interne Personalkosten', "
+    "'Externe Fachexpertise <Thema>', 'Sachmittel und Lizenzen'). Kennzeichne externe "
+    "Positionen im Namen mit dem Wort 'extern'. Pro Zeile ein realistischer Betrag in CHF "
+    "(nur die Zahl). Erzeuge KEINE Summen-/Totalzeilen – diese werden automatisch ergaenzt.\n"
     "- Der Personalaufwand muss alle Rollen enthalten, die fuer die geplanten "
     "Lieferergebnisse (Kap. 4.1) noetig sind. Verwende die HERMES-2022-Rollenbezeichnungen. "
     "Insbesondere: Schutzbedarfsanalyse -> ISDS-Verantwortlicher; Beschaffungsanalyse -> "
@@ -149,24 +152,42 @@ def assess_complexity(llm_client, ausgangslage_text, dimensions=None):
         "Stütze dich nur auf die Ausgangslage; wo Information fehlt, benenne die Annahme.\n\n"
         'Rückgabe als JSON-Array: [{"dimension": "...", "stufe": "mittel", "einschaetzung": "..."}]'
     )
+    def _norm(s):
+        return re.sub(r"[^a-zäöü]", "", str(s).lower())
+
     try:
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1536)
         data = _parse_json(raw)
-        if not isinstance(data, list):
-            return []
-        out = []
+    except Exception:
+        return []
+
+    # LLM-Ergebnisse je Dimension einsammeln (nach Name normalisiert).
+    by_dim = {}
+    if isinstance(data, list):
         for d in data:
-            if not isinstance(d, dict) or not d.get("dimension") or not d.get("einschaetzung"):
-                continue
+            if isinstance(d, dict) and d.get("dimension"):
+                by_dim[_norm(d["dimension"])] = d
+
+    # GARANTIE: jede konfigurierte Dimension kommt vor – fehlt eine in der
+    # LLM-Antwort, wird sie mit einem neutralen Platzhalter ergänzt (statt zu fehlen).
+    out = []
+    for name, _hint in dims:
+        d = by_dim.get(_norm(name))
+        if d and d.get("einschaetzung"):
             stufe = str(d.get("stufe", "")).lower().strip()
             out.append({
-                "dimension": str(d["dimension"]).strip(),
+                "dimension": name,
                 "einschaetzung": fix_hermes_terms(str(d["einschaetzung"]).strip()),
                 "stufe": stufe if stufe in _STUFEN else "mittel",
             })
-        return out
-    except Exception:
-        return []
+        else:
+            out.append({
+                "dimension": name,
+                "stufe": "mittel",
+                "einschaetzung": ("Diese Dimension konnte nicht automatisch eingeschätzt "
+                                  "werden – bitte selbst beurteilen."),
+            })
+    return out
 
 
 def analyze_results_options(llm_client, ausgangslage_text):
