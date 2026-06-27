@@ -396,7 +396,7 @@ class InterviewService:
         if not isinstance(rows, list):
             return
         if sid == "kosten":
-            section_answer["extracted"] = self._kosten_initialisierung_only(rows)
+            section_answer["extracted"] = self._kosten_breakdown(rows)
         elif sid == "personalaufwand":
             self._ensure_deliverable_roles(rows, answers)
             self._ensure_external_experts(rows, answers)
@@ -417,15 +417,56 @@ class InterviewService:
                     r["termin"] = "laufend"
 
     @staticmethod
-    def _kosten_initialisierung_only(rows):
-        """Behält ausschliesslich die Initialisierungs-Kosten (HERMES-Vorgabe)."""
-        keep = [r for r in rows
-                if isinstance(r, dict) and "initial" in str(r.get("phase", "")).lower()]
-        if keep:
-            return keep
-        # Keine als Initialisierung erkannte Zeile -> einen leeren Initialisierungs-
-        # Eintrag setzen (Betrag durch den PL zu ergänzen), statt fremde Phasen zu zeigen.
-        return [{"phase": "Initialisierung", "betrag": ""}]
+    def _kosten_breakdown(rows):
+        """Gliedert die Initialisierungskosten in interne/externe Positionen und ergänzt
+        deterministisch Zwischensummen + Total. Spätere Phasen (Konzept/…) werden
+        verworfen (HERMES: PIA budgetiert nur die Initialisierung)."""
+        import re as _re
+        later = ("konzept", "realisierung", "einführung", "einfuehrung", "abschluss", "umsetzung")
+
+        def betrag(r):
+            m = _re.search(r"\d[\d'’.\s]*", str(r.get("betrag", "")))
+            if not m:
+                return None
+            digits = _re.sub(r"[^\d]", "", m.group())
+            return int(digits) if digits else None
+
+        intern, extern = [], []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            label = str(r.get("phase", "")).strip()
+            low = label.lower()
+            if any(w in low for w in later):                 # spätere Phasen raus
+                continue
+            if "summe" in low or "total" in low:             # erfundene Summenzeilen verwerfen
+                continue
+            amt = betrag(r)
+            item = {"phase": label,
+                    "betrag": str(amt) if amt is not None else str(r.get("betrag", "")).strip(),
+                    "_amt": amt}
+            (extern if "extern" in low else intern).append(item)
+
+        if not any(i["_amt"] is not None for i in intern + extern):
+            # Keine auswertbaren Beträge -> unverändert (ohne Hilfsfeld) zurückgeben.
+            cleaned = [{"phase": i["phase"], "betrag": i["betrag"]} for i in intern + extern]
+            return cleaned or rows
+
+        out = []
+
+        def emit(group, summenlabel):
+            s = 0
+            for i in group:
+                out.append({"phase": i["phase"], "betrag": i["betrag"]})
+                s += i["_amt"] or 0
+            if group:
+                out.append({"phase": summenlabel, "betrag": str(s)})
+            return s
+
+        s_int = emit(intern, "Summe interne Kosten")
+        s_ext = emit(extern, "Summe externe Kosten")
+        out.append({"phase": "Total Initialisierung", "betrag": str(s_int + s_ext)})
+        return out
 
     @staticmethod
     def _ensure_deliverable_roles(rows, answers):
