@@ -399,6 +399,7 @@ class InterviewService:
             section_answer["extracted"] = self._kosten_initialisierung_only(rows)
         elif sid == "personalaufwand":
             self._ensure_deliverable_roles(rows, answers)
+            self._ensure_external_experts(rows, answers)
         elif sid == "risiken":
             for r in rows:
                 if not isinstance(r, dict):
@@ -446,6 +447,19 @@ class InterviewService:
         if "entwickler" in text or "prototyp" in text:
             if not has_role("entwickler"):
                 rows.append({"rolle": "Entwickler", "name": "", "aufwand": ""})
+
+    def _ensure_external_experts(self, rows, answers):
+        """Erzwingt eine Rolle für externe Fachexpertise, wenn Ausgangslage/Komplexität
+        fehlendes internes Know-how bzw. den Einkauf externer Expertise signalisieren."""
+        txt = (self.composed_ausgangslage(answers) or "").lower()
+        signal = "extern" in txt and any(w in txt for w in (
+            "know-how", "knowhow", "fachexpert", "einkauf", "kompensier", "beratung", "engpass",
+        ))
+        if not signal:
+            return
+        if any("extern" in str(r.get("rolle", "")).lower() for r in rows if isinstance(r, dict)):
+            return
+        rows.append({"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""})
 
     def _build_projektorganisation(self, answers, start_datum):
         """Leitet Kap. 6 deterministisch aus Personalaufwand (3.1) und Dauer ab:
@@ -509,18 +523,23 @@ class InterviewService:
             parts.append(f"Projekttyp: {session.project_type_id}")
         if session.auftraggeber:
             parts.append(f"Auftraggeber: {session.auftraggeber}")
-        for sid in ("ausgangslage", "ziele"):
-            entry = answers.get(sid)
-            if not entry:
-                continue
-            extracted = entry.get("extracted")
+        # Ausgangslage INKL. der (bestätigten) Komplexitätseinschätzung – damit die
+        # dort verfeinerten Einsichten (z.B. "externes Know-how nötig", hohe
+        # Organisationskomplexität) in ALLE nachgelagerten Vorschläge einfliessen
+        # (Personalaufwand, Kosten, Sachmittel, Risiken ...), nicht erst ins Dokument.
+        ausg = self.composed_ausgangslage(answers)
+        if ausg:
+            parts.append(f"ausgangslage: {ausg}")
+        ziele = answers.get("ziele")
+        if ziele:
+            extracted = ziele.get("extracted")
             if isinstance(extracted, dict) and extracted.get("text"):
-                parts.append(f"{sid}: {extracted['text']}")
+                parts.append(f"ziele: {extracted['text']}")
             elif isinstance(extracted, list) and extracted:
                 joined = "; ".join(
                     str(r.get("beschreibung") or next(iter(r.values()), "")) for r in extracted
                 )
-                parts.append(f"{sid}: {joined}")
+                parts.append(f"ziele: {joined}")
         # Geplante Lieferergebnisse (Kap. 4.1) mit Abnahme-Rolle in den Kontext geben –
         # daraus leitet das LLM u.a. die noetigen Rollen im Personalaufwand ab.
         termine = (answers.get("termine") or {}).get("extracted")

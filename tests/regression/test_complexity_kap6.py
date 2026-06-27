@@ -82,6 +82,46 @@ def test_apply_complexity_gesprochenes_wird_nie_woertlich_uebernommen():
     assert res["einschaetzung"] == "Neu bewertet."  # vom LLM sauber formuliert
 
 
+def test_suggestion_context_enthaelt_komplexitaet():
+    """Die Komplexitätseinschätzung muss in den Vorschlags-Kontext fliessen,
+    damit Personalaufwand/Kosten/... sie sehen (nicht erst im Dokument)."""
+    svc = _svc()
+    sess = type("S", (), {"project_name": "P", "project_type_id": "x", "auftraggeber": "A"})()
+    answers = {"ausgangslage": {"extracted": {"text": "Basis."},
+                                "komplexitaet": {"Technologie": {"stufe": "hoch",
+                                                                 "einschaetzung": "Neuartig."}}}}
+    ctx = svc._suggestion_context(sess, answers)
+    assert "Komplexitätseinschätzung" in ctx and "Technologie" in ctx
+
+
+def test_externe_fachexpertise_wird_ergaenzt():
+    svc = _svc()
+    rows = [{"rolle": "Projektleiter", "name": "", "aufwand": "12"}]
+    answers = {"ausgangslage": {"extracted": {"text": "Digitalisierung."}, "komplexitaet": {
+        "Ressourcen": {"stufe": "mittel",
+                       "einschaetzung": "Das fehlende interne Know-how muss durch externe "
+                                        "Fachexperten kompensiert werden."}}}}
+    svc._ensure_external_experts(rows, answers)
+    assert any("extern" in r["rolle"].lower() for r in rows)
+
+
+def test_keine_externe_ohne_signal():
+    svc = _svc()
+    rows = [{"rolle": "Projektleiter", "name": "", "aufwand": "12"}]
+    answers = {"ausgangslage": {"extracted": {"text": "Ein einfaches rein internes Vorhaben."}}}
+    svc._ensure_external_experts(rows, answers)
+    assert all("extern" not in r["rolle"].lower() for r in rows)
+
+
+def test_externe_nicht_dupliziert():
+    svc = _svc()
+    rows = [{"rolle": "Externe Beratung", "name": "", "aufwand": "5"}]
+    answers = {"ausgangslage": {"extracted": {"text": "x"}, "komplexitaet": {
+        "R": {"stufe": "hoch", "einschaetzung": "extern einkaufen, fehlendes Know-how"}}}}
+    svc._ensure_external_experts(rows, answers)
+    assert sum("extern" in r["rolle"].lower() for r in rows) == 1
+
+
 def test_composed_ausgangslage_haengt_komplexitaet_an():
     svc = _svc()
     answers = {"ausgangslage": {"extracted": {"text": "Die Ausgangslage."},
