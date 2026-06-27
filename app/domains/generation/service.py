@@ -621,16 +621,23 @@ def _max_termin(termine):
 
 
 def _set_p_text(p_el, text):
-    """Ersetzt den Textinhalt eines Paragraphen, erhält Stil."""
-    text = _fix_hermes_terms(text)
+    """Ersetzt den Textinhalt eines Paragraphen, erhält Stil.
+
+    Zeilenumbrüche (\\n) werden als <w:br/> gerendert, damit mehrzeilige Inhalte
+    (z.B. die Komplexitätseinschätzung der Ausgangslage) als Block erscheinen.
+    """
+    text = _fix_hermes_terms(text or '')
     for r in list(p_el):
         if r.tag == f'{{{W}}}r':
             p_el.remove(r)
     r = etree.SubElement(p_el, f'{{{W}}}r')
-    t = etree.SubElement(r, f'{{{W}}}t')
-    t.text = text
-    if text and (text[0] == ' ' or text[-1] == ' '):
-        t.set(XML_SPACE, 'preserve')
+    for idx, line in enumerate(text.split('\n')):
+        if idx > 0:
+            etree.SubElement(r, f'{{{W}}}br')
+        t = etree.SubElement(r, f'{{{W}}}t')
+        t.text = line
+        if line and (line[0] == ' ' or line[-1] == ' '):
+            t.set(XML_SPACE, 'preserve')
 
 
 def _row_style(row_el):

@@ -777,7 +777,10 @@ class InterviewService:
             entry = answers[sid]
             sect_type = s.get("type", "free_text")
             if sect_type == "free_text":
-                content = (entry.get("extracted") or {}).get("text") or entry.get("raw_text", "")
+                if sid == "ausgangslage":
+                    content = self.composed_ausgangslage(answers)
+                else:
+                    content = (entry.get("extracted") or {}).get("text") or entry.get("raw_text", "")
                 result.append({"id": sid, "number": s["number"], "title": s["title"],
                                 "type": "free_text", "content": content})
             elif sect_type == "table":
@@ -979,16 +982,17 @@ class InterviewService:
         komplex[dim] = {"stufe": stufe, "einschaetzung": einsch}
 
     def composed_ausgangslage(self, answers):
-        """Ausgangslage-Text inkl. angehängter Komplexitätseinschätzung (für die Doku)."""
+        """Ausgangslage-Text inkl. Komplexitätseinschätzung als sauberer Block
+        (eine Zeile je Dimension). Wird in Vorschau und Dokument gleich dargestellt."""
         base = self._section_text_from_answers(answers, "ausgangslage")
         komplex = (answers.get("ausgangslage") or {}).get("komplexitaet") or {}
         if not komplex:
             return base
-        teile = [f"{dim} – {v.get('stufe', '')}: {v.get('einschaetzung', '')}".strip()
-                 for dim, v in komplex.items() if isinstance(v, dict)]
-        if not teile:
+        zeilen = [f"{dim} – {v.get('stufe', '')}: {v.get('einschaetzung', '')}".strip()
+                  for dim, v in komplex.items() if isinstance(v, dict)]
+        if not zeilen:
             return base
-        block = "Komplexitätseinschätzung der Initialisierung: " + " ".join(teile)
+        block = "Komplexitätseinschätzung der Initialisierung:\n" + "\n".join(zeilen)
         return f"{base}\n\n{block}" if base else block
 
 

@@ -1,5 +1,6 @@
 """Beweist: Enddatum gefüllt, 'Projektauftrag' korrigiert, Kap.-6-Spalten passen."""
 from docx import Document
+from lxml import etree
 
 from app.config import get_config
 from app.domains.generation.service import GenerationService, W, _max_termin
@@ -30,6 +31,20 @@ def test_enddatum_wird_gefuellt():
     full = _full_text(doc)
     assert "16.11.2026" in full
     assert "tt.mm.jjjj" not in full.split("Enddatum")[-1][:60]
+
+
+def test_freitext_mit_zeilenumbruechen_als_block():
+    gen = _gen()
+    text = ("Basis-Ausgangslage.\n\nKomplexitätseinschätzung der Initialisierung:\n"
+            "Technologie – hoch: Neuartig.\nPolitik & Stakeholder – mittel: Mehrere Ämter.")
+    answers = {"ausgangslage": {"extracted": {"text": text}}}
+    doc = Document(gen.generate("hermes_pia", answers, {"projektname": "T", "version": "0.1"}))
+    full = _full_text(doc)
+    assert "Komplexitätseinschätzung der Initialisierung" in full
+    assert "Technologie" in full and "Politik & Stakeholder" in full
+    # Zeilenumbrüche als <w:br/> im Dokument
+    xml = etree.tostring(doc.element.body, encoding="unicode")
+    assert "<w:br" in xml
 
 
 def test_projektauftrag_wird_zu_durchfuehrungsauftrag():

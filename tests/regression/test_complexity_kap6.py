@@ -75,7 +75,21 @@ def test_composed_ausgangslage_haengt_komplexitaet_an():
                                 "komplexitaet": {"Technologie": {"stufe": "hoch", "einschaetzung": "Neuartig."}}}}
     text = svc.composed_ausgangslage(answers)
     assert "Die Ausgangslage." in text
-    assert "Komplexitätseinschätzung" in text and "Technologie" in text and "hoch" in text
+    assert "Komplexitätseinschätzung" in text and "Technologie – hoch" in text
+    # Sauberer Block: eine Zeile je Dimension (Zeilenumbruch vorhanden)
+    assert "\n" in text
+
+
+def test_preview_zeigt_komplexitaet_in_ausgangslage():
+    import json
+    svc = _svc()
+    answers = {"ausgangslage": {"extracted": {"text": "Basis."},
+                                "komplexitaet": {"Technologie": {"stufe": "hoch", "einschaetzung": "Neuartig."}}}}
+    sess = type("S", (), {"method_id": "hermes_pia", "answers_json": json.dumps(answers)})()
+    pv = svc.preview_data(sess)
+    ausg = next(x for x in pv if x["id"] == "ausgangslage")
+    assert "Komplexitätseinschätzung" in ausg["content"]
+    assert "Technologie – hoch" in ausg["content"]
 
 
 # --- Kapitel 6 aus 3.1 ----------------------------------------------------- #
