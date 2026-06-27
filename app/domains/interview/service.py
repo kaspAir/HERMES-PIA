@@ -16,6 +16,7 @@ Klare Aufgabentrennung:
 import json
 
 from app.domains.interview.extraction import (
+    analyze_results_options,
     detect_project_type,
     estimate_risk_assessment,
     extract_fields,
@@ -206,6 +207,16 @@ class InterviewService:
         section = state["section"]
         extracted = self._extract(section, raw_text, self._vocabularies(session.method_id))
 
+        # Ergebnisse/Termine: die kanonischen HERMES-Lieferergebnisse sind verbindlich.
+        # Liefert der PL nichts, werden sie deterministisch aus dem Katalog gesetzt
+        # (statt eines generischen Vorschlags-Angebots), damit darauf die
+        # Beschaffungs-/Prototyp-Entscheidungen aufsetzen koennen.
+        if section["id"] == "termine" and self._is_empty(extracted):
+            catalog = self._catalog_suggestion(session.project_type_id, section)
+            if catalog:
+                _assign_termine_dates(catalog, session.start_datum)
+                extracted = catalog
+
         entry = {
             "raw_text": raw_text,
             "extracted": extracted,
@@ -223,7 +234,8 @@ class InterviewService:
                 session.project_type_id = pt
 
         # Nachfragen: KI für alle Abschnitte + Katalog-Gap-Check für Risiken
-        entry["followups"] = self._build_followups(section, extracted, raw_text, session.project_type_id)
+        # + Beschaffungs-/Prototyp-Entscheidung bei den Ergebnissen/Terminen.
+        entry["followups"] = self._build_followups(section, extracted, raw_text, session, answers)
 
         # Hat der PL nichts geliefert und entstand auch keine andere Nachfrage,
         # bietet HERMES PIA proaktiv einen Vorschlag an ("Soll ich einen machen?").
@@ -362,7 +374,11 @@ class InterviewService:
     def _apply_followup(self, section, section_answer, followup, raw_text):
         """Uebernimmt einen akzeptierten Vorschlag in die Abschnittsdaten."""
         suggestion = (raw_text or "").strip() or (followup.get("vorschlag") or "").strip()
-        if not suggestion:
+        row_data = followup.get("row") or {}
+        # Entscheidungs-Followups (Beschaffung/Prototyp) tragen ihren Inhalt in
+        # `row` und brauchen keinen diktierten Text – darum nicht früh aussteigen,
+        # solange entweder ein Vorschlag oder eine vorbereitete Zeile vorliegt.
+        if not suggestion and not row_data:
             return
 
         if section.get("type") == "table":
@@ -375,11 +391,14 @@ class InterviewService:
                 return
             # Hauptspalte: 'beschreibung' bevorzugt, sonst erste Nicht-Nr-Spalte
             target = "beschreibung" if "beschreibung" in cols else cols[0]
-            # Strukturierte Felder aus dem Katalog (z.B. ew/ag/massnahmen)
-            # übernehmen; Hauptspalte ggf. mit diktiertem Text überschreiben.
-            row_data = followup.get("row") or {}
+            # Strukturierte Felder aus dem Katalog / der Entscheidung (z.B.
+            # ergebnis/abnahme bzw. ew/ag/massnahmen) übernehmen; die Hauptspalte
+            # nur überschreiben, wenn ein diktierter Text vorliegt.
             new_row = {k: v for k, v in row_data.items() if k in cols and v}
-            new_row[target] = suggestion
+            if suggestion:
+                new_row[target] = suggestion
+            if not new_row:
+                return
 
             # Risiken: fehlende Eintrittswahrscheinlichkeit / Auswirkungsgrad /
             # Massnahmen per LLM schätzen (Katalog liefert sie nicht für alle Typen).
@@ -392,6 +411,8 @@ class InterviewService:
 
             rows.append(new_row)
         elif section.get("type") == "free_text":
+            if not suggestion:
+                return
             extracted = section_answer.get("extracted")
             if not isinstance(extracted, dict):
                 extracted = {"text": ""}
@@ -587,8 +608,9 @@ class InterviewService:
         db.commit()
         return new, changelog
 
-    def _build_followups(self, section, extracted, raw_text, project_type_id):
+    def _build_followups(self, section, extracted, raw_text, session, answers):
         followups = []
+        project_type_id = session.project_type_id
 
         # KI-Vollständigkeitsprüfung für alle Abschnitte mit interview-Definition
         if self.llm and section.get("interview"):
@@ -609,12 +631,77 @@ class InterviewService:
             for f in catalog_items:
                 followups.append(dict(f, type="catalog", status="pending"))
 
+        # Ergebnisse/Termine: aus der Ausgangslage ableiten, ob eine
+        # Beschaffungsanalyse und/oder ein Prototyp eingeplant werden sollen,
+        # und dem PL je eine Entscheidungsfrage (Ja/Nein) vorlegen.
+        if section["id"] == "termine" and self.llm:
+            ausgangslage = self._section_text_from_answers(answers, "ausgangslage")
+            opts = analyze_results_options(self.llm, ausgangslage)
+            followups.extend(self._decision_followups(opts, session.start_datum))
+
         return followups
+
+    def _decision_followups(self, opts, start_datum):
+        """Baut die Entscheidungs-Followups für Beschaffungsanalyse / Prototyp.
+
+        Bei 'Ja' (akzeptiert) wird die hinterlegte `row` als zusätzliches
+        Lieferergebnis in die Tabelle 'Ergebnisse und Termine' übernommen.
+        """
+        out = []
+        b = opts.get("beschaffung") or {}
+        if b.get("frage"):
+            out.append({
+                "risk_id": "decision_beschaffung",
+                "frage": b["frage"],
+                "type": "decision",
+                "status": "pending",
+                "row": {
+                    "ergebnis": "Beschaffungsanalyse",
+                    "termin": _single_termin(start_datum, 8),
+                    "abnahme": "Anwendervertreter",
+                    "pruefmethode": "Inhaltliche Pruefung",
+                },
+            })
+        p = opts.get("prototyp") or {}
+        if p.get("frage"):
+            thema = (p.get("thema") or "").strip()
+            ergebnis = f"Prototyp: {thema}" if thema else "Prototyp"
+            out.append({
+                "risk_id": "decision_prototyp",
+                "frage": p["frage"],
+                "type": "decision",
+                "status": "pending",
+                "row": {
+                    "ergebnis": ergebnis,
+                    "termin": _single_termin(start_datum, 6),
+                    "abnahme": "Entwickler",
+                    "pruefmethode": "Inhaltliche Pruefung",
+                },
+            })
+        return out
+
+    @staticmethod
+    def _section_text_from_answers(answers, section_id):
+        entry = (answers or {}).get(section_id) or {}
+        extracted = entry.get("extracted")
+        if isinstance(extracted, dict):
+            return extracted.get("text", "") or entry.get("raw_text", "")
+        return entry.get("raw_text", "")
 
 
 # ------------------------------------------------------------------ #
 # Modul-Hilfsfunktionen                                                #
 # ------------------------------------------------------------------ #
+
+def _single_termin(start_datum_str, weeks):
+    """Liefertermin für ein einzelnes Zusatz-Ergebnis (relativ zum Start)."""
+    from datetime import date as _date, timedelta as _timedelta
+    try:
+        base = _date.fromisoformat(start_datum_str) if start_datum_str else _date.today()
+    except (ValueError, TypeError):
+        base = _date.today()
+    return (base + _timedelta(weeks=weeks)).strftime("%d.%m.%Y")
+
 
 def _assign_termine_dates(rows, start_datum_str):
     """Setzt je Ergebnis einen Liefertermin relativ zum Initialisierungs-Start.

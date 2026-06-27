@@ -74,6 +74,21 @@ sections:
       Phase Initialisierung. Informationen und Daten in diesem Dokument
       beziehen sich lediglich auf die Initialisierungsphase.
 
+  - id: ausgangslage
+    number: "1"
+    title: "Ausgangslage"
+    type: free_text
+    required: true
+    interview:
+      intent: "Den Anlass und Kontext fuer die Projektinitialisierung erfassen."
+      questions:
+        - "Was ist der konkrete Anlass fuer dieses Vorhaben?"
+        - "Welches Problem oder welche Chance soll adressiert werden?"
+        - "Was passiert, wenn nichts unternommen wird?"
+      completeness:
+        - "Anlass ist klar benannt"
+        - "Bezug zur Stammorganisation / zum Auftraggeber ist erkennbar"
+
   - id: referenzierte_dokumente
     number: "0.2"
     title: "Referenzierte Dokumente"
@@ -107,21 +122,6 @@ sections:
       - { abkuerzung: "PT",  bedeutung: "Personentage" }
       - { abkuerzung: "AG",  bedeutung: "Auftraggeber" }
       - { abkuerzung: "PL",  bedeutung: "Projektleiter" }
-
-  - id: ausgangslage
-    number: "1"
-    title: "Ausgangslage"
-    type: free_text
-    required: true
-    interview:
-      intent: "Den Anlass und Kontext fuer die Projektinitialisierung erfassen."
-      questions:
-        - "Was ist der konkrete Anlass fuer dieses Vorhaben?"
-        - "Welches Problem oder welche Chance soll adressiert werden?"
-        - "Was passiert, wenn nichts unternommen wird?"
-      completeness:
-        - "Anlass ist klar benannt"
-        - "Bezug zur Stammorganisation / zum Auftraggeber ist erkennbar"
 
   - id: ziele
     number: "2.1"
