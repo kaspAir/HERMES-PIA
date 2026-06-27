@@ -10,7 +10,11 @@ bereits vorhandene Projekte werden übersprungen.
 import sys
 from pathlib import Path
 
-from app.factory import create_app
+# Projekt-Root auf den Import-Pfad legen, damit 'app' gefunden wird, egal aus
+# welchem Verzeichnis das Skript gestartet wird.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.factory import create_app  # noqa: E402
 
 
 def _read(path):
