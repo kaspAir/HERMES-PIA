@@ -51,6 +51,32 @@ HERMES_RULES = (
 )
 
 
+# Deterministische Begriffskorrekturen: das LLM streut trotz HERMES_RULES
+# vereinzelt Nicht-HERMES-Begriffe ein. Hier an der QUELLE (vor dem Speichern)
+# korrigiert, damit Vorschau, Dokument und Nachweis konsistent sind.
+HERMES_TERM_FIXES = {
+    "Projektauftrags": "Durchführungsauftrags",
+    "Projektauftrag":  "Durchführungsauftrag",
+    "Steuerungsausschuss": "Projektausschuss",
+    "Lenkungsausschuss":   "Projektausschuss",
+    "Steuerungsgremium":   "Projektausschuss",
+}
+
+
+def fix_hermes_terms(value):
+    """Korrigiert Nicht-HERMES-Begriffe rekursiv in Strings/Listen/Dicts."""
+    if isinstance(value, str):
+        for wrong, right in HERMES_TERM_FIXES.items():
+            if wrong in value:
+                value = value.replace(wrong, right)
+        return value
+    if isinstance(value, list):
+        return [fix_hermes_terms(v) for v in value]
+    if isinstance(value, dict):
+        return {k: fix_hermes_terms(v) for k, v in value.items()}
+    return value
+
+
 def estimate_risk_assessment(llm_client, beschreibung):
     """Schaetzt EW, AG (je Tief/Mittel/Hoch) und eine Massnahme zu einem Risiko.
 
@@ -79,7 +105,7 @@ def estimate_risk_assessment(llm_client, beschreibung):
             out["ag"] = d["ag"]
         if d.get("massnahmen"):
             out["massnahmen"] = str(d["massnahmen"]).strip()
-        return out
+        return fix_hermes_terms(out)
     except Exception:
         return {}
 
@@ -130,7 +156,7 @@ def assess_complexity(llm_client, ausgangslage_text, dimensions=None):
             stufe = str(d.get("stufe", "")).lower().strip()
             out.append({
                 "dimension": str(d["dimension"]).strip(),
-                "einschaetzung": str(d["einschaetzung"]).strip(),
+                "einschaetzung": fix_hermes_terms(str(d["einschaetzung"]).strip()),
                 "stufe": stufe if stufe in _STUFEN else "mittel",
             })
         return out
@@ -273,10 +299,11 @@ def _vocab_values(col, vocabularies):
 
 def extract_fields(llm_client, section, raw_text, vocabularies=None):
     if section.get("type") == "free_text":
-        return _extract_free_text(llm_client, section["title"], raw_text)
+        return fix_hermes_terms(_extract_free_text(llm_client, section["title"], raw_text))
     if section.get("type") == "table":
-        return _extract_table(llm_client, section["title"], section.get("columns", []),
-                              raw_text, vocabularies or {})
+        return fix_hermes_terms(_extract_table(
+            llm_client, section["title"], section.get("columns", []),
+            raw_text, vocabularies or {}))
     return {}
 
 
@@ -432,7 +459,7 @@ def generate_followups(llm_client, section, raw_text):
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=512)
         result = _parse_json(raw) or {}
         items = result.get("followups", [])
-        return [f for f in items if isinstance(f, dict) and f.get("frage")]
+        return [fix_hermes_terms(f) for f in items if isinstance(f, dict) and f.get("frage")]
     except Exception:
         return []
 
@@ -448,9 +475,9 @@ def generate_suggestion(llm_client, section, context, vocabularies=None):
     oder None/[] wenn nichts Sinnvolles erzeugt werden konnte.
     """
     if section.get("type") == "table":
-        return _suggest_table(llm_client, section, context, vocabularies or {})
+        return fix_hermes_terms(_suggest_table(llm_client, section, context, vocabularies or {}))
     if section.get("type") == "free_text":
-        return _suggest_free_text(llm_client, section, context)
+        return fix_hermes_terms(_suggest_free_text(llm_client, section, context))
     return None
 
 
