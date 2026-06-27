@@ -58,24 +58,37 @@ def _svc():
     return InterviewService(MethodService(cfg.METHODS_DIR), CatalogService(cfg.CATALOGS_DIR), None)
 
 
-def test_kosten_nur_initialisierung():
+def _phasen(rows):
+    return {r["phase"]: r["betrag"] for r in rows}
+
+
+def test_kosten_breakdown_summen_und_total():
     rows = [
-        {"phase": "Initialisierung", "betrag": "85000"},
-        {"phase": "Konzept", "betrag": "120000"},
-        {"phase": "Realisierung", "betrag": "340000"},
-        {"phase": "Einführung", "betrag": "95000"},
-        {"phase": "Abschluss", "betrag": "25000"},
+        {"phase": "Interne Personalkosten", "betrag": "60000"},
+        {"phase": "Externe Fachexpertise digitale Signatur", "betrag": "27000"},
+        {"phase": "Sachmittel und Lizenzen", "betrag": "8000"},
+        {"phase": "Konzept", "betrag": "120000"},  # spätere Phase -> raus
     ]
-    keep = InterviewService._kosten_initialisierung_only(rows)
-    assert len(keep) == 1
-    assert keep[0]["phase"] == "Initialisierung"
-    assert keep[0]["betrag"] == "85000"
+    out = _phasen(InterviewService._kosten_breakdown(rows))
+    # intern = Personal + Sachmittel = 68000; extern = 27000; Total = 95000
+    assert out["Summe interne Kosten"] == "68000"
+    assert out["Summe externe Kosten"] == "27000"
+    assert out["Total Initialisierung"] == "95000"
+    assert "Konzept" not in out
 
 
-def test_kosten_fallback_wenn_keine_initialisierung():
-    rows = [{"phase": "Realisierung", "betrag": "340000"}]
-    keep = InterviewService._kosten_initialisierung_only(rows)
-    assert keep == [{"phase": "Initialisierung", "betrag": ""}]
+def test_kosten_breakdown_nur_intern():
+    rows = [{"phase": "Interne Personalkosten", "betrag": "50000"}]
+    out = _phasen(InterviewService._kosten_breakdown(rows))
+    assert out["Summe interne Kosten"] == "50000"
+    assert out["Total Initialisierung"] == "50000"
+    assert "Summe externe Kosten" not in out
+
+
+def test_kosten_breakdown_ohne_betraege_unveraendert():
+    rows = [{"phase": "Interne Personalkosten", "betrag": ""}]
+    out = InterviewService._kosten_breakdown(rows)
+    assert out == [{"phase": "Interne Personalkosten", "betrag": ""}]
 
 
 def test_personalaufwand_ergaenzt_anwendervertreter_und_entwickler():
@@ -116,11 +129,14 @@ def test_postprocess_kosten_ueber_dispatch():
     svc = _svc()
     section = svc._section_by_id("hermes_pia", "kosten")
     section_answer = {"extracted": [
-        {"phase": "Initialisierung", "betrag": "85000"},
-        {"phase": "Konzept", "betrag": "120000"},
+        {"phase": "Interne Personalkosten", "betrag": "50000"},
+        {"phase": "Externe Fachexpertise", "betrag": "30000"},
+        {"phase": "Konzept", "betrag": "120000"},  # spätere Phase -> raus
     ]}
     svc._postprocess_section(section, section_answer, {})
-    assert section_answer["extracted"] == [{"phase": "Initialisierung", "betrag": "85000"}]
+    out = {r["phase"]: r["betrag"] for r in section_answer["extracted"]}
+    assert out["Total Initialisierung"] == "80000"
+    assert "Konzept" not in out
 
 
 def test_projektorganisation_spalten_decken_vorlage_ab():

@@ -236,3 +236,19 @@ def test_assess_complexity_parst_array():
     out = assess_complexity(_ReassessLLM(), "Eine Ausgangslage.")
     assert out and out[0]["dimension"] == "Technologie" and out[0]["stufe"] == "hoch"
     assert assess_complexity(None, "x") == []
+
+
+class _PartialLLM:
+    """Liefert nur 2 der 5 Dimensionen – die übrigen müssen ergänzt werden."""
+    def complete(self, system, messages, max_tokens=1536):
+        return ('[{"dimension": "Technologie", "stufe": "hoch", "einschaetzung": "T."}, '
+                '{"dimension": "Recht & Compliance", "stufe": "mittel", "einschaetzung": "R."}]')
+
+
+def test_assess_complexity_garantiert_alle_dimensionen():
+    out = assess_complexity(_PartialLLM(), "Eine Ausgangslage.")
+    namen = [o["dimension"] for o in out]
+    assert len(out) == 5
+    assert "Politik & Stakeholder" in namen          # fehlte im LLM-Output -> ergänzt
+    assert next(o for o in out if o["dimension"] == "Technologie")["stufe"] == "hoch"
+    assert all(o.get("einschaetzung") for o in out)  # keine leere Einschätzung
