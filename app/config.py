@@ -33,6 +33,11 @@ class Config:
     SUPERADMIN_EMAIL = _env("HERMESPIA_SUPERADMIN_EMAIL", "METHODOS_SUPERADMIN_EMAIL")
     SUPERADMIN_PASSWORD = _env("HERMESPIA_SUPERADMIN_PASSWORD", "METHODOS_SUPERADMIN_PASSWORD")
 
+    # RAG / Wissenskorpus (Voyage-Embeddings über die REST-API, kein neues pip-Paket).
+    # Ohne Key bleibt das RAG inaktiv (Ingest/Suche liefern leer) – sicher fürs Deployment.
+    VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
+    VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-3")
+
 
 def get_config():
     return Config

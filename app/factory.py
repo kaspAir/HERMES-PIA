@@ -10,6 +10,9 @@ from app.domains.llm.client import LLMClient
 from app.domains.method.service import MethodService
 import app.domains.auth.models      # noqa: F401 – Tabellen registrieren
 import app.domains.interview.models  # noqa: F401 – ensures models are registered before create_all
+import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registrieren
+from app.domains.corpus.embeddings import VoyageEmbedder
+from app.domains.corpus.service import RagService
 from app.shared.database import Base, SessionLocal, init_engine
 from app.shared.errors import register_error_handlers
 from app.shared.logging import configure_logging, register_request_logging
@@ -68,6 +71,10 @@ def create_app(config_class=None):
     )
     app.generation_service = GenerationService(app.method_service)
     app.auth_service = AuthService()
+    app.rag_service = RagService(VoyageEmbedder(
+        api_key=app.config.get("VOYAGE_API_KEY"),
+        model=app.config.get("VOYAGE_MODEL", "voyage-3"),
+    ))
 
     # Betreiber-Account (Super-Admin) anlegen, falls per .env konfiguriert.
     app.auth_service.ensure_super_admin(
