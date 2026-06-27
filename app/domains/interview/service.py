@@ -204,8 +204,11 @@ class InterviewService:
         answers = self._answers(session)
         state = self.current_state(session)
 
+        # Idempotent: ein verspäteter Doppel-Submit (z.B. weil das Verarbeiten der
+        # Ausgangslage durch die Komplexitäts-Analyse einige Sekunden dauert) wird
+        # ignoriert – der aktuelle Zustand (Nachfrage/nächste Frage) wird zurückgegeben.
         if state["phase"] != "question":
-            raise ValueError("Kein offener Frageabschnitt")
+            return state
 
         section = state["section"]
         extracted = self._extract(section, raw_text, self._vocabularies(session.method_id))

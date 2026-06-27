@@ -305,5 +305,19 @@
     if (statusEl) statusEl.textContent = 'Fehler: ' + e.error;
   };
 }());
+
+// Doppel-Submit verhindern: das Verarbeiten (LLM-Analyse) dauert einige Sekunden.
+// Beim Absenden werden alle Submit-Buttons gesperrt und ein Hinweis gezeigt.
+(function () {
+  var forms = document.querySelectorAll('main form[method="post"]');
+  forms.forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var buttons = form.querySelectorAll('button[type="submit"]');
+      buttons.forEach(function (b) { b.disabled = true; });
+      var first = buttons[0];
+      if (first) { first.dataset.label = first.textContent; first.textContent = 'Wird verarbeitet …'; }
+    });
+  });
+}());
 </script>
 {% endblock %}
