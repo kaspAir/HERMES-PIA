@@ -68,10 +68,9 @@ pipeline {
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn.pid
                             [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
-                            pkill -f "gunicorn.*:8000" 2>/dev/null || true
-                            for i in \$(seq 1 20); do pgrep -f "gunicorn.*:8000" >/dev/null || break; sleep 1; done
-                            pkill -9 -f "gunicorn.*:8000" 2>/dev/null || true
-                            sleep 1
+                            for i in \$(seq 1 20); do [ -f "\$PID_FILE" ] && kill -0 \$(cat "\$PID_FILE") 2>/dev/null || break; sleep 1; done
+                            fuser -k 8000/tcp 2>/dev/null || true
+                            sleep 2
                             set -a; source .env; set +a
                             nohup gunicorn run:app \\
                                 --bind 127.0.0.1:8000 --workers 2 --timeout 120 \\
@@ -104,10 +103,9 @@ pipeline {
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn-int.pid
                             [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
-                            pkill -f "gunicorn.*:8002" 2>/dev/null || true
-                            for i in \$(seq 1 20); do pgrep -f "gunicorn.*:8002" >/dev/null || break; sleep 1; done
-                            pkill -9 -f "gunicorn.*:8002" 2>/dev/null || true
-                            sleep 1
+                            for i in \$(seq 1 20); do [ -f "\$PID_FILE" ] && kill -0 \$(cat "\$PID_FILE") 2>/dev/null || break; sleep 1; done
+                            fuser -k 8002/tcp 2>/dev/null || true
+                            sleep 2
                             set -a
                             source \$HOME/methodos/.env
                             DATABASE_URL=sqlite:///\$HOME/methodos-int/data/methodos-int.db
@@ -145,10 +143,9 @@ pipeline {
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn-test.pid
                             [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
-                            pkill -f "gunicorn.*:8001" 2>/dev/null || true
-                            for i in \$(seq 1 20); do pgrep -f "gunicorn.*:8001" >/dev/null || break; sleep 1; done
-                            pkill -9 -f "gunicorn.*:8001" 2>/dev/null || true
-                            sleep 1
+                            for i in \$(seq 1 20); do [ -f "\$PID_FILE" ] && kill -0 \$(cat "\$PID_FILE") 2>/dev/null || break; sleep 1; done
+                            fuser -k 8001/tcp 2>/dev/null || true
+                            sleep 2
                             set -a
                             source \$HOME/methodos/.env
                             DATABASE_URL=sqlite:///\$HOME/methodos-test/data/methodos-test.db
