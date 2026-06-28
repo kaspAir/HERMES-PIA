@@ -541,6 +541,18 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
 
 .voice-status { font-size: 12px; color: var(--color-muted); margin-top: 4px; min-height: 18px; }
 
+.meeting-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-left: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.meeting-toggle input { margin: 0; cursor: pointer; }
+
 .form-actions {
   display: flex;
   gap: 12px;
