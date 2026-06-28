@@ -13,6 +13,7 @@ import app.domains.interview.models  # noqa: F401 – ensures models are registe
 import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
+from app.domains.stt.transcriber import Transcriber
 from app.shared.database import Base, SessionLocal, init_engine
 from app.shared.errors import register_error_handlers
 from app.shared.logging import configure_logging, register_request_logging
@@ -75,6 +76,11 @@ def create_app(config_class=None):
     )
     app.generation_service = GenerationService(app.method_service)
     app.auth_service = AuthService()
+    app.transcriber = Transcriber(
+        api_url=app.config.get("STT_API_URL"),
+        api_key=app.config.get("STT_API_KEY"),
+        model=app.config.get("STT_MODEL", "whisper-1"),
+    )
 
     # Betreiber-Account (Super-Admin) anlegen, falls per .env konfiguriert.
     app.auth_service.ensure_super_admin(

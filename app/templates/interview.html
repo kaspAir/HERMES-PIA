@@ -93,6 +93,11 @@
                   title="Spracheingabe starten">
             &#127908; Sprechen
           </button>
+          <button type="button" id="meeting-btn" class="btn-voice"
+                  data-endpoint="{{ url_for('ui.interview_transcribe', session_id=session.id) }}"
+                  title="Teams-Meeting mithören und transkribieren">
+            &#127911; Meeting mithören
+          </button>
           <div id="voice-status" class="voice-status"></div>
         </div>
         <div class="form-actions">
@@ -317,6 +322,88 @@
       var first = buttons[0];
       if (first) { first.dataset.label = first.textContent; first.textContent = 'Wird verarbeitet …'; }
     });
+  });
+}());
+
+// Meeting mithören: Teams-Tab/Bildschirm inkl. Audio teilen, in ~12s-Segmenten
+// aufnehmen und an die Transkription senden; der Text wird ins Antwortfeld ergänzt.
+(function () {
+  var btn = document.getElementById('meeting-btn');
+  var textarea = document.getElementById('answer-text');
+  var statusEl = document.getElementById('voice-status');
+  var gdm = navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia;
+  if (!btn || !gdm || typeof MediaRecorder === 'undefined') {
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+  var SEG_MS = 12000;
+  var endpoint = btn.dataset.endpoint;
+  var stream = null, recorder = null, timer = null, running = false;
+
+  function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+
+  function append(text) {
+    if (!text) return;
+    textarea.value = (textarea.value ? textarea.value.trim() + ' ' : '') + text;
+  }
+
+  function upload(blob) {
+    var fd = new FormData();
+    fd.append('audio', blob, 'segment.webm');
+    fetch(endpoint, { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.text) append(d.text);
+        if (d.error) setStatus('Transkription: ' + d.error);
+      })
+      .catch(function () { setStatus('Transkription: Netzwerkfehler.'); });
+  }
+
+  function recordSegment() {
+    if (!running || !stream) return;
+    var chunks = [];
+    try { recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' }); }
+    catch (e) { recorder = new MediaRecorder(stream); }
+    recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = function () {
+      if (chunks.length) upload(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+      if (running) recordSegment();        // nächstes Segment
+    };
+    recorder.start();
+    timer = setTimeout(function () {
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+    }, SEG_MS);
+  }
+
+  function stopAll() {
+    running = false;
+    if (timer) clearTimeout(timer);
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = null; recorder = null;
+    btn.textContent = '🎧 Meeting mithören';
+    btn.classList.remove('recording');
+    setStatus('');
+  }
+
+  btn.addEventListener('click', function () {
+    if (running) { stopAll(); return; }
+    navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(function (s) {
+      var audio = s.getAudioTracks();
+      if (!audio.length) {
+        setStatus('Kein Audio freigegeben – beim Teilen bitte „Audio teilen“ aktivieren.');
+        s.getTracks().forEach(function (t) { t.stop(); });
+        return;
+      }
+      s.getVideoTracks().forEach(function (t) { t.stop(); });   // Video nicht benötigt
+      stream = new MediaStream(audio);
+      audio[0].onended = stopAll;                               // Nutzer beendet Freigabe
+      running = true;
+      btn.textContent = '⏹ Mithören stoppen';
+      btn.classList.add('recording');
+      setStatus('Höre das Meeting mit … (Audio wird zur Transkription gesendet)');
+      recordSegment();
+    }).catch(function () { setStatus('Freigabe abgebrochen.'); });
   });
 }());
 </script>

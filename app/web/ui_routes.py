@@ -173,6 +173,29 @@ def interview_followup(session_id):
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
+@bp.post("/interview/<int:session_id>/transcribe")
+@permission_required("write")
+def interview_transcribe(session_id):
+    """Transkribiert ein Audiosegment (Meeting mithören) und gibt den Text zurück.
+
+    Datenschutz: Das Audio wird an den konfigurierten externen STT-Dienst gesendet.
+    Für Behördendaten einen CH/EU- oder self-hosted-Endpoint (STT_API_URL) verwenden.
+    """
+    _load_session(session_id)
+    tr = current_app.transcriber
+    if not getattr(tr, "available", False):
+        return jsonify({"text": "", "error": "Transkription ist nicht konfiguriert."}), 200
+    f = request.files.get("audio")
+    if not f:
+        return jsonify({"text": "", "error": "Keine Audiodaten."}), 400
+    try:
+        text = tr.transcribe(f.read(), filename=f.filename or "segment.webm",
+                             mimetype=f.mimetype or "audio/webm")
+    except Exception as exc:  # noqa: BLE001 – Fehler an den Client melden, nicht crashen
+        return jsonify({"text": "", "error": f"Transkription fehlgeschlagen: {exc}"}), 502
+    return jsonify({"text": text})
+
+
 @bp.post("/interview/<int:session_id>/delete")
 @permission_required("delete")
 def interview_delete(session_id):

@@ -38,6 +38,13 @@ class Config:
     VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
     VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-3")
 
+    # Speech-to-Text (Meeting mithören). OpenAI-kompatibler Endpoint -> frei wählbar
+    # (OpenAI, Groq, Azure-OpenAI oder self-hosted/CH-gehostete Whisper-Instanz).
+    # Ohne Key bleibt die Mithör-Funktion inaktiv.
+    STT_API_URL = os.environ.get("STT_API_URL", "https://api.openai.com/v1/audio/transcriptions")
+    STT_API_KEY = os.environ.get("STT_API_KEY", "")
+    STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
+
 
 def get_config():
     return Config
