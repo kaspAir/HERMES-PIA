@@ -68,6 +68,9 @@ pipeline {
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn.pid
                             [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
+                            pkill -f "gunicorn.*:8000" 2>/dev/null || true
+                            for i in \$(seq 1 20); do pgrep -f "gunicorn.*:8000" >/dev/null || break; sleep 1; done
+                            pkill -9 -f "gunicorn.*:8000" 2>/dev/null || true
                             sleep 1
                             set -a; source .env; set +a
                             nohup gunicorn run:app \\
@@ -101,6 +104,9 @@ pipeline {
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn-int.pid
                             [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
+                            pkill -f "gunicorn.*:8002" 2>/dev/null || true
+                            for i in \$(seq 1 20); do pgrep -f "gunicorn.*:8002" >/dev/null || break; sleep 1; done
+                            pkill -9 -f "gunicorn.*:8002" 2>/dev/null || true
                             sleep 1
                             set -a
                             source \$HOME/methodos/.env
@@ -139,6 +145,9 @@ pipeline {
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn-test.pid
                             [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
+                            pkill -f "gunicorn.*:8001" 2>/dev/null || true
+                            for i in \$(seq 1 20); do pgrep -f "gunicorn.*:8001" >/dev/null || break; sleep 1; done
+                            pkill -9 -f "gunicorn.*:8001" 2>/dev/null || true
                             sleep 1
                             set -a
                             source \$HOME/methodos/.env
