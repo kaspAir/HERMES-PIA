@@ -93,11 +93,14 @@
                   title="Spracheingabe starten">
             &#127908; Sprechen
           </button>
-          <button type="button" id="meeting-btn" class="btn-voice"
+          <button type="button" id="meeting-btn" class="btn-voice" style="display:none"
                   data-endpoint="{{ url_for('ui.interview_transcribe', session_id=session.id) }}"
                   title="Teams-Meeting mithören und transkribieren">
             &#127911; Meeting mithören
           </button>
+          <label id="meeting-toggle-label" class="meeting-toggle">
+            <input type="checkbox" id="meeting-toggle"> In einem Meeting (Audio mithören)
+          </label>
           <div id="voice-status" class="voice-status"></div>
         </div>
         <div class="form-actions">
@@ -329,11 +332,15 @@
 // aufnehmen und an die Transkription senden; der Text wird ins Antwortfeld ergänzt.
 (function () {
   var btn = document.getElementById('meeting-btn');
+  var toggle = document.getElementById('meeting-toggle');
+  var toggleLabel = document.getElementById('meeting-toggle-label');
   var textarea = document.getElementById('answer-text');
   var statusEl = document.getElementById('voice-status');
   var gdm = navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia;
   if (!btn || !gdm || typeof MediaRecorder === 'undefined') {
+    // Nicht unterstützt: weder Button noch Schalter anzeigen.
     if (btn) btn.style.display = 'none';
+    if (toggleLabel) toggleLabel.style.display = 'none';
     return;
   }
   var SEG_MS = 12000;
@@ -405,6 +412,23 @@
       recordSegment();
     }).catch(function () { setStatus('Freigabe abgebrochen.'); });
   });
+
+  // Opt-in: Mithör-Button nur anzeigen, wenn „In einem Meeting“ aktiv ist.
+  // Zustand wird gemerkt, damit er über die Abschnitte hinweg erhalten bleibt.
+  function applyToggle(on) {
+    btn.style.display = on ? '' : 'none';
+    if (!on && running) stopAll();
+  }
+  if (toggle) {
+    var saved = false;
+    try { saved = localStorage.getItem('hp-meeting-mode') === '1'; } catch (e) {}
+    toggle.checked = saved;
+    applyToggle(saved);
+    toggle.addEventListener('change', function () {
+      try { localStorage.setItem('hp-meeting-mode', toggle.checked ? '1' : '0'); } catch (e) {}
+      applyToggle(toggle.checked);
+    });
+  }
 }());
 </script>
 {% endblock %}
