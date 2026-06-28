@@ -354,7 +354,21 @@
     textarea.value = (textarea.value ? textarea.value.trim() + ' ' : '') + text;
   }
 
-  function upload(blob) {
+  // Uploads SERIALISIEREN: immer nur ein Transkriptions-Request gleichzeitig
+  // (sonst staut sich das auf dem Server). Backlog begrenzt -> bleibt echtzeitnah.
+  var sendQueue = [];
+  var sending = false;
+
+  function enqueue(blob) {
+    sendQueue.push(blob);
+    while (sendQueue.length > 3) sendQueue.shift();   // alte Segmente verwerfen statt stauen
+    pump();
+  }
+
+  function pump() {
+    if (sending || !sendQueue.length) return;
+    sending = true;
+    var blob = sendQueue.shift();
     var fd = new FormData();
     fd.append('audio', blob, 'segment.webm');
     fetch(endpoint, { method: 'POST', body: fd })
@@ -362,8 +376,10 @@
       .then(function (d) {
         if (d.text) append(d.text);
         if (d.error) setStatus('Transkription: ' + d.error);
+        else if (running) setStatus('Höre mit … (Transkription läuft)');
       })
-      .catch(function () { setStatus('Transkription: Netzwerkfehler.'); });
+      .catch(function () { setStatus('Transkription gerade verzögert – läuft weiter …'); })
+      .then(function () { sending = false; pump(); });   // .finally-Ersatz (breite Browser-Unterstützung)
   }
 
   function recordSegment() {
@@ -373,7 +389,7 @@
     catch (e) { recorder = new MediaRecorder(stream); }
     recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = function () {
-      if (chunks.length) upload(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+      if (chunks.length) enqueue(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
       if (running) recordSegment();        // nächstes Segment
     };
     recorder.start();
@@ -384,6 +400,7 @@
 
   function stopAll() {
     running = false;
+    sendQueue = [];                       // ausstehende Segmente verwerfen
     if (timer) clearTimeout(timer);
     if (recorder && recorder.state !== 'inactive') recorder.stop();
     if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
