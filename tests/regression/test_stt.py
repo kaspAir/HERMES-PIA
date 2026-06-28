@@ -1,6 +1,4 @@
 """Beweist: Speech-to-Text (Meeting mithören) – Transcriber + Route."""
-from io import BytesIO
-
 import pytest
 
 from app.config import Config
@@ -80,8 +78,7 @@ def test_transcribe_route_mit_fake(app):
     app.transcriber = _Fake()
     c, sid = _setup_session(app)
     r = c.post(f"/interview/{sid}/transcribe",
-               data={"audio": (BytesIO(b"audiobytes"), "segment.webm")},
-               content_type="multipart/form-data")
+               data=b"audiobytes", content_type="audio/webm")
     assert r.status_code == 200
     assert r.get_json()["text"] == "transkribierter text"
 
@@ -89,8 +86,7 @@ def test_transcribe_route_mit_fake(app):
 def test_transcribe_route_inaktiv_ohne_key(app):
     c, sid = _setup_session(app)   # Default-Transcriber ohne Key
     r = c.post(f"/interview/{sid}/transcribe",
-               data={"audio": (BytesIO(b"x"), "segment.webm")},
-               content_type="multipart/form-data")
+               data=b"x", content_type="audio/webm")
     assert r.status_code == 200
     body = r.get_json()
     assert body["text"] == "" and body["error"]

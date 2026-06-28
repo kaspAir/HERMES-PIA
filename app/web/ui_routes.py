@@ -185,12 +185,15 @@ def interview_transcribe(session_id):
     tr = current_app.transcriber
     if not getattr(tr, "available", False):
         return jsonify({"text": "", "error": "Transkription ist nicht konfiguriert."}), 200
-    f = request.files.get("audio")
-    if not f:
+    # Roher Request-Body statt multipart/form-data: der Multipart-Parser blockierte
+    # hinter dem Proxy beim Lesen (Worker-Timeout). get_data() liest exakt
+    # Content-Length Bytes und kehrt zurück, sobald der Body da ist.
+    audio = request.get_data(cache=False)
+    if not audio:
         return jsonify({"text": "", "error": "Keine Audiodaten."}), 400
     try:
-        text = tr.transcribe(f.read(), filename=f.filename or "segment.webm",
-                             mimetype=f.mimetype or "audio/webm")
+        text = tr.transcribe(audio, filename="segment.webm",
+                             mimetype=request.content_type or "audio/webm")
     except Exception as exc:  # noqa: BLE001 – Fehler an den Client melden, nicht crashen
         return jsonify({"text": "", "error": f"Transkription fehlgeschlagen: {exc}"}), 502
     return jsonify({"text": text})

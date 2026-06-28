@@ -369,9 +369,8 @@
     if (sending || !sendQueue.length) return;
     sending = true;
     var blob = sendQueue.shift();
-    var fd = new FormData();
-    fd.append('audio', blob, 'segment.webm');
-    fetch(endpoint, { method: 'POST', body: fd })
+    // Rohen Audio-Body senden (kein multipart) – robuster hinter dem Proxy.
+    fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'audio/webm' }, body: blob })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.text) append(d.text);
