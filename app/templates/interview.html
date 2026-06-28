@@ -95,7 +95,7 @@
           </button>
           <button type="button" id="meeting-btn" class="btn-voice" style="display:none"
                   data-endpoint="{{ url_for('ui.interview_transcribe', session_id=session.id) }}"
-                  title="Teams-Meeting mithören und transkribieren">
+                  title="Mithören: beim Teilen „Gesamter Bildschirm“ + „Systemaudio teilen“ wählen (auch für die Teams-App); für Teams im Browser-Tab genügt der Tab mit Audio.">
             &#127911; Meeting mithören
           </button>
           <label id="meeting-toggle-label" class="meeting-toggle">
@@ -398,7 +398,8 @@
     navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(function (s) {
       var audio = s.getAudioTracks();
       if (!audio.length) {
-        setStatus('Kein Audio freigegeben – beim Teilen bitte „Audio teilen“ aktivieren.');
+        setStatus('Kein Audio empfangen – für die Teams-App „Gesamter Bildschirm“ wählen und ' +
+                  '„Systemaudio teilen“ aktivieren (ein einzelnes Fenster liefert kein Audio).');
         s.getTracks().forEach(function (t) { t.stop(); });
         return;
       }
@@ -408,7 +409,7 @@
       running = true;
       btn.textContent = '⏹ Mithören stoppen';
       btn.classList.add('recording');
-      setStatus('Höre das Meeting mit … (Audio wird zur Transkription gesendet)');
+      setStatus('Höre mit … (das geteilte Audio wird zur Transkription gesendet)');
       recordSegment();
     }).catch(function () { setStatus('Freigabe abgebrochen.'); });
   });
