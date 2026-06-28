@@ -153,7 +153,7 @@ pipeline {
                             mkdir -p \$HOME/methodos-test/data \$HOME/methodos-test/logs
                             cd \$HOME/methodos-test
                             nohup gunicorn run:app \\
-                                --bind 127.0.0.1:8001 --workers 1 --timeout 120 \\
+                                --bind 127.0.0.1:8001 --workers 3 --timeout 120 \\
                                 --access-logfile logs/access.log \\
                                 --error-logfile logs/error.log > /dev/null 2>&1 &
                             echo \$! > \$HOME/tmp/gunicorn-test.pid

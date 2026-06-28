@@ -9,7 +9,7 @@ import requests
 
 
 class Transcriber:
-    def __init__(self, api_url=None, api_key=None, model="whisper-1", timeout=90):
+    def __init__(self, api_url=None, api_key=None, model="whisper-1", timeout=45):
         self.api_url = api_url or "https://api.openai.com/v1/audio/transcriptions"
         self.api_key = api_key or ""
         self.model = model
