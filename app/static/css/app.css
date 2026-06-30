@@ -664,6 +664,8 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
 /* ---- Aktionen in der Sessions-Liste (Weiter / Löschen) ---- */
 .session-actions { display: flex; gap: 14px; align-items: center; }
 .inline-form { display: inline; margin: 0; }
+.btn-danger { color: #c0392b; }
+.admin-hint { font-size: 12px; margin-top: 4px; }
 .btn-delete {
   background: none;
   border: none;
