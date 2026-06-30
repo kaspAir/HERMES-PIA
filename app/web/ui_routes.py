@@ -6,7 +6,7 @@ from flask import (
     send_file, url_for,
 )
 
-from app.domains.auth.models import ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
 from app.web.auth import (
     current_user, login_required, login_user, logout_user, permission_required,
     roles_required,
@@ -344,16 +344,51 @@ def admin_org_create():
     return redirect(url_for("ui.admin_orgs"))
 
 
-@bp.post("/admin/organisationen/<int:org_id>/admin")
+@bp.post("/admin/organisationen/<int:org_id>/benutzer")
 @roles_required(ROLE_SUPER_ADMIN)
-def admin_org_admin_create(org_id):
+def admin_org_user_create(org_id):
+    """Legt einen Benutzer ODER Org-Admin an (Rollenwahl + Rechte)."""
     auth = current_app.auth_service
     email = request.form.get("email", "").strip()
     password = request.form.get("password", "")
     name = request.form.get("name", "").strip()
+    is_admin = request.form.get("role") == "admin"
     if email and password and not auth.get_user_by_email(email):
-        auth.create_user(email, password, name=name, role=ROLE_ORG_ADMIN, org_id=org_id,
-                         can_read=True, can_write=True, can_delete=True)
+        if is_admin:
+            auth.create_user(email, password, name=name, role=ROLE_ORG_ADMIN, org_id=org_id,
+                             can_read=True, can_write=True, can_delete=True)
+        else:
+            auth.create_user(email, password, name=name, role=ROLE_MEMBER, org_id=org_id,
+                             can_read=request.form.get("can_read") == "on",
+                             can_write=request.form.get("can_write") == "on",
+                             can_delete=request.form.get("can_delete") == "on")
+    return redirect(url_for("ui.admin_orgs"))
+
+
+@bp.post("/admin/organisationen/benutzer/<int:user_id>/rolle")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_user_role(user_id):
+    role = ROLE_ORG_ADMIN if request.form.get("role") == "admin" else ROLE_MEMBER
+    current_app.auth_service.set_role(user_id, role)
+    return redirect(url_for("ui.admin_orgs"))
+
+
+@bp.post("/admin/organisationen/benutzer/<int:user_id>/rechte")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_user_permissions(user_id):
+    current_app.auth_service.set_permissions(
+        user_id,
+        request.form.get("can_read") == "on",
+        request.form.get("can_write") == "on",
+        request.form.get("can_delete") == "on",
+    )
+    return redirect(url_for("ui.admin_orgs"))
+
+
+@bp.post("/admin/organisationen/benutzer/<int:user_id>/loeschen")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_user_delete(user_id):
+    current_app.auth_service.delete_user(user_id)
     return redirect(url_for("ui.admin_orgs"))
 
 
