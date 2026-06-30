@@ -63,14 +63,17 @@ def _phasen(rows):
 
 
 def test_kosten_breakdown_summen_und_total():
+    # Personalkosten kommen aus Kap. 3.1 (Single Source of Truth); Sachmittel aus den Zeilen.
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "aufwand": "50"},                  # 50*1200 = 60000 intern
+        {"rolle": "Externe Fachexpertise Signatur", "aufwand": "15"},  # 15*1800 = 27000 extern
+    ]}}
     rows = [
-        {"phase": "Interne Personalkosten", "betrag": "60000"},
-        {"phase": "Externe Fachexpertise digitale Signatur", "betrag": "27000"},
         {"phase": "Sachmittel und Lizenzen", "betrag": "8000"},
         {"phase": "Konzept", "betrag": "120000"},  # spätere Phase -> raus
     ]
-    out = _phasen(InterviewService._kosten_breakdown(rows))
-    # intern = Personal + Sachmittel = 68000; extern = 27000; Total = 95000
+    out = _phasen(InterviewService._kosten_breakdown(rows, answers))
+    # intern = Personal 60000 + Sachmittel 8000 = 68000; extern = 27000; Total = 95000
     assert out["Summe interne Kosten"] == "68000"
     assert out["Summe externe Kosten"] == "27000"
     assert out["Total Initialisierung"] == "95000"
@@ -78,16 +81,18 @@ def test_kosten_breakdown_summen_und_total():
 
 
 def test_kosten_breakdown_nur_intern():
-    rows = [{"phase": "Interne Personalkosten", "betrag": "50000"}]
-    out = _phasen(InterviewService._kosten_breakdown(rows))
-    assert out["Summe interne Kosten"] == "50000"
-    assert out["Total Initialisierung"] == "50000"
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "aufwand": "25"},   # 25*1200 = 30000
+    ]}}
+    out = _phasen(InterviewService._kosten_breakdown([], answers))
+    assert out["Summe interne Kosten"] == "30000"
+    assert out["Total Initialisierung"] == "30000"
     assert "Summe externe Kosten" not in out
 
 
 def test_kosten_breakdown_ohne_betraege_unveraendert():
     rows = [{"phase": "Interne Personalkosten", "betrag": ""}]
-    out = InterviewService._kosten_breakdown(rows)
+    out = InterviewService._kosten_breakdown(rows, {})
     assert out == [{"phase": "Interne Personalkosten", "betrag": ""}]
 
 
@@ -128,13 +133,17 @@ def test_personalaufwand_keine_zusatzrollen_ohne_ergebnis():
 def test_postprocess_kosten_ueber_dispatch():
     svc = _svc()
     section = svc._section_by_id("hermes_pia", "kosten")
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "aufwand": "25"},          # 25*1200 = 30000 intern
+        {"rolle": "Externe Fachexpertise", "aufwand": "20"},  # 20*1800 = 36000 extern
+    ]}}
     section_answer = {"extracted": [
-        {"phase": "Interne Personalkosten", "betrag": "50000"},
-        {"phase": "Externe Fachexpertise", "betrag": "30000"},
+        {"phase": "Sachmittel", "betrag": "14000"},
         {"phase": "Konzept", "betrag": "120000"},  # spätere Phase -> raus
     ]}
-    svc._postprocess_section(section, section_answer, {})
+    svc._postprocess_section(section, section_answer, answers)
     out = {r["phase"]: r["betrag"] for r in section_answer["extracted"]}
+    # intern = 30000 + 14000 = 44000; extern = 36000; Total = 80000
     assert out["Total Initialisierung"] == "80000"
     assert "Konzept" not in out
 

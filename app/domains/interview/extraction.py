@@ -37,7 +37,9 @@ HERMES_RULES = (
     "Kostenart und trenne INTERNE von EXTERNEN Kosten (typisch: 'Interne Personalkosten', "
     "'Externe Fachexpertise <Thema>', 'Sachmittel und Lizenzen'). Kennzeichne externe "
     "Positionen im Namen mit dem Wort 'extern'. Pro Zeile ein realistischer Betrag in CHF "
-    "(nur die Zahl). Erzeuge KEINE Summen-/Totalzeilen – diese werden automatisch ergaenzt.\n"
+    "(nur die Zahl) fuer eine EINZELPOSITION. Erzeuge bei den Einzelpositionen selbst keine "
+    "Summen-, Zwischensummen- oder Totalzeilen; die Zwischensummen (intern/extern) und das "
+    "Total ergaenzt HERMES PIA anschliessend automatisch und weist sie im fertigen Dokument aus.\n"
     "- Der Personalaufwand muss alle Rollen enthalten, die fuer die geplanten "
     "Lieferergebnisse (Kap. 4.1) noetig sind. Verwende die HERMES-2022-Rollenbezeichnungen. "
     "Insbesondere: Schutzbedarfsanalyse -> ISDS-Verantwortlicher; Beschaffungsanalyse -> "
@@ -142,13 +144,20 @@ def assess_complexity(llm_client, ausgangslage_text, dimensions=None):
         "Du bist ein erfahrener HERMES-2022-Projektberater. Schätze die Komplexität eines "
         "Vorhabens je Dimension ein und begründe knapp. Erfahrungsgemäss wird die Phase "
         "Initialisierung oft zu KURZ geplant; sei daher eher umsichtig (nicht untertreiben). "
+        "Formuliere die Einschätzung in neutralem, sachlichem Behördenstil als objektive Aussage "
+        "des Dokuments. Schreibe NICHT in der dritten Person über den Projektleiter (keine "
+        "Wendungen wie 'der Projektleiter relativiert/behauptet/sagt/schätzt ein') und ohne "
+        "direkte Anrede – der Projektinitialisierungsauftrag wird vom Projektleiter selbst "
+        "verfasst. Beschreibe Sachverhalt und Komplexitätsgrad direkt; vorhandene "
+        "Zusatzinformationen werden als Sachverhalt eingearbeitet, nicht als Aussage einer Person. "
         "Antworte ausschliesslich mit validem JSON.\n\n" + HERMES_RULES
     )
     user = (
         f"Ausgangslage:\n{ausgangslage_text}\n\n"
         f"Dimensionen:\n{dim_desc}\n\n"
         "Gib je Dimension eine Stufe ('gering', 'mittel' oder 'hoch') und eine Einschätzung "
-        "(1-2 Sätze, Sie-Form), die der Projektleiter bestätigen, ergänzen oder widerlegen kann. "
+        "(1-2 Sätze, neutraler Behördenstil), die der Projektleiter im Interview bestätigen, "
+        "ergänzen oder widerlegen kann. "
         "Stütze dich nur auf die Ausgangslage; wo Information fehlt, benenne die Annahme.\n\n"
         'Rückgabe als JSON-Array: [{"dimension": "...", "stufe": "mittel", "einschaetzung": "..."}]'
     )
@@ -281,6 +290,9 @@ def nachweis_begruendungen(llm_client, items, context):
         "HERMES-2022-Standard, welche Entscheidung). Wenn 'Projektleiter (Interview)', halte fest, "
         "dass es auf seinen Angaben beruht und nur sprachlich gefasst wurde. Bei 'Projektleiter + "
         "HERMES PIA' trenne, was vom Projektleiter kam und was ergaenzt wurde. "
+        "Beschreibe ausschliesslich die tatsaechlich vorhandenen Angaben des Abschnitts; behaupte "
+        "NIEMALS, dass etwas (z.B. Summen- oder Totalzeilen) weggelassen oder 'bewusst nicht "
+        "erzeugt' wurde – im fertigen Dokument vorhandene Summen/Totale gelten als vorhanden. "
         "Antworte ausschliesslich mit validem JSON.\n\n" + HERMES_RULES
     )
     user = (
