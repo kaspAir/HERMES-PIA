@@ -1,5 +1,6 @@
 from flask import Flask
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from app.config import get_config
 from app.domains.auth.service import AuthService
@@ -11,8 +12,10 @@ from app.domains.method.service import MethodService
 import app.domains.auth.models      # noqa: F401 – Tabellen registrieren
 import app.domains.interview.models  # noqa: F401 – ensures models are registered before create_all
 import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registrieren
+import app.domains.projekt.models     # noqa: F401 – Projektstruktur-Tabellen registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
+from app.domains.projekt.service import ProjektService
 from app.domains.stt.transcriber import Transcriber
 from app.shared.database import Base, SessionLocal, init_engine
 from app.shared.errors import register_error_handlers
@@ -39,12 +42,38 @@ def _migrate_db(engine):
         ("innenauftragsnummer", "VARCHAR(100)"),
         ("start_datum",         "VARCHAR(20)"),
         ("org_id",              "INTEGER"),
+        ("ergebnis_id",         "INTEGER"),
     ]
     with engine.connect() as conn:
         for col, dtype in new_cols:
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE interview_session ADD COLUMN {col} {dtype}"))
         conn.commit()
+
+
+def _backfill_projekte(app):
+    """Wickelt bestehende PIAs einmalig in die Projektstruktur ein.
+
+    Über mehrere Gunicorn-Worker/Neustarts hinweg läuft das genau einmal: der
+    Marker wird atomar über den Primärschlüssel beansprucht; wer ihn nicht
+    setzen kann, überspringt die Migration.
+    """
+    from app.domains.interview.models import InterviewSession
+    from app.domains.projekt.models import MigrationFlag
+
+    db = SessionLocal()
+    try:
+        db.add(MigrationFlag(key="backfill_projekte_v1"))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return  # bereits durch einen anderen Worker/Boot erledigt
+    unlinked = db.query(InterviewSession).filter(
+        InterviewSession.ergebnis_id.is_(None)
+    ).all()
+    if unlinked:
+        n = app.projekt_service.backfill_sessions(unlinked)
+        app.logger.info("Projekt-Backfill: %s bestehende PIA(s) eingewickelt.", n)
 
 
 def create_app(config_class=None):
@@ -75,6 +104,7 @@ def create_app(config_class=None):
         app.method_service, app.catalog_service, llm_client, rag=app.rag_service
     )
     app.generation_service = GenerationService(app.method_service)
+    app.projekt_service = ProjektService()
     app.auth_service = AuthService()
     app.transcriber = Transcriber(
         api_url=app.config.get("STT_API_URL"),
@@ -86,6 +116,9 @@ def create_app(config_class=None):
     app.auth_service.ensure_super_admin(
         app.config.get("SUPERADMIN_EMAIL"), app.config.get("SUPERADMIN_PASSWORD")
     )
+
+    # Bestehende PIAs einmalig in die Projektstruktur einwickeln.
+    _backfill_projekte(app)
 
     app.register_blueprint(ui_bp)
 

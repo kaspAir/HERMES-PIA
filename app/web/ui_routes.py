@@ -129,7 +129,32 @@ def interview_start():
         start_datum=_get("start_datum") or None,
         created_by=projektleiter,
     )
+    _wrap_in_projektstruktur(session, projektleiter)
     return redirect(url_for("ui.interview_workspace", session_id=session.id))
+
+
+def _wrap_in_projektstruktur(session, projektleiter):
+    """Legt für eine neue PIA Projekt + Ergebnis-Knoten an und verknüpft sie.
+
+    Defensiv: schlägt die Strukturanlage fehl, bleibt die PIA trotzdem nutzbar
+    (sie wird beim nächsten Start vom Backfill nachgezogen)."""
+    from app.domains.projekt.reference import ERG_PIA
+    try:
+        projekt = current_app.projekt_service.create_projekt(
+            org_id=session.org_id, name=session.project_name or "Projekt",
+            projektnummer=session.projektnummer, auftraggeber=session.auftraggeber,
+            verwaltungseinheit=session.verwaltungseinheit,
+            geschaeftsbereich=session.geschaeftsbereich,
+            innenauftragsnummer=session.innenauftragsnummer,
+            start_datum=session.start_datum, created_by=projektleiter,
+        )
+        ergebnis = current_app.projekt_service.add_ergebnis(
+            projekt.id, ERG_PIA, titel=session.project_name, created_by=projektleiter,
+        )
+        current_app.interview_service.link_ergebnis(session.id, ergebnis.id)
+    except Exception:  # noqa: BLE001 – Strukturanlage darf die PIA-Erstellung nie blockieren
+        current_app.logger.exception("Projektstruktur für PIA %s konnte nicht angelegt werden",
+                                     getattr(session, "id", "?"))
 
 
 @bp.get("/interview/<int:session_id>")

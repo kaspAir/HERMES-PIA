@@ -27,3 +27,5 @@ class InterviewSession(Base, GovernanceMixin):
     changelog_json = Column(Text, default="[]")
     # Snapshot beim letzten Download – für Änderungserkennung
     last_snapshot_json = Column(Text, default="{}")
+    # Verknüpfung in die Projektstruktur: Ergebnis-Knoten im Modul Projektsteuerung.
+    ergebnis_id = Column(Integer, nullable=True)

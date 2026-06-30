@@ -123,6 +123,16 @@ class InterviewService:
     def get_session(self, session_id):
         return SessionLocal().get(InterviewSession, int(session_id))
 
+    def link_ergebnis(self, session_id, ergebnis_id):
+        """Verknüpft eine PIA mit ihrem Ergebnis-Knoten in der Projektstruktur."""
+        db = SessionLocal()
+        s = db.get(InterviewSession, int(session_id))
+        if s is None:
+            return None
+        s.ergebnis_id = int(ergebnis_id)
+        db.commit()
+        return s
+
     def all_sessions(self):
         return SessionLocal().query(InterviewSession).order_by(
             InterviewSession.created_at.desc()
