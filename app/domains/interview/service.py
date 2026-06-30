@@ -414,7 +414,7 @@ class InterviewService:
         if not isinstance(rows, list):
             return
         if sid == "kosten":
-            section_answer["extracted"] = self._kosten_breakdown(rows)
+            section_answer["extracted"] = self._kosten_breakdown(rows, answers)
         elif sid == "personalaufwand":
             self._ensure_deliverable_roles(rows, answers)
             self._ensure_external_experts(rows, answers)
@@ -435,40 +435,80 @@ class InterviewService:
                     r["termin"] = "laufend"
 
     @staticmethod
-    def _kosten_breakdown(rows):
-        """Gliedert die Initialisierungskosten in interne/externe Positionen und ergänzt
-        deterministisch Zwischensummen + Total. Spätere Phasen (Konzept/…) werden
-        verworfen (HERMES: PIA budgetiert nur die Initialisierung)."""
-        import re as _re
-        later = ("konzept", "realisierung", "einführung", "einfuehrung", "abschluss", "umsetzung")
+    def _kosten_breakdown(rows, answers):
+        """Leitet die Initialisierungskosten KONSISTENT aus dem Personalaufwand (Kap. 3.1)
+        ab – dieser ist die einzige Quelle für die intern/extern-Zuordnung. So kann das
+        Kostenblatt nicht mehr externe Posten ausweisen, die im Personalaufwand fehlen.
 
-        def betrag(r):
-            m = _re.search(r"\d[\d'’.\s]*", str(r.get("betrag", "")))
+        Personalkosten = PT × Tagessatz (intern gebündelt, extern je externer Rolle).
+        Sachmittel-/Materialpositionen aus den extrahierten Kostenzeilen bleiben erhalten;
+        frei erfundene Personalkostenzeilen werden verworfen. Spätere Phasen (Konzept/…)
+        fallen weg (HERMES: der PIA budgetiert nur die Initialisierung). Zwischensummen +
+        Total werden deterministisch ergänzt.
+        """
+        import re as _re
+        # Anpassbare Standard-Tagessätze (CHF/PT); externe Fachleute teurer als interne.
+        TAGESSATZ_INTERN, TAGESSATZ_EXTERN = 1200, 1800
+        later = ("konzept", "realisierung", "einführung", "einfuehrung", "abschluss", "umsetzung")
+        personal_kw = ("personal", "fachexpert", "experte", "beratung", "tagessatz",
+                       "projektleiter", "auftraggeber", "isds", "entwickler", "anwendervertreter")
+
+        def num(val, money=True):
+            pat = r"\d[\d'’.\s]*" if money else r"\d+"
+            m = _re.search(pat, str(val))
             if not m:
                 return None
             digits = _re.sub(r"[^\d]", "", m.group())
             return int(digits) if digits else None
 
-        intern, extern = [], []
+        # 1) Personalkosten aus Kap. 3.1 (intern gebündelt, extern je Rolle).
+        personal = (answers.get("personalaufwand") or {}).get("extracted") or []
+        intern_pt = 0
+        extern_personal = []  # (label, betrag)
+        for p in personal:
+            if not isinstance(p, dict):
+                continue
+            rolle = str(p.get("rolle", "")).strip()
+            pt = num(p.get("aufwand"), money=False)
+            if not rolle or not pt:
+                continue
+            if "extern" in rolle.lower():
+                extern_personal.append((rolle, pt * TAGESSATZ_EXTERN))
+            else:
+                intern_pt += pt
+
+        # 2) Sachmittel-/Materialpositionen aus den Kostenzeilen übernehmen;
+        #    Personal- und Summenzeilen sowie spätere Phasen verwerfen.
+        material_intern, material_extern = [], []
         for r in rows:
             if not isinstance(r, dict):
                 continue
             label = str(r.get("phase", "")).strip()
             low = label.lower()
-            if any(w in low for w in later):                 # spätere Phasen raus
+            if not label or any(w in low for w in later):
                 continue
-            if "summe" in low or "total" in low:             # erfundene Summenzeilen verwerfen
+            if "summe" in low or "total" in low:
                 continue
-            amt = betrag(r)
-            item = {"phase": label,
-                    "betrag": str(amt) if amt is not None else str(r.get("betrag", "")).strip(),
-                    "_amt": amt}
-            (extern if "extern" in low else intern).append(item)
+            if any(w in low for w in personal_kw):           # Personalzeile -> kommt aus 3.1
+                continue
+            amt = num(r.get("betrag"))
+            item = {"phase": label, "_amt": amt,
+                    "betrag": str(amt) if amt is not None else str(r.get("betrag", "")).strip()}
+            (material_extern if "extern" in low else material_intern).append(item)
 
-        if not any(i["_amt"] is not None for i in intern + extern):
-            # Keine auswertbaren Beträge -> unverändert (ohne Hilfsfeld) zurückgeben.
-            cleaned = [{"phase": i["phase"], "betrag": i["betrag"]} for i in intern + extern]
-            return cleaned or rows
+        # 3) Nichts Auswertbares -> unverändert lassen.
+        if intern_pt == 0 and not extern_personal and not any(
+                i["_amt"] is not None for i in material_intern + material_extern):
+            return rows
+
+        intern_items = []
+        if intern_pt > 0:
+            cost = intern_pt * TAGESSATZ_INTERN
+            intern_items.append({"phase": "Interne Personalkosten (gem. Kap. 3.1)",
+                                 "_amt": cost, "betrag": str(cost)})
+        intern_items += material_intern
+        extern_items = [{"phase": lbl, "_amt": amt, "betrag": str(amt)}
+                        for lbl, amt in extern_personal] + material_extern
 
         out = []
 
@@ -476,13 +516,13 @@ class InterviewService:
             s = 0
             for i in group:
                 out.append({"phase": i["phase"], "betrag": i["betrag"]})
-                s += i["_amt"] or 0
+                s += i.get("_amt") or 0
             if group:
                 out.append({"phase": summenlabel, "betrag": str(s)})
             return s
 
-        s_int = emit(intern, "Summe interne Kosten")
-        s_ext = emit(extern, "Summe externe Kosten")
+        s_int = emit(intern_items, "Summe interne Kosten")
+        s_ext = emit(extern_items, "Summe externe Kosten")
         out.append({"phase": "Total Initialisierung", "betrag": str(s_int + s_ext)})
         return out
 
@@ -636,9 +676,16 @@ class InterviewService:
             raw = (ans.get("raw_text") or "").strip()
             accepted = [f for f in (ans.get("followups") or [])
                         if f.get("status") == "accepted"]
+            herkunft = self._herkunft(raw, accepted)
+            # Die Ausgangslage enthält die Komplexitätseinschätzung – eine HERMES-PIA-
+            # Beurteilung, die im Interview bestätigt/ergänzt/widerlegt wurde. Transparent als
+            # kombinierte Herkunft ausweisen (statt fälschlich „nur Interview, ohne Ergänzung").
+            if (s.get("id") == "ausgangslage"
+                    and (answers.get("ausgangslage") or {}).get("komplexitaet")):
+                herkunft = "Projektleiter + HERMES PIA"
             entries.append({
                 "abschnitt": s.get("title", s.get("id")),
-                "herkunft": self._herkunft(raw, accepted),
+                "herkunft": herkunft,
                 "pl_eingabe": raw,
                 "inhalt": self._inhalt_summary(extracted),
             })
@@ -1099,16 +1146,18 @@ class InterviewService:
         einsch = followup.get("einschaetzung", "")
         raw_text = (raw_text or "").strip()
         if raw_text and self.llm:
-            # Der PL hat gesprochen (bestätigt+ergänzt ODER relativiert): die Dimension
-            # SAUBER neu einschätzen lassen – niemals den Rohtext (Spracherkennung,
-            # ungeschliffen) wörtlich ins Dokument übernehmen.
+            # Der PL hat gesprochen (bestätigt/ergänzt/relativiert): die Dimension SAUBER neu
+            # einschätzen lassen – niemals den Rohtext (Spracherkennung, ungeschliffen) wörtlich
+            # übernehmen, und NEUTRAL formulieren (der PL verfasst die Ausgangslage selbst – keine
+            # Aussagen über ihn in dritter Person; der Pushback steht im Interview + Nachweis).
             base = self._section_text_from_answers(answers, "ausgangslage")
-            haltung = "teilweise relativiert bzw. korrigiert" if refuted else "bestätigt und ergänzt"
             hint = next((h for n, h in COMPLEXITY_DIMENSIONS if n == dim), "")
             combined = (f"{base}\n\nBisherige Einschätzung «{dim}» ({stufe}): {einsch}\n"
-                        f"Der Projektleiter hat diese Einschätzung {haltung}. "
-                        f"Seine (mündliche, ggf. ungeschliffene) Aussage: {raw_text}\n"
-                        f"Arbeite seine Aussage sachlich ein und formuliere die Einschätzung neu.")
+                        f"Zusätzliche Sachinformation zu dieser Dimension (mündlich erfasst, ggf. "
+                        f"ungeschliffen): {raw_text}\n"
+                        f"Aktualisiere die Einschätzung sachlich und neutral. Arbeite die Information "
+                        f"als Sachverhalt ein – ohne den Projektleiter oder seine Haltung in dritter "
+                        f"Person zu erwähnen.")
             re_assessed = assess_complexity(self.llm, combined, [(dim, hint)])
             if re_assessed:
                 stufe = re_assessed[0]["stufe"]
@@ -1118,8 +1167,8 @@ class InterviewService:
             # (jetzt zurückgewiesene) Detail-Einschätzung durch eine kurze, klare Notiz
             # ersetzen – sonst widerspricht der ausführliche Text der gesenkten Stufe.
             stufe = {"hoch": "mittel", "mittel": "gering", "gering": "gering"}.get(stufe, "gering")
-            einsch = ("Vom Projektleiter als nicht (wesentlich) zutreffend eingestuft und daher "
-                      "tiefer eingeordnet.")
+            einsch = ("Wird als nicht (wesentlich) zutreffend eingeschätzt und daher tiefer "
+                      "eingeordnet.")
         komplex[dim] = {"stufe": stufe, "einschaetzung": einsch}
 
     def composed_ausgangslage(self, answers):

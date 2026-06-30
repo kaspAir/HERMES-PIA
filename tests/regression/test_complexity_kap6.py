@@ -118,6 +118,55 @@ def test_externe_fachexpertise_wird_ergaenzt():
     assert any("extern" in r["rolle"].lower() for r in rows)
 
 
+def test_kosten_leitet_intern_extern_aus_personalaufwand_ab():
+    """Kosten dürfen keine externen Posten ausweisen, die im Personalaufwand fehlen.
+    Personalkosten werden aus Kap. 3.1 abgeleitet; Sachmittel bleiben erhalten."""
+    svc = _svc()
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "name": "X", "aufwand": "20"},
+        {"rolle": "Entwickler", "name": "", "aufwand": "10"},
+        {"rolle": "Externe Fachexpertise Cloud", "name": "", "aufwand": "10"},
+    ]}}
+    # Frei erfundene externe Personalzeilen (Datenschutz, Entwickler) + eine Sachmittelzeile.
+    rows = [{"phase": "Externe Fachexpertise Datenschutz und Recht (extern)", "betrag": "14000"},
+            {"phase": "Externe Fachexpertise Entwickler/Prototyp (extern)", "betrag": "18000"},
+            {"phase": "Sachmittel und Lizenzen", "betrag": "6000"}]
+    out = svc._kosten_breakdown(rows, answers)
+    labels = [r["phase"] for r in out]
+
+    # Genau EINE externe Position – die externe Rolle aus Kap. 3.1 (Cloud, 10 PT * 1800).
+    assert any("Externe Fachexpertise Cloud" in l for l in labels)
+    assert not any("Datenschutz" in l for l in labels)
+    assert not any("Prototyp" in l for l in labels)
+    extern_summe = next(r["betrag"] for r in out if r["phase"] == "Summe externe Kosten")
+    assert extern_summe == str(10 * 1800)
+
+    # Interne Personalkosten aus 30 PT (20 PL + 10 Entwickler), Sachmittel erhalten.
+    intern_personal = next(r["betrag"] for r in out if "Interne Personalkosten" in r["phase"])
+    assert intern_personal == str(30 * 1200)
+    assert any("Sachmittel" in l for l in labels)
+
+    # Summen + Total vorhanden und stimmig.
+    assert any(l == "Summe interne Kosten" for l in labels)
+    total = next(r["betrag"] for r in out if r["phase"] == "Total Initialisierung")
+    assert int(total) == 30 * 1200 + 6000 + 10 * 1800
+
+
+def test_nachweis_ausgangslage_herkunft_kombiniert_bei_komplexitaet():
+    """Sobald die Ausgangslage eine Komplexitätseinschätzung trägt, ist die Herkunft
+    transparent kombiniert (Projektleiter + HERMES PIA), nicht nur 'Interview'."""
+    svc = _svc()  # ohne LLM -> Fallback-Begründung, Herkunft deterministisch
+    sess = type("S", (), {"method_id": "hermes_pia", "project_name": "P",
+                          "project_type_id": "x", "auftraggeber": "A"})()
+    title = svc._section_by_id("hermes_pia", "ausgangslage").get("title")
+    answers = {"ausgangslage": {"raw_text": "Diktat", "extracted": {"text": "Basis."},
+                                "komplexitaet": {"Technologie": {"stufe": "hoch",
+                                                                 "einschaetzung": "X."}}}}
+    nw = svc.build_nachweis(sess, answers)
+    ausg = next(e for e in nw if e["abschnitt"] == title)
+    assert ausg["herkunft"] == "Projektleiter + HERMES PIA"
+
+
 def test_keine_externe_ohne_signal():
     svc = _svc()
     rows = [{"rolle": "Projektleiter", "name": "", "aufwand": "12"}]
