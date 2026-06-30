@@ -93,14 +93,6 @@
                   title="Spracheingabe starten">
             &#127908; Sprechen
           </button>
-          <button type="button" id="meeting-btn" class="btn-voice" style="display:none"
-                  data-endpoint="{{ url_for('ui.interview_transcribe', session_id=session.id) }}"
-                  title="Mithören: beim Teilen „Gesamter Bildschirm“ + „Systemaudio teilen“ wählen (auch für die Teams-App); für Teams im Browser-Tab genügt der Tab mit Audio.">
-            &#127911; Meeting mithören
-          </button>
-          <label id="meeting-toggle-label" class="meeting-toggle">
-            <input type="checkbox" id="meeting-toggle"> In einem Meeting (Audio mithören)
-          </label>
           <div id="voice-status" class="voice-status"></div>
         </div>
         <div class="form-actions">
@@ -328,8 +320,11 @@
   });
 }());
 
-// Meeting mithören: Teams-Tab/Bildschirm inkl. Audio teilen, in ~12s-Segmenten
-// aufnehmen und an die Transkription senden; der Text wird ins Antwortfeld ergänzt.
+// Meeting mithören – DERZEIT DEAKTIVIERT: Button und Schalter wurden aus dem UI
+// entfernt (Funktion lief hinter dem Proxy nicht stabil). Da #meeting-btn fehlt,
+// steigt diese IIFE sofort per Early-Return aus (No-op). Backend (Route/Transcriber/
+// Config) bleibt dormant. Reaktivieren: Button + Checkbox in der Antwort-Box wieder
+// einsetzen (siehe Git-Historie) – der Code hier läuft dann wieder.
 (function () {
   var btn = document.getElementById('meeting-btn');
   var toggle = document.getElementById('meeting-toggle');
