@@ -138,6 +138,14 @@ class InterviewService:
             InterviewSession.created_at.desc()
         ).all()
 
+    def session_for_ergebnis(self, ergebnis_id):
+        """PIA-Session zu einem Ergebnis-Knoten (oder None)."""
+        if not ergebnis_id:
+            return None
+        return SessionLocal().query(InterviewSession).filter(
+            InterviewSession.ergebnis_id == int(ergebnis_id)
+        ).first()
+
     def sessions_for_org(self, org_id):
         """PIAs einer Organisationseinheit (Mandantentrennung)."""
         return SessionLocal().query(InterviewSession).filter(

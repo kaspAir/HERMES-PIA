@@ -133,3 +133,61 @@ def test_interview_start_legt_projekt_an(app):
     # Meilenstein-Start trägt das geplante Startdatum.
     start = app.projekt_service.meilensteine(p.id)[0]
     assert start.datum == "2026-10-01"
+
+
+# ---- Navigation / UI (Schritt 2) -------------------------------------- #
+
+def _client_mit_projekt(app, can_delete=False):
+    """Loggt einen Benutzer ein, legt ein Projekt (+PIA) über die Route an
+    und liefert (client, org_id, projekt_id, session_id)."""
+    auth = app.auth_service
+    org = auth.create_org("Org")
+    auth.create_user("pl@org.ch", "pw", org_id=org.id,
+                     can_read=True, can_write=True, can_delete=can_delete)
+    org_id = org.id
+    c = app.test_client()
+    _login(c, "pl@org.ch", "pw")
+    c.post("/interview/start", data={"project_name": "Baubewilligungen",
+                                     "projektleiter": "Frau Muster"})
+    p = app.projekt_service.projekte_for_org(org_id)[0]
+    erg = app.projekt_service.ergebnisse(p.id)[0]
+    session = app.interview_service.session_for_ergebnis(erg.id)
+    return c, org_id, p.id, session.id
+
+
+def test_startseite_listet_projekte(app):
+    c, org_id, pid, sid = _client_mit_projekt(app)
+    html = c.get("/").get_data(as_text=True)
+    assert "Projekte" in html
+    assert "Baubewilligungen" in html
+    assert f"/projekt/{pid}" in html
+
+
+def test_projekt_detail_zeigt_struktur(app):
+    c, org_id, pid, sid = _client_mit_projekt(app)
+    html = c.get(f"/projekt/{pid}").get_data(as_text=True)
+    # Drei Module + PIA im richtigen Modul + Meilensteine sichtbar.
+    assert "Projektsteuerung" in html
+    assert "Projektgrundlagen" in html
+    assert "Projektinitialisierungsauftrag" in html
+    assert "Projektinitialisierungsfreigabe" in html
+    # Link in die PIA (Interview).
+    assert f"/interview/{sid}" in html
+
+
+def test_projekt_detail_fremde_org_verboten(app):
+    c, org_id, pid, sid = _client_mit_projekt(app)
+    auth = app.auth_service
+    other = auth.create_org("Andere")
+    auth.create_user("fremd@x.ch", "pw", org_id=other.id, can_read=True)
+    cb = app.test_client()
+    _login(cb, "fremd@x.ch", "pw")
+    assert cb.get(f"/projekt/{pid}").status_code == 403
+
+
+def test_projekt_loeschen_entfernt_struktur_und_pia(app):
+    c, org_id, pid, sid = _client_mit_projekt(app, can_delete=True)
+    c.post(f"/projekt/{pid}/delete")
+    assert app.projekt_service.get_projekt(pid) is None
+    assert app.interview_service.get_session(sid) is None
+    assert app.projekt_service.projekte_for_org(org_id) == []

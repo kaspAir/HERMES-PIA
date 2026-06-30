@@ -835,3 +835,66 @@ input:focus { outline: none; border-color: var(--color-accent); }
   .reset-form { flex-wrap: wrap; }
   .reset-form input[type="password"] { width: 100%; }
 }
+
+/* ---- Projekte: Startseite + Projektansicht ------------------------- */
+.start-form-title { margin: 0 0 4px; font-size: 1.15rem; color: var(--color-text); }
+.start-form-hint  { margin: 0 0 18px; color: var(--color-muted); font-size: .9rem; }
+.projekt-link { color: var(--color-accent); font-weight: 600; text-decoration: none; }
+.projekt-link:hover { text-decoration: underline; }
+
+.breadcrumb-back {
+  display: inline-block; margin-bottom: 16px;
+  color: var(--color-muted); text-decoration: none; font-size: .9rem;
+}
+.breadcrumb-back:hover { color: var(--color-accent); text-decoration: underline; }
+
+.projekt-head { margin-bottom: 28px; }
+.projekt-head h1 { margin: 0 0 12px; }
+.projekt-meta-grid {
+  display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px;
+  margin: 0; font-size: .92rem;
+}
+.projekt-meta-grid dt { color: var(--color-muted); }
+.projekt-meta-grid dd { margin: 0; color: var(--color-text); }
+
+.phase-title {
+  margin: 0 0 16px; padding-bottom: 8px;
+  border-bottom: 2px solid var(--color-accent); color: var(--color-accent);
+}
+
+.meilenstein-bar {
+  list-style: none; margin: 0 0 24px; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 10px;
+}
+.meilenstein {
+  flex: 1 1 180px; padding: 10px 14px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); border-left: 4px solid var(--color-border);
+}
+.meilenstein-start { border-left-color: var(--color-primary); }
+.meilenstein-name  { display: block; font-weight: 600; color: var(--color-text); }
+.meilenstein-datum { display: block; font-size: .85rem; color: var(--color-accent); margin-top: 2px; }
+.meilenstein-rolle { display: block; font-size: .8rem; color: var(--color-muted); margin-top: 2px; }
+
+.modul-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;
+}
+.modul-card {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); padding: 16px 18px;
+}
+.modul-title {
+  margin: 0 0 12px; padding-bottom: 8px; font-size: 1rem;
+  border-bottom: 1px solid var(--color-border); color: var(--color-text);
+}
+.modul-empty { font-size: .88rem; margin: 0; }
+
+.ergebnis-list { list-style: none; margin: 0; padding: 0; }
+.ergebnis-item { padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+.ergebnis-item:last-child { border-bottom: none; }
+.ergebnis-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.ergebnis-titel { flex: 1 1 auto; }
+.ergebnis-titel { font-weight: 600; color: var(--color-text); }
+.ergebnis-aufgabe { font-size: .82rem; margin-top: 2px; }
+.ergebnis-actions { margin-top: 6px; }
+.badge-rolle { background: #0f3460; color: #93c5fd; white-space: nowrap; }

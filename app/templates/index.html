@@ -9,6 +9,9 @@
 
   {% if current_user and current_user.can_write %}
   <form method="post" action="/interview/start" class="start-form-card">
+    <h2 class="start-form-title">Neues Projekt</h2>
+    <p class="start-form-hint">Legt das Projekt mit der Phase Initialisierung an und startet
+      direkt den Projektinitialisierungsauftrag (Modul Projektsteuerung).</p>
     {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
     <div class="form-row form-row-wide">
       <label for="project_name">Projektname <span class="required">*</span></label>
@@ -60,41 +63,42 @@
     </div>
     <div class="form-row-action">
       <button type="submit" class="btn-primary btn-large">
-        Interview starten &#8594;
+        Projekt anlegen &#8594;
       </button>
     </div>
   </form>
   {% endif %}
 </div>
 
-{% if sessions %}
+{% if projekte %}
 <div class="sessions-section">
-  <h2>Laufende Interviews</h2>
+  <h2>Projekte</h2>
   <table class="sessions-table">
     <thead>
       <tr>
         <th>Projekt</th>
-        <th>Typ</th>
+        <th>Projektnummer</th>
         <th>Status</th>
         <th>Erstellt</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
-      {% for s in sessions %}
+      {% for p in projekte %}
       <tr>
-        <td>{{ s.project_name }}</td>
-        <td>{{ s.project_type_id or '–' }}</td>
-        <td>{{ s.status }}</td>
-        <td>{{ s.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        <td><a href="{{ url_for('ui.projekt_detail', projekt_id=p.id) }}"
+               class="projekt-link">{{ p.name }}</a></td>
+        <td>{{ p.projektnummer or '–' }}</td>
+        <td>{{ p.status }}</td>
+        <td>{{ p.created_at.strftime('%d.%m.%Y %H:%M') if p.created_at else '–' }}</td>
         <td class="session-actions">
-          <a href="/interview/{{ s.id }}" class="btn-link">{{ 'Weiter' if current_user.can_write else 'Ansehen' }}</a>
+          <a href="{{ url_for('ui.projekt_detail', projekt_id=p.id) }}" class="btn-link">Öffnen</a>
           {% if current_user and current_user.can_delete %}
           <form method="post"
-                action="{{ url_for('ui.interview_delete', session_id=s.id) }}"
-                onsubmit="return confirm('PIA «{{ s.project_name }}» wirklich löschen? Das kann nicht rückgängig gemacht werden.');"
+                action="{{ url_for('ui.projekt_delete', projekt_id=p.id) }}"
+                onsubmit="return confirm('Projekt «{{ p.name }}» samt allen Ergebnissen wirklich löschen? Das kann nicht rückgängig gemacht werden.');"
                 class="inline-form">
-            <button type="submit" class="btn-link btn-delete" title="PIA löschen">Löschen</button>
+            <button type="submit" class="btn-link btn-delete" title="Projekt löschen">Löschen</button>
           </form>
           {% endif %}
         </td>
