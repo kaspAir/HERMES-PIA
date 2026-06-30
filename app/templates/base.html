@@ -15,9 +15,11 @@
     <div class="user-menu">
       {% if current_user.is_super_admin %}
         <a href="{{ url_for('ui.admin_orgs') }}" class="user-link">Organisationen</a>
-      {% elif current_user.is_org_admin %}
-        <a href="{{ url_for('ui.index') }}" class="user-link">PIAs</a>
+      {% else %}
+        <a href="{{ url_for('ui.index') }}" class="user-link">Projekte</a>
+        {% if current_user.is_org_admin %}
         <a href="{{ url_for('ui.admin_users') }}" class="user-link">Benutzer</a>
+        {% endif %}
       {% endif %}
       <a href="{{ url_for('ui.password_change') }}" class="user-link">Passwort</a>
       <span class="user-email">{{ current_user.email }}</span>

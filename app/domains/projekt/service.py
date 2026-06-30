@@ -37,6 +37,31 @@ class ProjektService:
         db.refresh(projekt)
         return projekt
 
+    def delete_projekt(self, projekt_id):
+        """Löscht ein Projekt samt seiner Struktur (Phasen/Module/Ergebnisse/
+        Meilensteine). Verknüpfte PIA-Sessions löscht der Aufrufer zuvor."""
+        db = SessionLocal()
+        projekt = db.get(Projekt, int(projekt_id))
+        if projekt is None:
+            return False
+        phase_ids = [ph.id for ph in db.query(Phase).filter(
+            Phase.projekt_id == projekt.id).all()]
+        if phase_ids:
+            modul_ids = [m.id for m in db.query(Modul).filter(
+                Modul.phase_id.in_(phase_ids)).all()]
+            if modul_ids:
+                db.query(Ergebnis).filter(Ergebnis.modul_id.in_(modul_ids)).delete(
+                    synchronize_session=False)
+                db.query(Modul).filter(Modul.id.in_(modul_ids)).delete(
+                    synchronize_session=False)
+            db.query(Meilenstein).filter(Meilenstein.phase_id.in_(phase_ids)).delete(
+                synchronize_session=False)
+            db.query(Phase).filter(Phase.id.in_(phase_ids)).delete(
+                synchronize_session=False)
+        db.delete(projekt)
+        db.commit()
+        return True
+
     def add_ergebnis(self, projekt_id, ergebnistyp, titel=None, created_by=None):
         """Legt ein Ergebnis im laut Katalog zuständigen Modul des Projekts an."""
         db = SessionLocal()
@@ -74,7 +99,6 @@ class ProjektService:
             )
             self._instantiate_initialisierung(db, projekt)
             ergebnis = self._add_ergebnis(db, projekt, ERG_PIA,
-                                          titel=getattr(s, "project_name", None),
                                           created_by=getattr(s, "created_by", None))
             s.ergebnis_id = ergebnis.id
             db.add(s)
@@ -124,6 +148,16 @@ class ProjektService:
         return SessionLocal().query(Ergebnis).filter(
             Ergebnis.modul_id == int(modul_id)
         ).order_by(Ergebnis.created_at).all()
+
+    def projekt_for_ergebnis(self, ergebnis_id):
+        """Findet das Projekt, zu dem ein Ergebnis-Knoten gehört (für Breadcrumbs)."""
+        if not ergebnis_id:
+            return None
+        return SessionLocal().query(Projekt).join(
+            Phase, Phase.projekt_id == Projekt.id
+        ).join(Modul, Modul.phase_id == Phase.id).join(
+            Ergebnis, Ergebnis.modul_id == Modul.id
+        ).filter(Ergebnis.id == int(ergebnis_id)).first()
 
     def structure(self, projekt):
         """Verschachtelte Sicht für die UI: Phase -> Module(+Ergebnisse) + Meilensteine."""

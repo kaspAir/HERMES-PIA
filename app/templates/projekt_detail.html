@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ projekt.name }} – Projekt{% endblock %}
+
+{% block content %}
+<div class="projekt-page">
+
+  <a href="{{ url_for('ui.index') }}" class="breadcrumb-back">&#8592; Projekte</a>
+
+  <div class="projekt-head">
+    <h1>{{ projekt.name }}</h1>
+    <dl class="projekt-meta-grid">
+      {% if projekt.projektnummer %}<dt>Projektnummer</dt><dd>{{ projekt.projektnummer }}</dd>{% endif %}
+      {% if projekt.auftraggeber %}<dt>Auftraggeber/in</dt><dd>{{ projekt.auftraggeber }}</dd>{% endif %}
+      {% if projekt.verwaltungseinheit %}<dt>Verwaltungseinheit</dt><dd>{{ projekt.verwaltungseinheit }}</dd>{% endif %}
+      {% if projekt.geschaeftsbereich %}<dt>Geschäftsbereich</dt><dd>{{ projekt.geschaeftsbereich }}</dd>{% endif %}
+    </dl>
+  </div>
+
+  {% if structure.phase %}
+  <section class="phase-block">
+    <h2 class="phase-title">Phase {{ structure.phase.name }}</h2>
+
+    {% if structure.meilensteine %}
+    <ol class="meilenstein-bar">
+      {% for ms in structure.meilensteine %}
+      <li class="meilenstein {% if ms.ist_start %}meilenstein-start{% endif %}">
+        <span class="meilenstein-name">{{ ms.name }}</span>
+        <span class="meilenstein-datum">
+          {% if ms.datum %}{{ ms.datum }}{% if ms.ist_start %} · Start{% endif %}
+          {% else %}<span class="muted">offen</span>{% endif %}
+        </span>
+        {% if ms.rolle %}<span class="meilenstein-rolle">{{ ms.rolle }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+
+    <div class="modul-grid">
+      {% for block in structure.module %}
+      <div class="modul-card">
+        <h3 class="modul-title">{{ block.modul.name }}</h3>
+        {% if block.ergebnisse %}
+        <ul class="ergebnis-list">
+          {% for erg in block.ergebnisse %}
+          <li class="ergebnis-item">
+            <div class="ergebnis-head">
+              <span class="ergebnis-titel">{{ erg.titel }}</span>
+              {% if erg.rolle %}<span class="badge badge-rolle">{{ erg.rolle }}</span>{% endif %}
+            </div>
+            {% if erg.aufgabe %}<div class="ergebnis-aufgabe muted">{{ erg.aufgabe }}</div>{% endif %}
+            {% set session = sessions.get(erg.id) %}
+            {% if session %}
+            <div class="ergebnis-actions">
+              <a href="{{ url_for('ui.interview_workspace', session_id=session.id) }}"
+                 class="btn-link">{{ 'Bearbeiten' if current_user.can_write else 'Ansehen' }}</a>
+            </div>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="modul-empty muted">Noch keine Ergebnisse erfasst.</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <p class="admin-empty">Für dieses Projekt ist noch keine Phase angelegt.</p>
+  {% endif %}
+
+</div>
+{% endblock %}

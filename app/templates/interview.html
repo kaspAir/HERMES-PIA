@@ -3,6 +3,10 @@
 {% block main_class %}wide{% endblock %}
 
 {% block content %}
+{% if projekt %}
+<a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">
+  &#8592; Projekt: {{ projekt.name }}</a>
+{% endif %}
 <div class="interview-layout">
 
   {# ---- Linke Spalte: Fortschritt ---- #}

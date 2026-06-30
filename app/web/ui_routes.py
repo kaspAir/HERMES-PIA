@@ -36,6 +36,19 @@ def _load_session(session_id):
     return session
 
 
+def _load_projekt(projekt_id):
+    """Lädt ein Projekt und prüft die Mandanten-Zugehörigkeit (Super-Admin: alle)."""
+    projekt = current_app.projekt_service.get_projekt(projekt_id)
+    if not projekt:
+        abort(404)
+    user = current_user()
+    if user is None:
+        abort(401)
+    if not user.is_super_admin and projekt.org_id != user.org_id:
+        abort(403)
+    return projekt
+
+
 # ---- Authentifizierung ----------------------------------------------- #
 
 @bp.get("/login")
@@ -97,8 +110,8 @@ def index():
     if user.is_super_admin:
         return redirect(url_for("ui.admin_orgs"))
     method = current_app.method_service.get("hermes_pia")
-    sessions = current_app.interview_service.sessions_for_org(user.org_id)
-    return render_template("index.html", method=method, sessions=sessions)
+    projekte = current_app.projekt_service.projekte_for_org(user.org_id)
+    return render_template("index.html", method=method, projekte=projekte)
 
 
 @bp.post("/interview/start")
@@ -112,8 +125,8 @@ def interview_start():
     projektleiter = _get("projektleiter")
     if not project_name or not projektleiter:
         method = current_app.method_service.get("hermes_pia")
-        sessions = current_app.interview_service.sessions_for_org(user.org_id)
-        return render_template("index.html", method=method, sessions=sessions,
+        projekte = current_app.projekt_service.projekte_for_org(user.org_id)
+        return render_template("index.html", method=method, projekte=projekte,
                                error="Projektname und Projektleiter/in sind erforderlich.",
                                form=request.form), 400
 
@@ -149,7 +162,7 @@ def _wrap_in_projektstruktur(session, projektleiter):
             start_datum=session.start_datum, created_by=projektleiter,
         )
         ergebnis = current_app.projekt_service.add_ergebnis(
-            projekt.id, ERG_PIA, titel=session.project_name, created_by=projektleiter,
+            projekt.id, ERG_PIA, created_by=projektleiter,
         )
         current_app.interview_service.link_ergebnis(session.id, ergebnis.id)
     except Exception:  # noqa: BLE001 – Strukturanlage darf die PIA-Erstellung nie blockieren
@@ -166,9 +179,11 @@ def interview_workspace(session_id):
     sections = svc.section_summary(session)
     preview = svc.preview_data(session)
     method = current_app.method_service.get(session.method_id)
+    projekt = current_app.projekt_service.projekt_for_ergebnis(session.ergebnis_id)
     return render_template(
         "interview.html",
         session=session, state=state, sections=sections, preview=preview, method=method,
+        projekt=projekt,
     )
 
 
@@ -229,6 +244,40 @@ def interview_transcribe(session_id):
 def interview_delete(session_id):
     _load_session(session_id)
     current_app.interview_service.delete_session(session_id)
+    return redirect(url_for("ui.index"))
+
+
+# ---- Projekte: Container für die Ergebnisse --------------------------- #
+
+@bp.get("/projekt/<int:projekt_id>")
+@permission_required("read")
+def projekt_detail(projekt_id):
+    """Projektansicht: Phase Initialisierung → Module → Ergebnisse + Meilensteine."""
+    projekt = _load_projekt(projekt_id)
+    svc = current_app.projekt_service
+    structure = svc.structure(projekt)
+    # PIA-Ergebnisse mit ihrer Session verknüpfen (für „Weiter"/Download-Links).
+    sessions = {}
+    for modul in structure["module"]:
+        for erg in modul["ergebnisse"]:
+            s = current_app.interview_service.session_for_ergebnis(erg.id)
+            if s:
+                sessions[erg.id] = s
+    return render_template("projekt_detail.html", projekt=projekt,
+                           structure=structure, sessions=sessions)
+
+
+@bp.post("/projekt/<int:projekt_id>/delete")
+@permission_required("delete")
+def projekt_delete(projekt_id):
+    """Löscht ein Projekt samt Struktur und enthaltenen PIA-Ergebnissen."""
+    _load_projekt(projekt_id)
+    svc = current_app.projekt_service
+    for erg in svc.ergebnisse(projekt_id):
+        s = current_app.interview_service.session_for_ergebnis(erg.id)
+        if s:
+            current_app.interview_service.delete_session(s.id)
+    svc.delete_projekt(projekt_id)
     return redirect(url_for("ui.index"))
 
 
