@@ -81,6 +81,21 @@ class AuthService:
             db.commit()
         return user
 
+    def set_role(self, user_id, role):
+        """Wechselt die Rolle (member <-> org_admin). Super-Admins bleiben unberührt.
+        Beförderung zum Org-Admin setzt volle Rechte."""
+        db = SessionLocal()
+        user = db.get(User, int(user_id))
+        if user is None or user.role == ROLE_SUPER_ADMIN:
+            return None
+        if role not in (ROLE_MEMBER, ROLE_ORG_ADMIN):
+            return user
+        user.role = role
+        if role == ROLE_ORG_ADMIN:
+            user.can_read = user.can_write = user.can_delete = True
+        db.commit()
+        return user
+
     def delete_user(self, user_id):
         db = SessionLocal()
         user = db.get(User, int(user_id))

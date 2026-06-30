@@ -105,3 +105,46 @@ def test_org_admin_kann_fremde_org_nicht_zuruecksetzen(app):
     # Passwort der fremden Organisation bleibt unverändert
     assert auth.authenticate("u@b.ch", "originalpw") is not None
     assert auth.authenticate("u@b.ch", "hijack123") is None
+
+
+def test_super_admin_legt_benutzer_an_und_aendert_rolle(app):
+    auth = app.auth_service
+    org = auth.create_org("Org X")
+    c = app.test_client()
+    _login(c, "betreiber@test.ch", "pw-super")
+
+    org_id = org.id
+    # Normalen Benutzer (kein Admin) mit Lese-/Schreibrecht anlegen
+    c.post(f"/admin/organisationen/{org_id}/benutzer",
+           data={"email": "neu@x.ch", "password": "pw123456", "role": "member",
+                 "can_read": "on", "can_write": "on"})
+    u = auth.get_user_by_email("neu@x.ch")
+    uid = u.id
+    assert u.role == "member" and u.can_write and not u.can_delete
+
+    # Zum Admin befördern -> volle Rechte
+    c.post(f"/admin/organisationen/benutzer/{uid}/rolle", data={"role": "admin"})
+    u = auth.get_user(uid)
+    assert u.role == "org_admin" and u.can_delete
+
+    # Wieder zu normalem Benutzer
+    c.post(f"/admin/organisationen/benutzer/{uid}/rolle", data={"role": "member"})
+    assert auth.get_user(uid).role == "member"
+
+
+def test_super_admin_loescht_benutzer(app):
+    auth = app.auth_service
+    org = auth.create_org("Org Y")
+    uid = auth.create_user("weg@y.ch", "pw", org_id=org.id, can_read=True).id
+    c = app.test_client()
+    _login(c, "betreiber@test.ch", "pw-super")
+    c.post(f"/admin/organisationen/benutzer/{uid}/loeschen")
+    assert auth.get_user(uid) is None
+
+
+def test_set_role_laesst_super_admin_unberuehrt(app):
+    auth = app.auth_service
+    su_id = auth.get_user_by_email("betreiber@test.ch").id
+    assert auth.set_role(su_id, "member") is None      # Super-Admin bleibt unangetastet
+    assert auth.get_user(su_id).role == "super_admin"
+    assert auth.delete_user(su_id) is False            # und ist nicht löschbar
