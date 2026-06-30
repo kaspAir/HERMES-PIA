@@ -413,7 +413,16 @@ class InterviewService:
         rows = section_answer.get("extracted")
         if not isinstance(rows, list):
             return
-        if sid == "kosten":
+        if sid in ("referenzierte_dokumente", "mitgeltende_unterlagen"):
+            # Niemals Fundstellen/Nummern erfinden: SR-/kantonale Nummern kennt das LLM nicht
+            # zuverlässig. Spalte 'Nummer/Link' deterministisch leeren – nur der Name bleibt.
+            # Verifizierte Fundstellen liefert später die Rechtsgrundlagenanalyse (echter Abruf).
+            for r in rows:
+                if isinstance(r, dict) and "link" in r:
+                    r["link"] = ""
+        elif sid == "rahmenbedingungen":
+            section_answer["extracted"] = self._strip_duration_caps(rows)
+        elif sid == "kosten":
             section_answer["extracted"] = self._kosten_breakdown(rows, answers)
         elif sid == "personalaufwand":
             self._ensure_deliverable_roles(rows, answers)
@@ -433,6 +442,27 @@ class InterviewService:
                     r["verantwortung"] = "Projektleiter"
                 if not str(r.get("termin", "")).strip():
                     r["termin"] = "laufend"
+
+    @staticmethod
+    def _strip_duration_caps(rows):
+        """Entfernt selbst erfundene Maximaldauer-Vorgaben der Initialisierung aus den
+        Rahmenbedingungen (z.B. 'innerhalb von max. 4 Monaten abzuschliessen'). Die Dauer
+        ergibt sich aus Komplexität und Terminplan, nicht aus einer pauschalen Obergrenze."""
+        import re as _re
+        cap = _re.compile(r"maximal|innerhalb von|abzuschliess|abgeschloss", _re.I)
+        unit = _re.compile(r"monat|woche", _re.I)
+        out = []
+        for r in rows:
+            if isinstance(r, dict):
+                txt = f"{r.get('vorgaben', '')} {r.get('beschreibung', '')}"
+                if cap.search(txt) and unit.search(txt):
+                    continue  # Dauer-Deckel -> verwerfen
+            out.append(r)
+        # Nr. fortlaufend neu vergeben, damit keine Lücke entsteht.
+        for i, r in enumerate(out, 1):
+            if isinstance(r, dict) and "nr" in r:
+                r["nr"] = f"{i:02d}"
+        return out
 
     @staticmethod
     def _kosten_breakdown(rows, answers):

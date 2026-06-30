@@ -148,6 +148,39 @@ def test_postprocess_kosten_ueber_dispatch():
     assert "Konzept" not in out
 
 
+def test_postprocess_blankt_erfundene_fundstellen():
+    """HERMES PIA darf keine Gesetzes-Nummern erfinden: die Spalte 'Nummer/Link'
+    wird in Referenzierte/Mitgeltende geleert, der Name bleibt."""
+    svc = _svc()
+    for sid in ("referenzierte_dokumente", "mitgeltende_unterlagen"):
+        section = svc._section_by_id("hermes_pia", sid)
+        sa = {"extracted": [
+            {"name": "Kantonales Datenschutzgesetz Nidwalden (KDSG)", "link": "NG 236.1"},
+            {"name": "Strafprozessordnung (StPO)", "link": "SR 312.0"},
+        ]}
+        svc._postprocess_section(section, sa, {})
+        assert all(r["link"] == "" for r in sa["extracted"])          # keine Nummern mehr
+        assert any("Datenschutzgesetz" in r["name"] for r in sa["extracted"])  # Namen bleiben
+
+
+def test_postprocess_entfernt_max_dauer_rahmenbedingung():
+    """Die selbst erfundene Vorgabe 'Initialisierung max. 4 Monate' muss verschwinden."""
+    svc = _svc()
+    section = svc._section_by_id("hermes_pia", "rahmenbedingungen")
+    sa = {"extracted": [
+        {"nr": "01", "vorgaben": "Zeitlicher Rahmen der Initialisierung",
+         "beschreibung": "Die Phase Initialisierung ist innerhalb von maximal 4 Monaten "
+                         "abzuschliessen."},
+        {"nr": "02", "vorgaben": "Datenschutz und Informationssicherheit",
+         "beschreibung": "Es gelten die Anforderungen des kantonalen Datenschutzgesetzes."},
+    ]}
+    svc._postprocess_section(section, sa, {})
+    rows = sa["extracted"]
+    assert len(rows) == 1
+    assert "Datenschutz" in rows[0]["vorgaben"]
+    assert rows[0]["nr"] == "01"   # neu durchnummeriert, keine Lücke
+
+
 def test_projektorganisation_spalten_decken_vorlage_ab():
     """Vorlage hat 9 Monate + Bestätigung -> method.yaml muss 1:1 passen,
     sonst rutscht 'ausstehend' in eine Monatsspalte."""

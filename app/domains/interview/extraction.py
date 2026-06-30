@@ -57,7 +57,15 @@ HERMES_RULES = (
     "fuer die Studie bleiben unklar, Beschaffungsstrategie ungeklaert, knappe Termine der "
     "Initialisierung, fehlende Stakeholder-Mitwirkung). NIEMALS Risiken der spaeteren Umsetzung/"
     "Migration (Cutover, Rollback, Datenmigration, Testabdeckung, Go-Live, Parallelbetrieb) - "
-    "diese werden erst in spaeteren Phasen relevant."
+    "diese werden erst in spaeteren Phasen relevant.\n"
+    "- ERFINDE NIEMALS Fundstellen: keine SR-Nummern, keine kantonalen Erlass-Nummern (z.B. "
+    "'NG ...', 'BGS ...'), keine Aktenzeichen, keine Links. Wenn die exakte Nummer/Fundstelle "
+    "nicht zweifelsfrei bekannt ist, lass das Feld 'Nummer/Link' LEER und nenne NUR den Namen des "
+    "Erlasses. Eine falsche oder geratene Fundstelle ist schlimmer als gar keine.\n"
+    "- Formuliere KEINE feste Maximaldauer der Phase Initialisierung (z.B. 'innerhalb von X "
+    "Monaten/Wochen abzuschliessen', 'Dauer maximal ...') als Rahmenbedingung, Ziel oder Vorgabe. "
+    "Die Dauer der Initialisierung ergibt sich aus Komplexitaet und Terminplan, nicht aus einer "
+    "pauschalen Obergrenze."
 )
 
 
