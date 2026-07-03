@@ -90,3 +90,42 @@ def test_transcribe_route_inaktiv_ohne_key(app):
     assert r.status_code == 200
     body = r.get_json()
     assert body["text"] == "" and body["error"]
+
+
+def test_transcribe_route_json_base64(app):
+    """Bevorzugter Transportweg: Base64-Audio in JSON (Text-Body, proxy-verträglich)."""
+    import base64
+
+    captured = {}
+
+    class _Fake:
+        available = True
+        def transcribe(self, audio, filename="s", mimetype="m"):
+            captured["audio"] = audio
+            captured["mimetype"] = mimetype
+            return "diktierter text"
+
+    app.transcriber = _Fake()
+    c, sid = _setup_session(app)
+    r = c.post(f"/interview/{sid}/transcribe",
+               json={"audio": base64.b64encode(b"audiobytes").decode(),
+                     "mime": "audio/webm;codecs=opus"})
+    assert r.status_code == 200
+    assert r.get_json()["text"] == "diktierter text"
+    assert captured["audio"] == b"audiobytes"           # korrekt decodiert
+    assert captured["mimetype"] == "audio/webm;codecs=opus"
+
+
+def test_transcribe_route_json_ohne_audio(app):
+    class _Fake:
+        available = True
+        def transcribe(self, audio, filename="s", mimetype="m"):
+            return "x"
+
+    app.transcriber = _Fake()
+    c, sid = _setup_session(app)
+    # Leeres/kaputtes Base64 -> 400 "Keine Audiodaten", kein Crash.
+    r = c.post(f"/interview/{sid}/transcribe", json={"audio": ""})
+    assert r.status_code == 400
+    r = c.post(f"/interview/{sid}/transcribe", json={"audio": "%%%nicht-base64%%%"})
+    assert r.status_code == 400

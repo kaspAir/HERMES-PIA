@@ -541,17 +541,17 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
 
 .voice-status { font-size: 12px; color: var(--color-muted); margin-top: 4px; min-height: 18px; }
 
-.meeting-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+/* Mikrofonwahl (Server-STT): nur das gewählte Mikrofon wird aufgenommen. */
+.voice-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mic-select {
   font-size: 12px;
   color: var(--color-muted);
-  margin-left: 8px;
-  cursor: pointer;
-  user-select: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  max-width: 280px;
 }
-.meeting-toggle input { margin: 0; cursor: pointer; }
 
 .form-actions {
   display: flex;
