@@ -1,19 +1,19 @@
-# Methodos
+# HERMES PIA
 
 **Vom Gespräch zum strukturierten Ergebnis.**
 
-Methodos führt Benutzer durch ein methodisch geführtes Interview und erzeugt
+HERMES PIA führt Benutzer durch ein methodisch geführtes Interview und erzeugt
 daraus methodenkonforme Dokumente. Die erste Ausprägung unterstützt den
 **Projektinitialisierungsauftrag (PIA) nach HERMES 2022**.
 
-Methodos fragt nicht nur Kapitel für Kapitel ab, sondern **denkt mit**: Es
+HERMES PIA fragt nicht nur Kapitel für Kapitel ab, sondern **denkt mit**: Es
 gleicht die Eingaben mit typischen Inhalten vergleichbarer Projekte ab und
 fragt aktiv nach, wenn etwas Übliches zu fehlen scheint
 (z. B. „In vergleichbaren Projekten ist das Risiko *Anwenderakzeptanz* fast
 immer aufgeführt – bewusst weggelassen?“).
 
-Teil einer Suite mit **Mnemosyne** (Pseudonymisierung / Datenschutzschicht)
-und **KAIRON** (Entscheidungsunterstützung).
+Teil einer Suite mit **Pseudonymisierung** (Pseudonymisierung / Datenschutzschicht)
+und **Entscheidungsunterstützung** (Entscheidungsunterstützung).
 
 ---
 
@@ -73,12 +73,12 @@ pytest tests/regression
 ```
 
 `tests/regression/test_gap_check.py` beweist das Showpiece: Fehlt ein für den
-Projekttyp typisches Risiko, erzeugt Methodos die passende Nachfrage.
+Projekttyp typisches Risiko, erzeugt HERMES PIA die passende Nachfrage.
 
 ## Datenschutz-Hinweis
 
 Echte PIAs enthalten Personendaten. Bevor reale Dokumente an ein Cloud-Modell
-gehen, gehören sie durch die Pseudonymisierung (später: Mnemosyne). Für die
+gehen, gehören sie durch die Pseudonymisierung (später: Pseudonymisierung). Für die
 interne Vorstellung mit synthetischen / handbereinigten Daten arbeiten.
 
 Siehe **docs/ARCHITECTURE.md** für die Zielarchitektur und **WEEKEND_PLAN.md** für den konkreten Bauplan.

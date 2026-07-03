@@ -1,15 +1,15 @@
 services:
-  methodos:
+  hermespia:
     build: .
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=sqlite:////data/methodos.db
+      - DATABASE_URL=sqlite:////data/hermespia.db
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - METHODOS_LLM_MODEL=${METHODOS_LLM_MODEL:-claude-sonnet-4-6}
+      - HERMESPIA_LLM_MODEL=${HERMESPIA_LLM_MODEL:-claude-sonnet-4-6}
     volumes:
-      - methodos_data:/data
+      - hermespia_data:/data
     restart: unless-stopped
 
 volumes:
-  methodos_data:
+  hermespia_data:

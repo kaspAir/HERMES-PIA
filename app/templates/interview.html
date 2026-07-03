@@ -3,6 +3,10 @@
 {% block main_class %}wide{% endblock %}
 
 {% block content %}
+{% if projekt %}
+<a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">
+  &#8592; Projekt: {{ projekt.name }}</a>
+{% endif %}
 <div class="interview-layout">
 
   {# ---- Linke Spalte: Fortschritt ---- #}
@@ -32,11 +36,8 @@
           <span class="section-number">{{ s.number }}</span>
           <span class="section-title-short">{{ s.title }}</span>
           {% if s.status == 'done' %}
-            <form method="post"
-                  action="{{ url_for('ui.interview_edit', session_id=session.id, section_id=s.id) }}"
-                  class="edit-section-form">
-              <button type="submit" class="btn-edit-section" title="Abschnitt bearbeiten">&#9998;</button>
-            </form>
+            <a href="{{ url_for('ui.interview_edit', session_id=session.id, section_id=s.id) }}"
+               class="btn-edit-section" title="Abschnitt bearbeiten">&#9998;</a>
           {% endif %}
         </li>
       {% endfor %}
@@ -93,10 +94,16 @@
                     placeholder="Antwort sprechen (Mikrofon) oder hier eintippen &hellip;"
                     autofocus></textarea>
           <button type="button" id="voice-btn" class="btn-voice"
+                  data-stt="{{ '1' if stt_available else '0' }}"
+                  data-endpoint="{{ url_for('ui.interview_transcribe', session_id=session.id) }}"
                   title="Spracheingabe starten">
             &#127908; Sprechen
           </button>
-          <div id="voice-status" class="voice-status"></div>
+          <div class="voice-row">
+            <select id="mic-select" class="mic-select" style="display:none"
+                    title="Mikrofon w&auml;hlen &ndash; es wird nur dieses Mikrofon aufgenommen"></select>
+            <div id="voice-status" class="voice-status"></div>
+          </div>
         </div>
         <div class="form-actions">
           <button type="submit" class="btn-primary">
@@ -112,6 +119,8 @@
         <div class="followup-label">
           {% if state.followup.type == 'catalog' %}Typisches Risiko nicht erwähnt
           {% elif state.followup.type == 'offer' %}HERMES PIA denkt mit
+          {% elif state.followup.type == 'decision' %}HERMES PIA empfiehlt &ndash; Sie entscheiden
+          {% elif state.followup.type == 'complexity' %}Komplexität &ndash; bestätigen, ergänzen oder widerlegen
           {% else %}HERMES PIA hat eine Rückfrage{% endif %}
         </div>
         <p class="followup-question">{{ state.followup.frage }}</p>
@@ -125,16 +134,23 @@
       <form method="post"
             action="{{ url_for('ui.interview_followup', session_id=session.id) }}">
         <input type="hidden" name="risk_id" value="{{ state.followup.risk_id }}">
-        {% if state.followup.type != 'offer' %}
+        {% if state.followup.type not in ['offer', 'decision'] %}
         <div class="answer-area">
           <textarea name="raw_text"
                     id="answer-text"
                     rows="3"
                     placeholder="Optional: Anmerkung oder Ergänzung &hellip;"></textarea>
           <button type="button" id="voice-btn" class="btn-voice"
+                  data-stt="{{ '1' if stt_available else '0' }}"
+                  data-endpoint="{{ url_for('ui.interview_transcribe', session_id=session.id) }}"
                   title="Spracheingabe starten">
             &#127908; Sprechen
           </button>
+          <div class="voice-row">
+            <select id="mic-select" class="mic-select" style="display:none"
+                    title="Mikrofon w&auml;hlen &ndash; es wird nur dieses Mikrofon aufgenommen"></select>
+            <div id="voice-status" class="voice-status"></div>
+          </div>
         </div>
         {% endif %}
         <div class="form-actions">
@@ -144,6 +160,20 @@
           </button>
           <button type="submit" name="accepted" value="0" class="btn-secondary">
             Nein danke
+          </button>
+          {% elif state.followup.type == 'decision' %}
+          <button type="submit" name="accepted" value="1" class="btn-primary">
+            Ja, einplanen
+          </button>
+          <button type="submit" name="accepted" value="0" class="btn-secondary">
+            Nein, verzichten
+          </button>
+          {% elif state.followup.type == 'complexity' %}
+          <button type="submit" name="accepted" value="1" class="btn-primary">
+            Bestätigen / Ergänzen
+          </button>
+          <button type="submit" name="accepted" value="0" class="btn-secondary">
+            Widerlegen
           </button>
           {% else %}
           <button type="submit" name="accepted" value="1" class="btn-primary">
@@ -228,69 +258,240 @@
 </div>
 
 <script>
+// Spracheingabe. Zwei Varianten:
+//  A) Server-STT (bevorzugt, wenn konfiguriert): Aufnahme über ein in HERMES PIA
+//     WÄHLBARES Mikrofon (getUserMedia) – es wird ausschliesslich dieses Mikrofon
+//     aufgenommen, nie das Meeting-/Systemaudio. Segmente gehen Base64-in-JSON an
+//     /transcribe (Text-Body -> proxy-verträglich wie normale Formular-POSTs).
+//  B) Fallback: Browser-Spracherkennung (Web Speech API, Standard-Mikrofon).
 (function () {
-  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   var btn      = document.getElementById('voice-btn');
   var textarea = document.getElementById('answer-text');
   var statusEl = document.getElementById('voice-status');
+  var micSel   = document.getElementById('mic-select');
+  if (!btn || !textarea) return;
 
-  if (!SpeechRecognition) {
-    if (btn) btn.style.display = 'none';
-    return;
-  }
-
-  var recognition = new SpeechRecognition();
-  recognition.lang            = 'de-CH';
-  recognition.continuous      = true;
-  recognition.interimResults  = true;
-  recognition.maxAlternatives = 1;
-
-  var active          = false;
-  var finalTranscript = '';
-  var interimText     = '';
-
-  function render() {
-    if (textarea) textarea.value = finalTranscript + interimText;
-  }
-
+  function setStatus(t) { if (statusEl) statusEl.textContent = t; }
   function setUiRecording(on) {
     btn.textContent = on ? '⏹ Aufnahme stoppen' : '🎤 Sprechen';
     btn.classList.toggle('recording', on);
-    if (statusEl) statusEl.textContent = on ? 'Aufnahme läuft – bitte sprechen …' : '';
+  }
+  function append(text) {
+    if (!text) return;
+    textarea.value = (textarea.value ? textarea.value.trim() + ' ' : '') + text;
   }
 
-  btn.addEventListener('click', function () {
-    if (!active) {
-      finalTranscript = (textarea ? textarea.value.trim() : '');
-      if (finalTranscript) finalTranscript += ' ';
-      interimText = '';
-      active = true;
-      recognition.start();
-    } else {
-      active = false;
-      recognition.stop();
-    }
-  });
+  var canRecord = navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
+                  typeof MediaRecorder !== 'undefined';
+  if (btn.dataset.stt === '1' && canRecord) { initMicRecorder(); }
+  else { initWebSpeech(); }
 
-  recognition.onstart  = function () { setUiRecording(true); };
-  recognition.onresult = function (event) {
-    interimText = '';
-    for (var i = event.resultIndex; i < event.results.length; i++) {
-      var t = event.results[i][0].transcript;
-      if (event.results[i].isFinal) { finalTranscript += t + ' '; }
-      else                          { interimText = t; }
+  // ---- Variante A: wählbares Mikrofon + Server-Transkription ---------- //
+  function initMicRecorder() {
+    var endpoint = btn.dataset.endpoint;
+    var SEG_MS = 12000;                       // Segmentlänge: echtzeitnah, kleine Bodies
+    var stream = null, recorder = null, timer = null, running = false;
+
+    if (micSel) {
+      micSel.style.display = '';
+      refreshDevices();
+      if (navigator.mediaDevices.addEventListener) {
+        navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
+      }
+      micSel.addEventListener('change', function () {
+        try { localStorage.setItem('hp-mic-id', micSel.value); } catch (e) {}
+        if (running) { stopAll(); startRecording(); }   // laufend aufs neue Gerät wechseln
+      });
     }
-    render();
-  };
-  recognition.onend = function () {
-    if (active) { recognition.start(); }
-    else { finalTranscript += interimText; interimText = ''; render(); setUiRecording(false); }
-  };
-  recognition.onerror = function (e) {
-    if (e.error === 'no-speech') return;
-    active = false; setUiRecording(false);
-    if (statusEl) statusEl.textContent = 'Fehler: ' + e.error;
-  };
+
+    function savedMicId() {
+      try { return localStorage.getItem('hp-mic-id') || ''; } catch (e) { return ''; }
+    }
+
+    function refreshDevices() {
+      if (!micSel) return;
+      navigator.mediaDevices.enumerateDevices().then(function (devs) {
+        var saved = savedMicId();
+        micSel.innerHTML = '';
+        var def = document.createElement('option');
+        def.value = '';
+        def.textContent = 'Standard-Mikrofon';
+        micSel.appendChild(def);
+        var i = 0;
+        devs.forEach(function (d) {
+          if (d.kind !== 'audioinput' || !d.deviceId || d.deviceId === 'default') return;
+          i += 1;
+          var o = document.createElement('option');
+          o.value = d.deviceId;
+          o.textContent = d.label || ('Mikrofon ' + i);
+          micSel.appendChild(o);
+        });
+        micSel.value = saved;
+        if (micSel.selectedIndex < 0) micSel.value = '';
+      }).catch(function () {});
+    }
+
+    // Uploads SERIALISIEREN: immer nur ein Transkriptions-Request gleichzeitig;
+    // Backlog begrenzen, damit es echtzeitnah bleibt.
+    var sendQueue = [], sending = false;
+
+    function toB64(blob) {
+      return new Promise(function (resolve, reject) {
+        var fr = new FileReader();
+        fr.onload  = function () { resolve(String(fr.result).split(',')[1] || ''); };
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+    }
+
+    function enqueue(blob) {
+      sendQueue.push(blob);
+      while (sendQueue.length > 3) sendQueue.shift();
+      pump();
+    }
+
+    function pump() {
+      if (sending || !sendQueue.length) return;
+      sending = true;
+      var blob = sendQueue.shift();
+      toB64(blob).then(function (b64) {
+        return fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio: b64, mime: blob.type || 'audio/webm' })
+        });
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.text) append(d.text);
+        if (d.error) setStatus('Transkription: ' + d.error);
+        else if (running) setStatus('Aufnahme läuft – nur das gewählte Mikrofon wird erfasst …');
+      })
+      .catch(function () { setStatus('Transkription gerade verzögert – läuft weiter …'); })
+      .then(function () { sending = false; pump(); });
+    }
+
+    function recordSegment() {
+      if (!running || !stream) return;
+      var chunks = [];
+      try { recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' }); }
+      catch (e) { recorder = new MediaRecorder(stream); }
+      recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      recorder.onstop = function () {
+        if (chunks.length) enqueue(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+        if (running) recordSegment();          // nahtlos das nächste Segment
+      };
+      recorder.start();
+      timer = setTimeout(function () {
+        if (recorder && recorder.state !== 'inactive') recorder.stop();
+      }, SEG_MS);
+    }
+
+    function startRecording() {
+      var id = savedMicId();
+      var constraints = { audio: id ? { deviceId: { exact: id } } : true };
+      navigator.mediaDevices.getUserMedia(constraints).catch(function () {
+        // Gewähltes Gerät nicht (mehr) verfügbar -> Standard-Mikrofon versuchen.
+        setStatus('Gewähltes Mikrofon nicht verfügbar – Standard-Mikrofon wird verwendet.');
+        return navigator.mediaDevices.getUserMedia({ audio: true });
+      }).then(function (s) {
+        stream = s;
+        s.getAudioTracks().forEach(function (t) { t.onended = stopAll; });
+        running = true;
+        setUiRecording(true);
+        setStatus('Aufnahme läuft – nur das gewählte Mikrofon wird erfasst …');
+        refreshDevices();                      // nach Freigabe sind Gerätenamen sichtbar
+        recordSegment();
+      }).catch(function () {
+        setStatus('Mikrofonzugriff nicht möglich – bitte Berechtigung im Browser erteilen.');
+      });
+    }
+
+    function stopAll() {
+      running = false;
+      sendQueue = [];
+      if (timer) clearTimeout(timer);
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null; recorder = null;
+      setUiRecording(false);
+      setStatus('');
+    }
+
+    btn.addEventListener('click', function () {
+      if (running) { stopAll(); } else { startRecording(); }
+    });
+  }
+
+  // ---- Variante B: Browser-Spracherkennung (Fallback) ------------------ //
+  function initWebSpeech() {
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) { btn.style.display = 'none'; return; }
+
+    var recognition = new SpeechRecognition();
+    recognition.lang            = 'de-CH';
+    recognition.continuous      = true;
+    recognition.interimResults  = true;
+    recognition.maxAlternatives = 1;
+
+    var active = false, finalTranscript = '', interimText = '';
+
+    function render() { textarea.value = finalTranscript + interimText; }
+
+    btn.addEventListener('click', function () {
+      if (!active) {
+        finalTranscript = textarea.value.trim();
+        if (finalTranscript) finalTranscript += ' ';
+        interimText = '';
+        active = true;
+        recognition.start();
+      } else {
+        active = false;
+        recognition.stop();
+      }
+    });
+
+    recognition.onstart  = function () {
+      setUiRecording(true);
+      setStatus('Aufnahme läuft – bitte sprechen …');
+    };
+    recognition.onresult = function (event) {
+      interimText = '';
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        var t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) { finalTranscript += t + ' '; }
+        else                          { interimText = t; }
+      }
+      render();
+    };
+    recognition.onend = function () {
+      if (active) { recognition.start(); }
+      else {
+        finalTranscript += interimText; interimText = '';
+        render(); setUiRecording(false); setStatus('');
+      }
+    };
+    recognition.onerror = function (e) {
+      if (e.error === 'no-speech') return;
+      active = false; setUiRecording(false);
+      setStatus('Fehler: ' + e.error);
+    };
+  }
 }());
+
+// Doppel-Submit verhindern: das Verarbeiten (LLM-Analyse) dauert einige Sekunden.
+// Beim Absenden werden alle Submit-Buttons gesperrt und ein Hinweis gezeigt.
+(function () {
+  var forms = document.querySelectorAll('main form[method="post"]');
+  forms.forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var buttons = form.querySelectorAll('button[type="submit"]');
+      buttons.forEach(function (b) { b.disabled = true; });
+      var first = buttons[0];
+      if (first) { first.dataset.label = first.textContent; first.textContent = 'Wird verarbeitet …'; }
+    });
+  });
+}());
+
 </script>
 {% endblock %}

@@ -16,6 +16,7 @@ from io import BytesIO
 from pathlib import Path
 
 from docx import Document
+from docx.shared import Inches, Pt
 from lxml import etree
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -75,7 +76,7 @@ class GenerationService:
         data = self.methods.get(method_id)
         return Path(data['_dir']) / data['method']['template']
 
-    def generate(self, method_id, session_answers, metadata, changelog=None):
+    def generate(self, method_id, session_answers, metadata, changelog=None, nachweis=None):
         """
         Füllt die .dotx-Vorlage und gibt das fertige Dokument als BytesIO zurück.
 
@@ -83,6 +84,7 @@ class GenerationService:
             session_answers: {section_id: {'extracted': ..., 'raw_text': ...}}
             metadata: {'projektname': ..., 'projektleiter': ..., ...}
             changelog: list of {version, name, datum, bemerkungen} for Änderungskontrolle
+            nachweis: list of {abschnitt, herkunft, begruendung} für den Transparenz-Anhang
         """
         template = self.template_path(method_id)
         method = self.methods.get(method_id)
@@ -92,10 +94,13 @@ class GenerationService:
         self._fill_cover(doc, metadata)
         self._fill_headers(doc, metadata)
         self._fill_body(doc, method, session_answers, metadata)
+        self._fill_enddatum(doc, session_answers)
         if changelog:
             self._fill_aenderungskontrolle(doc, changelog)
         self._delete_style(doc, STYLE_HELP)
         self._delete_style(doc, STYLE_EXAMPLE)
+        if nachweis:
+            self._append_nachweis(doc, nachweis)
 
         buf = BytesIO()
         doc.save(buf)
@@ -471,6 +476,64 @@ class GenerationService:
             target_tbl.remove(row)
 
     # ------------------------------------------------------------------ #
+    # Geplantes Enddatum der Phase Initialisierung (Kap. 4.1)              #
+    # ------------------------------------------------------------------ #
+
+    def _fill_enddatum(self, doc, session_answers):
+        """Ersetzt den Platzhalter 'tt.mm.jjjj' beim geplanten Enddatum durch den
+        spätesten Liefertermin aus den Ergebnissen/Terminen (Kap. 4.1)."""
+        termine = (session_answers.get("termine") or {}).get("extracted") or []
+        last = _max_termin(termine)
+        if not last:
+            return
+        for p_el in doc.element.body.iter(f'{{{W}}}p'):
+            txt = _p_text(p_el)
+            if 'Geplantes Enddatum' in txt and 'tt.mm.jjjj' in txt:
+                _set_p_text(p_el, txt.replace('tt.mm.jjjj', last))
+                break
+
+    # ------------------------------------------------------------------ #
+    # Nachweis-Anhang (Transparenz: Herkunft der Angaben)                  #
+    # ------------------------------------------------------------------ #
+
+    def _append_nachweis(self, doc, nachweis):
+        """Hängt am Dokumentende eine Tabelle an, die je Abschnitt Herkunft und
+        Begründung der Angaben ausweist (Interview vs. von HERMES PIA kombiniert)."""
+        doc.add_paragraph()  # Abstand
+        head = doc.add_paragraph()
+        run = head.add_run("Nachweis – Herkunft der Angaben")
+        run.bold = True
+        run.font.size = Pt(14)
+        doc.add_paragraph(
+            "Diese Übersicht weist je Abschnitt aus, ob die Angaben vom Projektleiter im "
+            "Interview stammen oder von HERMES PIA kombiniert wurden – jeweils mit Begründung. "
+            "Der Anhang dient der Nachvollziehbarkeit und kann für die finale Fassung entfernt werden."
+        )
+
+        table = doc.add_table(rows=1, cols=3)
+        try:
+            table.style = 'Table Grid'
+        except KeyError:
+            pass
+
+        headers = ("Abschnitt", "Herkunft", "Begründung")
+        for cell, text in zip(table.rows[0].cells, headers):
+            cell.text = ""
+            r = cell.paragraphs[0].add_run(text)
+            r.bold = True
+
+        for item in nachweis:
+            cells = table.add_row().cells
+            cells[0].text = item.get("abschnitt", "")
+            cells[1].text = item.get("herkunft", "")
+            cells[2].text = item.get("begruendung", "")
+
+        widths = (Inches(1.7), Inches(1.7), Inches(3.6))
+        for row in table.rows:
+            for cell, width in zip(row.cells, widths):
+                cell.width = width
+
+    # ------------------------------------------------------------------ #
     # Hilfe-/Beispieltexte löschen                                        #
     # ------------------------------------------------------------------ #
 
@@ -525,6 +588,10 @@ HERMES_TERM_FIXES = {
     'Steuerungsausschuss': 'Projektausschuss',
     'Lenkungsausschuss':   'Projektausschuss',
     'Steuerungsgremium':   'Projektausschuss',
+    # Das Mandat heisst in HERMES 2022 'Durchführungsauftrag' – 'Projektauftrag'
+    # gibt es nicht (auch wenn das LLM den Begriff vereinzelt einstreut).
+    'Projektauftrags':     'Durchführungsauftrags',
+    'Projektauftrag':      'Durchführungsauftrag',
 }
 
 
@@ -537,17 +604,40 @@ def _fix_hermes_terms(text):
     return text
 
 
+def _max_termin(termine):
+    """Spätester Liefertermin (dd.mm.yyyy) aus den Termin-Zeilen als String."""
+    from datetime import date as _date
+    best, best_s = None, None
+    for r in termine:
+        if isinstance(r, dict) and r.get('termin'):
+            try:
+                d, m, y = str(r['termin']).split('.')
+                dt = _date(int(y), int(m), int(d))
+            except (ValueError, TypeError):
+                continue
+            if best is None or dt > best:
+                best, best_s = dt, r['termin']
+    return best_s
+
+
 def _set_p_text(p_el, text):
-    """Ersetzt den Textinhalt eines Paragraphen, erhält Stil."""
-    text = _fix_hermes_terms(text)
+    """Ersetzt den Textinhalt eines Paragraphen, erhält Stil.
+
+    Zeilenumbrüche (\\n) werden als <w:br/> gerendert, damit mehrzeilige Inhalte
+    (z.B. die Komplexitätseinschätzung der Ausgangslage) als Block erscheinen.
+    """
+    text = _fix_hermes_terms(text or '')
     for r in list(p_el):
         if r.tag == f'{{{W}}}r':
             p_el.remove(r)
     r = etree.SubElement(p_el, f'{{{W}}}r')
-    t = etree.SubElement(r, f'{{{W}}}t')
-    t.text = text
-    if text and (text[0] == ' ' or text[-1] == ' '):
-        t.set(XML_SPACE, 'preserve')
+    for idx, line in enumerate(text.split('\n')):
+        if idx > 0:
+            etree.SubElement(r, f'{{{W}}}br')
+        t = etree.SubElement(r, f'{{{W}}}t')
+        t.text = line
+        if line and (line[0] == ' ' or line[-1] == ' '):
+            t.set(XML_SPACE, 'preserve')
 
 
 def _row_style(row_el):

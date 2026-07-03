@@ -1,4 +1,4 @@
-# Wochenend-Bauplan — Methodos bis Montag
+# Wochenend-Bauplan — HERMES PIA bis Montag
 
 Ziel: Eine überzeugende **interne** Vorstellung am Montag. Ein durchgehender
 vertikaler Schnitt – lieber ein Fall, der von vorne bis hinten läuft, als zehn
@@ -10,7 +10,7 @@ halbfertige Felder.
 
 ## Was schon fertig ist (in diesem Paket)
 
-- Repo-Gerüst im Kairon-Stil (Flask App Factory, Services, Shared-Infra).
+- Repo-Gerüst im Entscheidungsunterstützung-Stil (Flask App Factory, Services, Shared-Infra).
 - **PIA-Methodenmodell** vollständig aus der echten Vorlage abgeleitet
   (`methods/hermes_pia/method.yaml`) – inkl. Tabellenspalten und der
   kontrollierten Vokabulare (Zielkategorie, Priorität, EW/Auswirkungsgrad).
@@ -55,12 +55,12 @@ In `app/domains/generation/service.py` (Ansatz steht im Docstring):
 
 ### 5. Demo-Drehbuch (1 Std.)
 - Synthetisches Fachanwendungs-Projekt vorbereiten (KEINE echten Daten).
-- Bewusst ein typisches Risiko weglassen → Methodos fragt nach → aufnehmen →
+- Bewusst ein typisches Risiko weglassen → HERMES PIA fragt nach → aufnehmen →
   fertiges PIA als `.docx` erzeugen. Das ist die Story für Montag.
 
 ## Bewusst NICHT im Wochenend-Scope
 
-- Anonymisierung der 100 echten PIAs → das ist Mnemosyne (eigener Track).
+- Anonymisierung der 100 echten PIAs → das ist Pseudonymisierung (eigener Track).
 - Echte Ähnlichkeitssuche / Embeddings / RAG über den Korpus → spätere Ausbaustufe.
   Für Montag genügt die Typ-Zuordnung + kuratierter Katalog.
 - Kundeneigene Vorlagen-Uploads → später (gleicher template-getriebener Mechanismus).
@@ -69,12 +69,12 @@ In `app/domains/generation/service.py` (Ansatz steht im Docstring):
 ## GitHub (zu Hause, alles public)
 
 ```bash
-cd methodos
+cd hermes-pia
 git init
 git add .
-git commit -m "Methodos scaffold: HERMES PIA method model, reference catalog, gap-check"
+git commit -m "HERMES PIA scaffold: HERMES PIA method model, reference catalog, gap-check"
 git branch -M main
 # Repo vorher auf GitHub anlegen (public), dann:
-git remote add origin https://github.com/kaspAir/methodos.git
+git remote add origin https://github.com/kaspAir/HERMES-PIA.git
 git push -u origin main
 ```

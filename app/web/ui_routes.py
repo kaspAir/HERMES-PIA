@@ -1,41 +1,140 @@
+import base64
 import json
 from datetime import date
 
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request, send_file, url_for
+from flask import (
+    Blueprint, abort, current_app, jsonify, redirect, render_template, request,
+    send_file, url_for,
+)
+
+from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from app.web.auth import (
+    current_user, login_required, login_user, logout_user, permission_required,
+    roles_required,
+)
 
 bp = Blueprint("ui", __name__)
 
 
 @bp.get("/health")
 def health():
-    return jsonify({"status": "ok", "service": "methodos"})
+    return jsonify({"status": "ok", "service": "hermes-pia"})
 
+
+# ---- Mandantentrennung: Session laden + Zugriff prüfen ---------------- #
+
+def _load_session(session_id):
+    """Lädt eine PIA und stellt sicher, dass sie zur Organisation des
+    angemeldeten Benutzers gehört (Super-Admin darf alle)."""
+    session = current_app.interview_service.get_session(session_id)
+    if not session:
+        abort(404)
+    user = current_user()
+    if user is None:
+        abort(401)
+    if not user.is_super_admin and session.org_id != user.org_id:
+        abort(403)
+    return session
+
+
+def _load_projekt(projekt_id):
+    """Lädt ein Projekt und prüft die Mandanten-Zugehörigkeit (Super-Admin: alle)."""
+    projekt = current_app.projekt_service.get_projekt(projekt_id)
+    if not projekt:
+        abort(404)
+    user = current_user()
+    if user is None:
+        abort(401)
+    if not user.is_super_admin and projekt.org_id != user.org_id:
+        abort(403)
+    return projekt
+
+
+# ---- Authentifizierung ----------------------------------------------- #
+
+@bp.get("/login")
+def login():
+    if current_user():
+        return redirect(url_for("ui.index"))
+    return render_template("login.html")
+
+
+@bp.post("/login")
+def login_post():
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    user = current_app.auth_service.authenticate(email, password)
+    if not user:
+        return render_template("login.html", error="E-Mail oder Passwort falsch.",
+                               email=email), 401
+    login_user(user)
+    return redirect(url_for("ui.index"))
+
+
+@bp.post("/logout")
+def logout():
+    logout_user()
+    return redirect(url_for("ui.login"))
+
+
+@bp.get("/passwort")
+@login_required
+def password_change():
+    return render_template("passwort.html")
+
+
+@bp.post("/passwort")
+@login_required
+def password_change_post():
+    user = current_user()
+    old = request.form.get("old_password", "")
+    new = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_password", "")
+    if len(new) < 8:
+        return render_template("passwort.html",
+                               error="Das neue Passwort muss mindestens 8 Zeichen haben."), 400
+    if new != confirm:
+        return render_template("passwort.html",
+                               error="Die beiden Passwörter stimmen nicht überein."), 400
+    if not current_app.auth_service.change_password(user.id, old, new):
+        return render_template("passwort.html",
+                               error="Das aktuelle Passwort ist nicht korrekt."), 400
+    return render_template("passwort.html", success="Ihr Passwort wurde geändert.")
+
+
+# ---- Startseite ------------------------------------------------------- #
 
 @bp.get("/")
+@login_required
 def index():
+    user = current_user()
+    if user.is_super_admin:
+        return redirect(url_for("ui.admin_orgs"))
     method = current_app.method_service.get("hermes_pia")
-    sessions = current_app.interview_service.all_sessions()
-    return render_template("index.html", method=method, sessions=sessions)
+    projekte = current_app.projekt_service.projekte_for_org(user.org_id)
+    return render_template("index.html", method=method, projekte=projekte)
 
 
 @bp.post("/interview/start")
+@permission_required("write")
 def interview_start():
     def _get(name, fallback=""):
         return request.form.get(name, "").strip() or fallback
 
-    # Pflichtfelder: Projektname + Projektleiter
+    user = current_user()
     project_name = _get("project_name")
     projektleiter = _get("projektleiter")
     if not project_name or not projektleiter:
         method = current_app.method_service.get("hermes_pia")
-        sessions = current_app.interview_service.all_sessions()
-        return render_template("index.html", method=method, sessions=sessions,
+        projekte = current_app.projekt_service.projekte_for_org(user.org_id)
+        return render_template("index.html", method=method, projekte=projekte,
                                error="Projektname und Projektleiter/in sind erforderlich.",
                                form=request.form), 400
 
     session = current_app.interview_service.start_session(
         method_id="hermes_pia",
         project_name=project_name,
+        org_id=user.org_id,
         projektnummer=_get("projektnummer") or None,
         auftraggeber=_get("auftraggeber") or None,
         verwaltungseinheit=_get("verwaltungseinheit") or None,
@@ -44,68 +143,191 @@ def interview_start():
         start_datum=_get("start_datum") or None,
         created_by=projektleiter,
     )
+    _wrap_in_projektstruktur(session, projektleiter)
     return redirect(url_for("ui.interview_workspace", session_id=session.id))
 
 
+def _wrap_in_projektstruktur(session, projektleiter):
+    """Legt für eine neue PIA Projekt + Ergebnis-Knoten an und verknüpft sie.
+
+    Defensiv: schlägt die Strukturanlage fehl, bleibt die PIA trotzdem nutzbar
+    (sie wird beim nächsten Start vom Backfill nachgezogen)."""
+    from app.domains.projekt.reference import ERG_PIA
+    try:
+        projekt = current_app.projekt_service.create_projekt(
+            org_id=session.org_id, name=session.project_name or "Projekt",
+            projektnummer=session.projektnummer, auftraggeber=session.auftraggeber,
+            verwaltungseinheit=session.verwaltungseinheit,
+            geschaeftsbereich=session.geschaeftsbereich,
+            innenauftragsnummer=session.innenauftragsnummer,
+            start_datum=session.start_datum, created_by=projektleiter,
+        )
+        ergebnis = current_app.projekt_service.add_ergebnis(
+            projekt.id, ERG_PIA, created_by=projektleiter,
+        )
+        current_app.interview_service.link_ergebnis(session.id, ergebnis.id)
+    except Exception:  # noqa: BLE001 – Strukturanlage darf die PIA-Erstellung nie blockieren
+        current_app.logger.exception("Projektstruktur für PIA %s konnte nicht angelegt werden",
+                                     getattr(session, "id", "?"))
+
+
 @bp.get("/interview/<int:session_id>")
+@permission_required("read")
 def interview_workspace(session_id):
     svc = current_app.interview_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
     state = svc.current_state(session)
     sections = svc.section_summary(session)
     preview = svc.preview_data(session)
     method = current_app.method_service.get(session.method_id)
+    projekt = current_app.projekt_service.projekt_for_ergebnis(session.ergebnis_id)
     return render_template(
         "interview.html",
-        session=session,
-        state=state,
-        sections=sections,
-        preview=preview,
-        method=method,
+        session=session, state=state, sections=sections, preview=preview, method=method,
+        projekt=projekt,
+        stt_available=getattr(current_app.transcriber, "available", False),
     )
 
 
 @bp.post("/interview/<int:session_id>/answer")
+@permission_required("write")
 def interview_answer(session_id):
+    _load_session(session_id)
     raw_text = request.form.get("raw_text", "").strip()
-    svc = current_app.interview_service
     try:
-        svc.submit_answer(session_id, raw_text)
+        current_app.interview_service.submit_answer(session_id, raw_text)
     except ValueError as e:
         return str(e), 400
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
 @bp.post("/interview/<int:session_id>/followup")
+@permission_required("write")
 def interview_followup(session_id):
+    _load_session(session_id)
     risk_id = request.form.get("risk_id", "")
     accepted = request.form.get("accepted", "0") == "1"
     raw_text = request.form.get("raw_text", "").strip() or None
-    svc = current_app.interview_service
     try:
-        svc.answer_followup(session_id, risk_id, accepted, raw_text)
+        current_app.interview_service.answer_followup(session_id, risk_id, accepted, raw_text)
     except ValueError as e:
         return str(e), 400
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
-@bp.post("/interview/<int:session_id>/edit/<section_id>")
+@bp.post("/interview/<int:session_id>/transcribe")
+@permission_required("write")
+def interview_transcribe(session_id):
+    """Transkribiert ein Mikrofon-Audiosegment (Diktat) und gibt den Text zurück.
+
+    Bevorzugter Transportweg ist Base64 in JSON (Text-Body): der Hosting-Proxy
+    leitet Formular-/JSON-POSTs zuverlässig weiter, während rohe Binär-Bodies
+    dort scheiterten. Der Roh-Body-Pfad bleibt als Fallback erhalten.
+
+    Datenschutz: Das Audio wird an den konfigurierten externen STT-Dienst gesendet.
+    Für Behördendaten einen CH/EU- oder self-hosted-Endpoint (STT_API_URL) verwenden.
+    """
+    _load_session(session_id)
+    tr = current_app.transcriber
+    if not getattr(tr, "available", False):
+        return jsonify({"text": "", "error": "Transkription ist nicht konfiguriert."}), 200
+    if (request.content_type or "").startswith("application/json"):
+        payload = request.get_json(silent=True) or {}
+        try:
+            audio = base64.b64decode(payload.get("audio") or "")
+        except Exception:  # noqa: BLE001 – kaputtes Base64 wie "keine Daten" behandeln
+            audio = b""
+        mimetype = payload.get("mime") or "audio/webm"
+    else:
+        # Roher Request-Body statt multipart/form-data: der Multipart-Parser blockierte
+        # hinter dem Proxy beim Lesen (Worker-Timeout). get_data() liest exakt
+        # Content-Length Bytes und kehrt zurück, sobald der Body da ist.
+        audio = request.get_data(cache=False)
+        mimetype = request.content_type or "audio/webm"
+    if not audio:
+        return jsonify({"text": "", "error": "Keine Audiodaten."}), 400
+    try:
+        text = tr.transcribe(audio, filename="segment.webm", mimetype=mimetype)
+    except Exception as exc:  # noqa: BLE001 – Fehler an den Client melden, nicht crashen
+        return jsonify({"text": "", "error": f"Transkription fehlgeschlagen: {exc}"}), 502
+    return jsonify({"text": text})
+
+
+@bp.post("/interview/<int:session_id>/delete")
+@permission_required("delete")
+def interview_delete(session_id):
+    _load_session(session_id)
+    current_app.interview_service.delete_session(session_id)
+    return redirect(url_for("ui.index"))
+
+
+# ---- Projekte: Container für die Ergebnisse --------------------------- #
+
+@bp.get("/projekt/<int:projekt_id>")
+@permission_required("read")
+def projekt_detail(projekt_id):
+    """Projektansicht: Phase Initialisierung → Module → Ergebnisse + Meilensteine."""
+    projekt = _load_projekt(projekt_id)
+    svc = current_app.projekt_service
+    structure = svc.structure(projekt)
+    # PIA-Ergebnisse mit ihrer Session verknüpfen (für „Weiter"/Download-Links).
+    sessions = {}
+    for modul in structure["module"]:
+        for erg in modul["ergebnisse"]:
+            s = current_app.interview_service.session_for_ergebnis(erg.id)
+            if s:
+                sessions[erg.id] = s
+    return render_template("projekt_detail.html", projekt=projekt,
+                           structure=structure, sessions=sessions)
+
+
+@bp.post("/projekt/<int:projekt_id>/delete")
+@permission_required("delete")
+def projekt_delete(projekt_id):
+    """Löscht ein Projekt samt Struktur und enthaltenen PIA-Ergebnissen."""
+    _load_projekt(projekt_id)
+    svc = current_app.projekt_service
+    for erg in svc.ergebnisse(projekt_id):
+        s = current_app.interview_service.session_for_ergebnis(erg.id)
+        if s:
+            current_app.interview_service.delete_session(s.id)
+    svc.delete_projekt(projekt_id)
+    return redirect(url_for("ui.index"))
+
+
+@bp.get("/interview/<int:session_id>/edit/<section_id>")
+@permission_required("write")
 def interview_edit(session_id, section_id):
-    """Setzt einen Abschnitt zurück, damit er neu beantwortet werden kann."""
-    current_app.interview_service.reset_section(session_id, section_id)
+    """Bearbeiten: Freitext mit vorgeladenem Inhalt; Tabellen werden zurückgesetzt."""
+    svc = current_app.interview_service
+    session = _load_session(session_id)
+    section = svc._section_by_id(session.method_id, section_id)
+    if not section:
+        return "Abschnitt nicht gefunden", 404
+    if section.get("type") == "free_text":
+        return render_template("edit_section.html", session=session, section=section,
+                               text=svc.section_text(session, section_id))
+    svc.reset_section(session_id, section_id)
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
-# ---- Versionsverwaltung ----
+@bp.post("/interview/<int:session_id>/edit/<section_id>")
+@permission_required("write")
+def interview_edit_save(session_id, section_id):
+    """Speichert den bearbeiteten Freitext und lässt ihn neu formulieren."""
+    _load_session(session_id)
+    raw_text = request.form.get("raw_text", "").strip()
+    current_app.interview_service.update_free_text(session_id, section_id, raw_text)
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
+# ---- Versionsverwaltung ---------------------------------------------- #
 
 @bp.get("/interview/<int:session_id>/version")
+@permission_required("write")
 def interview_version(session_id):
     svc = current_app.interview_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
     info = svc.version_info(session)
     return render_template("version_bump.html", session=session, info=info)
 
@@ -116,41 +338,30 @@ def _safe_filename(name_part):
 
 
 @bp.post("/interview/<int:session_id>/version")
+@permission_required("write")
 def interview_version_post(session_id):
     svc = current_app.interview_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
 
-    bump_type  = request.form.get("bump_type", "minor")
+    bump_type = request.form.get("bump_type", "minor")
     bemerkungen = request.form.get("bemerkungen", "").strip()
-
     new_version, _ = svc.record_version_bump(
-        session_id,
-        bump_type=bump_type,
-        projektleiter=session.created_by or "",
-        bemerkungen=bemerkungen,
+        session_id, bump_type=bump_type,
+        projektleiter=session.created_by or "", bemerkungen=bemerkungen,
     )
 
-    # Dateiname in den URL-Pfad legen, damit der Browser den Download korrekt
-    # benennt – auch wenn der PHP-Proxy den Content-Disposition-Header entfernt.
     safe_name = _safe_filename(session.project_name or "Projekt")
     filename = f"{safe_name}_PIA_v{new_version}.docx"
     return redirect(url_for("ui.interview_download", session_id=session_id, filename=filename))
 
 
 @bp.get("/interview/<int:session_id>/download/<path:filename>")
+@permission_required("read")
 def interview_download(session_id, filename):
-    """Generiert den PIA aus dem aktuellen Stand und liefert ihn als Download.
-
-    Der Dateiname steht im URL-Pfad (filename), damit der Browser ihn auch dann
-    übernimmt, wenn ein Proxy den Content-Disposition-Header verwirft.
-    """
+    """Generiert den PIA aus dem aktuellen Stand und liefert ihn als Download."""
     svc = current_app.interview_service
     gen = current_app.generation_service
-    session = svc.get_session(session_id)
-    if not session:
-        return "Session nicht gefunden", 404
+    session = _load_session(session_id)
 
     answers = json.loads(session.answers_json or "{}")
     changelog = json.loads(session.changelog_json or "[]")
@@ -158,7 +369,6 @@ def interview_download(session_id, filename):
     name_part = session.project_name or "Projekt"
     name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
 
-    # Geschlecht für korrekte Rollenbezeichnung (Projektleiter/in, Auftraggeber/in)
     pl_weiblich = ag_weiblich = False
     if getattr(svc, "llm", None):
         from app.domains.interview.extraction import detect_gender
@@ -171,7 +381,7 @@ def interview_download(session_id, filename):
         "auftraggeber":       session.auftraggeber or "",
         "projektleiter_weiblich": pl_weiblich,
         "auftraggeber_weiblich":  ag_weiblich,
-        "autor":              session.created_by or "",   # Autor = Projektleiter
+        "autor":              session.created_by or "",
         "verwaltungseinheit": session.verwaltungseinheit or "",
         "geschaeftsbereich":  session.geschaeftsbereich or "",
         "innenauftragsnummer": session.innenauftragsnummer or "",
@@ -182,7 +392,16 @@ def interview_download(session_id, filename):
         "klassifizierung":    "Nicht klassifiziert",
     }
 
-    buf = gen.generate(session.method_id, answers, metadata, changelog=changelog)
+    # Komplexitätseinschätzung (aus der Ausgangslage-Vertiefung) in den Ausgangslage-
+    # Text einfliessen lassen – begründet die abgeleiteten Dauern in Kap. 4.1.
+    ausgangslage = answers.get("ausgangslage")
+    if isinstance(ausgangslage, dict) and ausgangslage.get("komplexitaet"):
+        extracted = ausgangslage.setdefault("extracted", {})
+        if isinstance(extracted, dict):
+            extracted["text"] = svc.composed_ausgangslage(answers)
+
+    nachweis = svc.build_nachweis(session, answers)
+    buf = gen.generate(session.method_id, answers, metadata, changelog=changelog, nachweis=nachweis)
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -191,10 +410,150 @@ def interview_download(session_id, filename):
     )
 
 
-@bp.get("/demo/followups")
-def demo_followups():
-    entered = ["Verzoegerung durch oeffentliche Beschaffung"]
-    followups = current_app.interview_service.followups_for_risks(
-        "fachanwendung_einfuehrung", entered
+# ===================================================================== #
+# Verwaltung: Betreiber (Super-Admin) – Organisationseinheiten          #
+# ===================================================================== #
+
+@bp.get("/admin/organisationen")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_orgs():
+    auth = current_app.auth_service
+    orgs = auth.list_orgs()
+    org_users = {o.id: auth.list_users(o.id) for o in orgs}
+    return render_template("admin_orgs.html", orgs=orgs, org_users=org_users)
+
+
+@bp.post("/admin/organisationen/neu")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_create():
+    name = request.form.get("name", "").strip()
+    if name:
+        current_app.auth_service.create_org(name)
+    return redirect(url_for("ui.admin_orgs"))
+
+
+@bp.post("/admin/organisationen/<int:org_id>/benutzer")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_user_create(org_id):
+    """Legt einen Benutzer ODER Org-Admin an (Rollenwahl + Rechte)."""
+    auth = current_app.auth_service
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    name = request.form.get("name", "").strip()
+    is_admin = request.form.get("role") == "admin"
+    if email and password and not auth.get_user_by_email(email):
+        if is_admin:
+            auth.create_user(email, password, name=name, role=ROLE_ORG_ADMIN, org_id=org_id,
+                             can_read=True, can_write=True, can_delete=True)
+        else:
+            auth.create_user(email, password, name=name, role=ROLE_MEMBER, org_id=org_id,
+                             can_read=request.form.get("can_read") == "on",
+                             can_write=request.form.get("can_write") == "on",
+                             can_delete=request.form.get("can_delete") == "on")
+    return redirect(url_for("ui.admin_orgs"))
+
+
+@bp.post("/admin/organisationen/benutzer/<int:user_id>/rolle")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_user_role(user_id):
+    role = ROLE_ORG_ADMIN if request.form.get("role") == "admin" else ROLE_MEMBER
+    current_app.auth_service.set_role(user_id, role)
+    return redirect(url_for("ui.admin_orgs"))
+
+
+@bp.post("/admin/organisationen/benutzer/<int:user_id>/rechte")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_user_permissions(user_id):
+    current_app.auth_service.set_permissions(
+        user_id,
+        request.form.get("can_read") == "on",
+        request.form.get("can_write") == "on",
+        request.form.get("can_delete") == "on",
     )
-    return jsonify({"erfasst": entered, "nachfragen": followups})
+    return redirect(url_for("ui.admin_orgs"))
+
+
+@bp.post("/admin/organisationen/benutzer/<int:user_id>/loeschen")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_org_user_delete(user_id):
+    current_app.auth_service.delete_user(user_id)
+    return redirect(url_for("ui.admin_orgs"))
+
+
+# ===================================================================== #
+# Verwaltung: Org-Admin – Benutzer der eigenen Organisationseinheit      #
+# ===================================================================== #
+
+@bp.get("/admin/benutzer")
+@roles_required(ROLE_ORG_ADMIN)
+def admin_users():
+    auth = current_app.auth_service
+    user = current_user()
+    org = auth.get_org(user.org_id)
+    users = auth.list_users(user.org_id)
+    return render_template("admin_users.html", org=org, users=users)
+
+
+@bp.post("/admin/benutzer/neu")
+@roles_required(ROLE_ORG_ADMIN)
+def admin_user_create():
+    auth = current_app.auth_service
+    user = current_user()
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    name = request.form.get("name", "").strip()
+    if email and password and not auth.get_user_by_email(email):
+        auth.create_user(
+            email, password, name=name, org_id=user.org_id,
+            can_read=request.form.get("can_read") == "on",
+            can_write=request.form.get("can_write") == "on",
+            can_delete=request.form.get("can_delete") == "on",
+        )
+    return redirect(url_for("ui.admin_users"))
+
+
+@bp.post("/admin/benutzer/<int:user_id>/rechte")
+@roles_required(ROLE_ORG_ADMIN)
+def admin_user_permissions(user_id):
+    auth = current_app.auth_service
+    target = auth.get_user(user_id)
+    # Nur Benutzer der eigenen Organisationseinheit verwalten.
+    if target and target.org_id == current_user().org_id:
+        auth.set_permissions(
+            user_id,
+            request.form.get("can_read") == "on",
+            request.form.get("can_write") == "on",
+            request.form.get("can_delete") == "on",
+        )
+    return redirect(url_for("ui.admin_users"))
+
+
+@bp.post("/admin/benutzer/<int:user_id>/loeschen")
+@roles_required(ROLE_ORG_ADMIN)
+def admin_user_delete(user_id):
+    auth = current_app.auth_service
+    target = auth.get_user(user_id)
+    if target and target.org_id == current_user().org_id:
+        auth.delete_user(user_id)
+    return redirect(url_for("ui.admin_users"))
+
+
+@bp.post("/admin/benutzer/<int:user_id>/passwort")
+@roles_required(ROLE_SUPER_ADMIN, ROLE_ORG_ADMIN)
+def admin_reset_password(user_id):
+    """Admin setzt das Passwort eines Benutzers zurück.
+    Hauptadmin: alle. Org-Admin: nur Benutzer der eigenen Organisation."""
+    auth = current_app.auth_service
+    actor = current_user()
+    target = auth.get_user(user_id)
+    new_password = request.form.get("new_password", "")
+    if target and new_password:
+        allowed = actor.is_super_admin or (
+            actor.is_org_admin
+            and target.org_id == actor.org_id
+            and not target.is_super_admin
+        )
+        if allowed:
+            auth.reset_password(user_id, new_password)
+    return redirect(url_for("ui.admin_orgs") if actor.is_super_admin
+                    else url_for("ui.admin_users"))

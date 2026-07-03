@@ -4,7 +4,7 @@ from sqlalchemy import Column, DateTime, Integer, String
 
 
 class GovernanceMixin:
-    """Leichte Auditierbarkeit - bewusst einfach gehalten (analog Kairon)."""
+    """Leichte Auditierbarkeit - bewusst einfach gehalten."""
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

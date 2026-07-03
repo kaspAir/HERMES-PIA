@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-tools/mnemosyne/pseudonymize.py
+tools/pseudonymisierung/pseudonymize.py
 
-Mnemosyne-Prototyp Schritt 1: Pseudonymisiert PIAs lokal (offline).
+Pseudonymisierung-Prototyp Schritt 1: Pseudonymisiert PIAs lokal (offline).
 Kein Cloud-API-Aufruf – nur spaCy (NER) + Regex.
 
 Verwendung:
-    python tools/mnemosyne/pseudonymize.py \
+    python tools/pseudonymisierung/pseudonymize.py \
         --input  C:/Pfad/zu/echten/pias \
         --output C:/Pfad/zu/output
 
@@ -15,7 +15,7 @@ Ausgabe:
     <output>/mapping.json         Originalname → Pseudonym (PRIVAT, nie ins Repo!)
 
 Voraussetzungen:
-    pip install -r tools/mnemosyne/requirements.txt
+    pip install -r tools/pseudonymisierung/requirements.txt
     python -m spacy download de_core_news_lg
 """
 import argparse
@@ -129,7 +129,7 @@ def process_file(source: Path, output_dir: Path, nlp, mapping: dict) -> Path:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Mnemosyne: Offline-Pseudonymisierung von PIAs (.docx / .pdf)'
+        description='Pseudonymisierung: Offline-Pseudonymisierung von PIAs (.docx / .pdf)'
     )
     parser.add_argument('--input',  required=True, help='Ordner mit Original-PIAs')
     parser.add_argument('--output', required=True, help='Ausgabe-Ordner (wird erstellt)')
@@ -141,7 +141,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     mapping_path = output_dir / 'mapping.json'
 
-    print(f"[Mnemosyne] Lade spaCy-Modell '{args.model}' …")
+    print(f"[Pseudonymisierung] Lade spaCy-Modell '{args.model}' …")
     try:
         import spacy
         nlp = spacy.load(args.model)
@@ -155,10 +155,10 @@ def main():
                      if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS)
 
     if not files:
-        print(f"[Mnemosyne] Keine .docx/.pdf-Dateien gefunden in {input_dir}")
+        print(f"[Pseudonymisierung] Keine .docx/.pdf-Dateien gefunden in {input_dir}")
         sys.exit(0)
 
-    print(f"[Mnemosyne] {len(files)} Dateien gefunden – starte Pseudonymisierung …\n")
+    print(f"[Pseudonymisierung] {len(files)} Dateien gefunden – starte Pseudonymisierung …\n")
 
     ok_count = err_count = 0
     for i, f in enumerate(files, 1):
@@ -174,7 +174,7 @@ def main():
     _save_mapping(mapping_path, mapping)
 
     n_entities = len(mapping['entities'])
-    print(f"\n[Mnemosyne] Fertig: {ok_count} OK, {err_count} Fehler")
+    print(f"\n[Pseudonymisierung] Fertig: {ok_count} OK, {err_count} Fehler")
     print(f"  Pseudonymisierte Entitäten: {n_entities}")
     print(f"  Mapping-Datei:  {mapping_path}")
     print()

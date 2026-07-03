@@ -11,6 +11,6 @@ __pycache__
 !.env.example
 .pytest_cache
 reports/
-tools/mnemosyne/output/
+tools/pseudonymisierung/output/
 *.log
 WEEKEND_PLAN.md

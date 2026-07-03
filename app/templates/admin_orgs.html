@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Organisationen – Verwaltung{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+  <h1>Organisationseinheiten</h1>
+  <p class="hero-desc">Übersicht aller Organisationseinheiten und ihrer Benutzer. Legen Sie Einheiten
+    und Benutzer an, ändern Sie Rolle und Rechte, setzen Sie Passwörter zurück oder löschen Sie Benutzer.</p>
+
+  <form method="post" action="{{ url_for('ui.admin_org_create') }}" class="admin-inline-form">
+    <input type="text" name="name" placeholder="Name der Organisationseinheit" required>
+    <button type="submit" class="btn-primary">Anlegen</button>
+  </form>
+
+  {% if orgs %}
+  <div class="admin-orgs">
+    {% for org in orgs %}
+    {% set users = org_users.get(org.id, []) %}
+    <div class="admin-card">
+      <div class="admin-card-head">
+        <h2>{{ org.name }}</h2>
+        <span class="muted">{{ users | length }} Benutzer</span>
+      </div>
+
+      {% if users %}
+      <table class="sessions-table users-table">
+        <thead>
+          <tr><th>Benutzer</th><th>Rolle</th><th>Rechte</th><th>Passwort zurücksetzen</th><th>Aktion</th></tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>
+              <strong>{{ u.email }}</strong>
+              {% if u.name %}<br><span class="muted">{{ u.name }}</span>{% endif %}
+            </td>
+            <td>
+              {% if u.role == 'org_admin' %}<span class="badge badge-type">Admin</span>
+              {% else %}<span class="badge badge-pending">Benutzer</span>{% endif %}
+              <form method="post" action="{{ url_for('ui.admin_org_user_role', user_id=u.id) }}"
+                    class="inline-form">
+                {% if u.role == 'org_admin' %}
+                  <input type="hidden" name="role" value="member">
+                  <button type="submit" class="btn-link">&rarr; Benutzer</button>
+                {% else %}
+                  <input type="hidden" name="role" value="admin">
+                  <button type="submit" class="btn-link">&rarr; Admin</button>
+                {% endif %}
+              </form>
+            </td>
+            <td>
+              {% if u.role == 'org_admin' %}
+                <span class="muted">volle Rechte</span>
+              {% else %}
+                <form method="post" action="{{ url_for('ui.admin_org_user_permissions', user_id=u.id) }}"
+                      class="rights-form">
+                  <label class="chk"><input type="checkbox" name="can_read" {{ 'checked' if u.can_read }}> Lesen</label>
+                  <label class="chk"><input type="checkbox" name="can_write" {{ 'checked' if u.can_write }}> Schreiben</label>
+                  <label class="chk"><input type="checkbox" name="can_delete" {{ 'checked' if u.can_delete }}> Löschen</label>
+                  <button type="submit" class="btn-link">Speichern</button>
+                </form>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('ui.admin_reset_password', user_id=u.id) }}"
+                    class="reset-form">
+                <input type="password" name="new_password" placeholder="Neues Passwort" required>
+                <button type="submit" class="btn-link">Zurücksetzen</button>
+              </form>
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('ui.admin_org_user_delete', user_id=u.id) }}"
+                    class="inline-form"
+                    onsubmit="return confirm('Benutzer {{ u.email }} wirklich löschen?');">
+                <button type="submit" class="btn-link btn-danger">Löschen</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="admin-sub admin-warn">Noch kein Benutzer – bitte unten anlegen.</div>
+      {% endif %}
+
+      <form method="post"
+            action="{{ url_for('ui.admin_org_user_create', org_id=org.id) }}"
+            class="admin-grid-form admin-add-admin">
+        <input type="text" name="name" placeholder="Name (optional)">
+        <input type="email" name="email" placeholder="E-Mail" required>
+        <input type="password" name="password" placeholder="Initialpasswort" required>
+        <select name="role" title="Rolle">
+          <option value="member">Benutzer</option>
+          <option value="admin">Admin</option>
+        </select>
+        <label class="chk"><input type="checkbox" name="can_read" checked> Lesen</label>
+        <label class="chk"><input type="checkbox" name="can_write"> Schreiben</label>
+        <label class="chk"><input type="checkbox" name="can_delete"> Löschen</label>
+        <button type="submit" class="btn-secondary">Hinzufügen</button>
+      </form>
+      <p class="muted admin-hint">Rolle „Admin" erhält automatisch volle Rechte; die Häkchen gelten für „Benutzer".</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="admin-empty">Noch keine Organisationseinheiten erfasst.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,6 +1,6 @@
-# Methodos – Zielarchitektur V0.1
+# HERMES PIA – Zielarchitektur V0.1
 
-**Methodos** – *Vom Gespräch zum strukturierten Ergebnis.*
+**HERMES PIA** – *Vom Gespräch zum strukturierten Ergebnis.*
 
 Eine Plattform für methodisch geführte Interviews und die automatisierte
 Erstellung methodenkonformer Dokumente. Die erste Ausprägung unterstützt den
@@ -10,27 +10,27 @@ Erstellung methodenkonformer Dokumente. Die erste Ausprägung unterstützt den
 |---|---|
 | Version | 0.1 |
 | Status | in Arbeit |
-| Teil der Suite | Mnemosyne · **Methodos** · KAIRON |
+| Teil der Suite | Pseudonymisierung · **HERMES PIA** · Entscheidungsunterstützung |
 | Stack | Flask · SQLAlchemy · Jinja · Alembic · Docker |
 
 ---
 
 ## 1 Architekturvision
 
-Methodos ist kein Dokumenteneditor. Es ist ein **methodisch geführter
+HERMES PIA ist kein Dokumenteneditor. Es ist ein **methodisch geführter
 Dialograum**, der Fachwissen über eine Methode (z. B. HERMES) nutzt, um aus
 einem Gespräch ein vollständiges, methodenkonformes Dokument entstehen zu
 lassen.
 
 Der Produktkern ist nicht das Dokument, sondern das **geführte Interview mit
-mitdenkender Lückenerkennung**: Methodos fragt nicht nur Abschnitt für
+mitdenkender Lückenerkennung**: HERMES PIA fragt nicht nur Abschnitt für
 Abschnitt ab, sondern gleicht die Eingaben mit dem ab, was in vergleichbaren
 Vorhaben üblich ist, und fragt aktiv nach, wenn etwas Typisches zu fehlen
 scheint.
 
 ### 1.1 Leitmotiv
 
-> Methodos verwandelt das, was ein Mensch *sagt*, in das, was eine Methode
+> HERMES PIA verwandelt das, was ein Mensch *sagt*, in das, was eine Methode
 > *verlangt* – und macht sichtbar, was noch fehlt.
 
 ### 1.2 Produktkern
@@ -45,19 +45,19 @@ Dokument.
 
 ## 2 Produktkontext: die Suite
 
-Methodos steht zwischen zwei Schwesterprodukten und ist bewusst so geschnitten,
+HERMES PIA steht zwischen zwei Schwesterprodukten und ist bewusst so geschnitten,
 dass die spätere Integration kein Umbau ist:
 
-- **Mnemosyne** – Pseudonymisierung / Datenschutzschicht. Liefert später den
+- **Pseudonymisierung** – Pseudonymisierung / Datenschutzschicht. Liefert später den
   *anonymisierten* Korpus, aus dem die Referenzkataloge automatisch befüllt
   werden, und kapselt jeden Versand fachlicher Inhalte an ein Cloud-Modell.
-- **Methodos** – diese Plattform.
-- **KAIRON** – Entscheidungsunterstützung. Methodos und KAIRON teilen
+- **HERMES PIA** – diese Plattform.
+- **Entscheidungsunterstützung** – Entscheidungsunterstützung. HERMES PIA und Entscheidungsunterstützung teilen
   Architekturprinzipien und Stack, sodass eine Suite mit einheitlichem
   Verhalten entsteht.
 
-Wichtige Naht: Methodos definiert das Konzept *Referenzkatalog* heute mit
-kuratiertem Wissen. Sobald Mnemosyne existiert, wird genau dieser Katalog aus
+Wichtige Naht: HERMES PIA definiert das Konzept *Referenzkatalog* heute mit
+kuratiertem Wissen. Sobald Pseudonymisierung existiert, wird genau dieser Katalog aus
 dem anonymisierten Korpus gespeist – gleiche Struktur, andere Quelle. Demo-
 Wissen jetzt, Korpus-Wissen später.
 
@@ -70,8 +70,8 @@ Wissen jetzt, Korpus-Wissen später.
 | Konfiguration vor Programmierung | Methoden, Dokumentstrukturen und Fachwissen liegen als YAML vor, nicht im Code. Eine neue Methode = eine neue Konfiguration. |
 | Template-getriebene Generierung | Die Vorlage (`.dotx`) ist die Quelle der Wahrheit. Dokumente werden *gefüllt*, nicht im Code nachgebaut. Derselbe Mechanismus trägt später kundeneigene Vorlagen. |
 | Deterministischer Erkennungskern | Die Lückenerkennung (Gap-Check) ist regel-/katalogbasiert und reproduzierbar. Das LLM formuliert und extrahiert, entscheidet aber nicht über das Vorhandensein einer Lücke. |
-| KI berät, der Mensch verantwortet | Methodos schlägt vor, fragt nach und formuliert. Inhalt und Freigabe bleiben beim Projektleiter. |
-| Datenschutz by Design | Fachliche Inhalte mit Personenbezug gehören vor jedem Cloud-Versand durch die Pseudonymisierung (Mnemosyne). Kataloge enthalten nur *abgeleitetes*, aggregiertes Wissen. |
+| KI berät, der Mensch verantwortet | HERMES PIA schlägt vor, fragt nach und formuliert. Inhalt und Freigabe bleiben beim Projektleiter. |
+| Datenschutz by Design | Fachliche Inhalte mit Personenbezug gehören vor jedem Cloud-Versand durch die Pseudonymisierung (Pseudonymisierung). Kataloge enthalten nur *abgeleitetes*, aggregiertes Wissen. |
 | Methodenneutralität | HERMES/PIA ist die erste Ausprägung, nicht das Fundament. Das Kernmodell kennt „Methode", „Abschnitt", „Tabelle", „Vokabular" – nicht HERMES-Spezifika. |
 | Modularität | Fachdomänen (method, catalog, interview, generation, llm) sind klar getrennt. |
 | Auditierbarkeit (leichtgewichtig) | Kernobjekte tragen `created_at`, `updated_at`, `version`, `created_by`, `status` – ohne Workflow-Engine. |
@@ -93,7 +93,7 @@ Core Capabilities
 Enabling Capabilities
 ├── Konfiguration / Customizing (YAML)
 ├── Persistenz & Migration
-├── Datenschutz-Naht (Mnemosyne, später)
+├── Datenschutz-Naht (Pseudonymisierung, später)
 ├── Audit / Logging
 └── Betrieb (Docker)
 ```
@@ -215,7 +215,7 @@ Personenbezug per Konstruktion verschwunden.
 Reihenfolge der Reifung:
 
 1. **Heute:** kuratierter Katalog (HERMES-Standard + Fachwissen).
-2. **Mit Mnemosyne:** Katalog wird aus dem *anonymisierten* Korpus der ~100 PIAs
+2. **Mit Pseudonymisierung:** Katalog wird aus dem *anonymisierten* Korpus der ~100 PIAs
    automatisch befüllt (Muster, nicht Rohtext).
 3. **Später (optional):** Ähnlichkeitssuche / RAG über den anonymisierten Korpus
    für projektnahe Vorschläge statt nur typbasierter.
@@ -246,7 +246,7 @@ erfassten Dokument keine Entsprechung haben.
 
 | ADR | Entscheid | Begründung |
 |---|---|---|
-| ADR-001 | Geteilter Stack mit KAIRON (Flask App Factory, SQLAlchemy, Jinja, Alembic, Docker) | Einheitliche Suite, Wiederverwendung, geringere kognitive Last. |
+| ADR-001 | Geteilter Stack mit Entscheidungsunterstützung (Flask App Factory, SQLAlchemy, Jinja, Alembic, Docker) | Einheitliche Suite, Wiederverwendung, geringere kognitive Last. |
 | ADR-002 | Methoden & Dokumentstrukturen als YAML-Konfiguration | Erweiterbarkeit ohne Codeumbau; Methodenneutralität. |
 | ADR-003 | Template-getriebene Dokumenterzeugung (Vorlage = Quelle der Wahrheit) | Originaltreue heute, kundeneigene Vorlagen später – ein Mechanismus. |
 | ADR-004 | Deterministischer Gap-Check, LLM nur für Sprache | Verlässliches, demonstrierbares Verhalten; klare Verantwortungstrennung. |
@@ -260,7 +260,7 @@ Mapping-Verfahren für kundeneigene Vorlagen, RAG-Architektur.
 ## 13 Sicherheit & Datenschutz
 
 - Echte PIAs enthalten Personendaten; vor jedem Cloud-Versand steht die
-  Pseudonymisierung (Mnemosyne). Bis dahin: Demos mit synthetischen oder
+  Pseudonymisierung (Pseudonymisierung). Bis dahin: Demos mit synthetischen oder
   handbereinigten Daten.
 - API-Schlüssel ausschließlich via `.env` / Umgebungsvariablen, nie im Repo.
 - Kataloge enthalten nur aggregiertes Wissen, keine Rohzitate.
@@ -287,7 +287,7 @@ Regressionen abgesichert.
 | V0.3 | Dokumenterzeugung originalgetreu (`.dotx` -> `.docx`) |
 | V0.4 | UI-Ausbau (Interview-Workspace, Fortschritt, Nachfragen inline) |
 | V0.5 | Weitere Projekttypen / weitere Kataloge |
-| V0.6 | Mnemosyne-Naht: Katalog aus anonymisiertem Korpus befüllen |
+| V0.6 | Pseudonymisierung-Naht: Katalog aus anonymisiertem Korpus befüllen |
 | V0.7 | Kundeneigene Vorlagen (Upload + Mapping) |
 | V0.8 | RAG über anonymisierten Korpus (projektnahe Vorschläge) |
 | V1.x | Weitere Methoden/Dokumenttypen, Mandantenfähigkeit, Governance-Reife |
@@ -305,9 +305,9 @@ Regressionen abgesichert.
 
 ## 17 Kurzform für das Team
 
-> Methodos führt ein methodisches Gespräch und erzeugt daraus ein
+> HERMES PIA führt ein methodisches Gespräch und erzeugt daraus ein
 > methodenkonformes Dokument. Die Methode und das Erfahrungswissen sind
-> Konfiguration, nicht Code. Methodos denkt mit, indem es typische Inhalte
+> Konfiguration, nicht Code. HERMES PIA denkt mit, indem es typische Inhalte
 > kennt und bei Lücken nachfragt – verlässlich, weil die Erkennung
 > deterministisch ist. Die KI formuliert und extrahiert; entschieden und
 > verantwortet wird vom Menschen. Personenbezogene Inhalte gehen erst nach

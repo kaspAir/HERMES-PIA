@@ -1,35 +1,35 @@
 services:
 
   # ── Produktion (main-Branch) ─────────────────────────────────────────────
-  methodos-prod:
-    image: methodos:prod
+  hermespia-prod:
+    image: hermespia:prod
     build: .
     restart: unless-stopped
     ports:
       - "5000:5000"
     volumes:
-      - methodos-prod-data:/app/data
+      - hermespia-prod-data:/app/data
     env_file:
-      - /opt/methodos/secrets/prod.env
+      - /opt/hermespia/secrets/prod.env
     environment:
-      DATABASE_URL: sqlite:////app/data/methodos.db
+      DATABASE_URL: sqlite:////app/data/hermespia.db
       FLASK_DEBUG: "0"
 
   # ── Test (test-Branch) ───────────────────────────────────────────────────
-  methodos-test:
-    image: methodos:test
+  hermespia-test:
+    image: hermespia:test
     build: .
     restart: unless-stopped
     ports:
       - "5001:5000"
     volumes:
-      - methodos-test-data:/app/data
+      - hermespia-test-data:/app/data
     env_file:
-      - /opt/methodos/secrets/test.env
+      - /opt/hermespia/secrets/test.env
     environment:
-      DATABASE_URL: sqlite:////app/data/methodos.db
+      DATABASE_URL: sqlite:////app/data/hermespia.db
       FLASK_DEBUG: "0"
 
 volumes:
-  methodos-prod-data:
-  methodos-test-data:
+  hermespia-prod-data:
+  hermespia-test-data:

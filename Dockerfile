@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 # Nicht als root laufen
-RUN useradd --create-home --shell /bin/bash methodos
+RUN useradd --create-home --shell /bin/bash hermespia
 
 WORKDIR /app
 
@@ -10,14 +10,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Quellcode
-COPY --chown=methodos:methodos . .
+COPY --chown=hermespia:hermespia . .
 
 # Datenbankverzeichnis (wird als Volume gemountet)
-RUN mkdir -p /app/data && chown methodos:methodos /app/data
+RUN mkdir -p /app/data && chown hermespia:hermespia /app/data
 
-USER methodos
+USER hermespia
 
-ENV DATABASE_URL=sqlite:////app/data/methodos.db
+ENV DATABASE_URL=sqlite:////app/data/hermespia.db
 ENV FLASK_DEBUG=0
 
 EXPOSE 5000

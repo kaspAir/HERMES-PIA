@@ -1,8 +1,7 @@
 """Duenne Anbindung an die Anthropic Messages API (server-seitig, eigener Key).
 
 Hinweis: Bevor echte Projektinhalte an die API gehen, gehoeren sie durch die
-Pseudonymisierung (spaeter: Mnemosyne). Fuer die Demo am Montag mit
-synthetischen / handbereinigten Daten arbeiten.
+Pseudonymisierungsschicht. Fuer Demos mit synthetischen / handbereinigten Daten.
 """
 import os
 
@@ -14,7 +13,10 @@ API_URL = "https://api.anthropic.com/v1/messages"
 class LLMClient:
     def __init__(self, api_key=None, model=None):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        self.model = model or os.environ.get("METHODOS_LLM_MODEL", "claude-sonnet-4-6")
+        self.model = (model
+                      or os.environ.get("HERMESPIA_LLM_MODEL")
+                      or os.environ.get("METHODOS_LLM_MODEL")
+                      or "claude-sonnet-4-6")
 
     def complete(self, system, messages, max_tokens=1024):
         if not self.api_key:

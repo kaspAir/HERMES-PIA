@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-tools/mnemosyne/extract_catalog.py
+tools/pseudonymisierung/extract_catalog.py
 
-Mnemosyne-Prototyp Schritt 2: Extrahiert Wissen aus pseudonymisierten PIAs
+Pseudonymisierung-Prototyp Schritt 2: Extrahiert Wissen aus pseudonymisierten PIAs
 und schlägt Katalogerweiterungen vor.
 
 Verwendet die Anthropic API – aber nur auf bereits pseudonymisierten Texten!
 Keine Originaldaten werden je an die Cloud gesendet.
 
 Verwendung:
-    python tools/mnemosyne/extract_catalog.py \
+    python tools/pseudonymisierung/extract_catalog.py \
         --input   C:/Pfad/zu/output \
         --api-key $ANTHROPIC_API_KEY
 
     Oder via .env:
-        ANTHROPIC_API_KEY=sk-ant-... python tools/mnemosyne/extract_catalog.py \
+        ANTHROPIC_API_KEY=sk-ant-... python tools/pseudonymisierung/extract_catalog.py \
             --input C:/Pfad/zu/output
 
 Ausgabe:
@@ -168,7 +168,7 @@ def aggregate_results(extractions: list[dict]) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Mnemosyne: Wissensextraktion aus pseudonymisierten PIAs'
+        description='Pseudonymisierung: Wissensextraktion aus pseudonymisierten PIAs'
     )
     parser.add_argument('--input',   required=True,
                         help='Ordner mit *_pseudo.txt Dateien (Ausgabe von pseudonymize.py)')
@@ -195,7 +195,7 @@ def main():
     if args.limit > 0:
         files = files[:args.limit]
 
-    print(f"[Mnemosyne] Extraktion: {len(files)} Dateien mit Modell '{args.model}'")
+    print(f"[Pseudonymisierung] Extraktion: {len(files)} Dateien mit Modell '{args.model}'")
     print(f"  Hinweis: Nur pseudonymisierte Daten werden an die API gesendet.\n")
 
     client = anthropic.Anthropic(api_key=args.api_key)
@@ -219,7 +219,7 @@ def main():
 
     # Log speichern
     log_path.write_text(json.dumps(extractions, ensure_ascii=False, indent=2), encoding='utf-8')
-    print(f"\n[Mnemosyne] Rohdaten gespeichert: {log_path}")
+    print(f"\n[Pseudonymisierung] Rohdaten gespeichert: {log_path}")
 
     # Aggregieren
     valid = [e for e in extractions if '_fehler' not in e]
@@ -227,12 +227,12 @@ def main():
         print("[FEHLER] Keine erfolgreichen Extraktionen.")
         sys.exit(1)
 
-    print(f"[Mnemosyne] Aggregiere {len(valid)} erfolgreiche Extraktionen …")
+    print(f"[Pseudonymisierung] Aggregiere {len(valid)} erfolgreiche Extraktionen …")
     aggregated = aggregate_results(valid)
 
     # YAML ausgeben
     output_yaml = {
-        '_mnemosyne_meta': {
+        '_pseudonymisierung_meta': {
             'quellen': f"{len(valid)} pseudonymisierte PIAs",
             'modell': args.model,
             'hinweis': (
@@ -248,7 +248,7 @@ def main():
         yaml.dump(output_yaml, fh, allow_unicode=True, default_flow_style=False,
                   sort_keys=False)
 
-    print(f"[Mnemosyne] Katalog-Vorschläge gespeichert: {yaml_path}")
+    print(f"[Pseudonymisierung] Katalog-Vorschläge gespeichert: {yaml_path}")
     print()
 
     # Kurze Zusammenfassung

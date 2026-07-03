@@ -4,15 +4,15 @@
 # =====================================================================
 # Dieser Katalog enthaelt ABGELEITETES, aggregiertes Erfahrungswissen -
 # keine Rohdaten aus echten Projekten. Er ist die Wissensquelle, mit der
-# Methodos abgleicht und aktiv nachfragt ("In vergleichbaren Projekten
+# HERMES PIA abgleicht und aktiv nachfragt ("In vergleichbaren Projekten
 # ist X ueblich - bewusst weggelassen?").
 #
 # Quelle fuer Montag: kuratiert aus dem HERMES-Standard + Fachwissen.
 # Spaeter: derselbe Katalog wird aus dem ANONYMISIERTEN Korpus
-# (via Mnemosyne) automatisch befuellt - gleiche Struktur, andere Quelle.
+# (via Pseudonymisierung) automatisch befuellt - gleiche Struktur, andere Quelle.
 #
 # 'salience' (0.0-1.0): wie typisch der Eintrag fuer diesen Projekttyp ist.
-#   >= 0.8  => Methodos fragt nach, wenn der Eintrag fehlt.
+#   >= 0.8  => HERMES PIA fragt nach, wenn der Eintrag fehlt.
 
 project_type:
   id: fachanwendung_einfuehrung

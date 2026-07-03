@@ -7,15 +7,14 @@ env/
 *.sqlite
 *.sqlite3
 *.db
-methodos.db
 .pytest_cache/
 reports/
 .idea/
 .vscode/
 *.egg-info/
 
-# Mnemosyne – niemals Originaldaten oder Mapping ins Repo!
-tools/mnemosyne/output/
+# Pseudonymisierung – niemals Originaldaten oder Mapping ins Repo!
+tools/pseudonymisierung/output/
 **/mapping.json
 **/extraction_log.json
 pias/

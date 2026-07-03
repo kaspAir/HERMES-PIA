@@ -22,14 +22,83 @@ HERMES_RULES = (
     "- Verantwortlichkeiten werden auf Rollenebene angegeben "
     "(z.B. Auftraggeber, Projektleiter), nicht mit Personennamen.\n"
     "- Das steuernde Gremium heisst in HERMES 2022 'Projektausschuss' - "
-    "NIEMALS 'Steuerungsausschuss' oder 'Lenkungsausschuss'."
+    "NIEMALS 'Steuerungsausschuss' oder 'Lenkungsausschuss'.\n"
+    "- 'Referenzierte Dokumente' und 'Mitgeltende Unterlagen' sind ausschliesslich "
+    "BESTEHENDE Grundlagen, die schon vor der Initialisierung vorliegen "
+    "(z.B. Strategien, Richtlinien, Gesetze, Weisungen, Vorgaben der Stammorganisation). "
+    "Die in der Phase Initialisierung erst erarbeiteten Ergebnisse (Stakeholderliste, "
+    "Studie, Rechtsgrundlagen-/Schutzbedarfs-/Beschaffungsanalyse, Projektmanagementplan, "
+    "Durchfuehrungsauftrag, Prototyp) gehoeren NIEMALS in diese beiden Abschnitte.\n"
+    "- KOSTEN/BUDGET betreffen im PIA AUSSCHLIESSLICH die Phase Initialisierung. "
+    "Budgetiere NIEMALS die Phasen Konzept, Realisierung, Einfuehrung, Abschluss oder "
+    "Umsetzung. Ob das Projekt klassisch (mit diesen Phasen) oder agil (nur Initialisierung, "
+    "Umsetzung, Abschluss) gefuehrt wird, entscheidet sich erst im Meilenstein 'Weiteres "
+    "Vorgehen' WAEHREND der Initialisierung. Gliedere die Initialisierungskosten nach "
+    "Kostenart und trenne INTERNE von EXTERNEN Kosten (typisch: 'Interne Personalkosten', "
+    "'Externe Fachexpertise <Thema>', 'Sachmittel und Lizenzen'). Kennzeichne externe "
+    "Positionen im Namen mit dem Wort 'extern'. Pro Zeile ein realistischer Betrag in CHF "
+    "(nur die Zahl) fuer eine EINZELPOSITION. Erzeuge bei den Einzelpositionen selbst keine "
+    "Summen-, Zwischensummen- oder Totalzeilen; die Zwischensummen (intern/extern) und das "
+    "Total ergaenzt HERMES PIA anschliessend automatisch und weist sie im fertigen Dokument aus.\n"
+    "- Der Personalaufwand muss alle Rollen enthalten, die fuer die geplanten "
+    "Lieferergebnisse (Kap. 4.1) noetig sind. Verwende die HERMES-2022-Rollenbezeichnungen. "
+    "Insbesondere: Schutzbedarfsanalyse -> ISDS-Verantwortlicher; Beschaffungsanalyse -> "
+    "Anwendervertreter; Prototyp -> Entwickler; Rechtsgrundlagenanalyse/Studie/Stakeholderliste/"
+    "Projektmanagementplan/Durchfuehrungsauftrag -> Projektleiter; Entscheide der Steuerung -> "
+    "Auftraggeber.\n"
+    "- Lassen Ausgangslage oder Komplexitaetseinschaetzung fehlendes internes Know-how bzw. den "
+    "Bedarf an EXTERNEN Fachexperten erkennen (z.B. 'muss extern eingekauft/kompensiert werden', "
+    "'Engpassfaktor externe Expertise'), dann MUSS der Personalaufwand eine entsprechende Rolle "
+    "enthalten (z.B. 'Externe Fachexpertise <Thema>') UND die Kostenschaetzung muss den hoeheren "
+    "externen Aufwand (Tagessaetze externer Fachleute) beruecksichtigen.\n"
+    "- RISIKEN im PIA betreffen AUSSCHLIESSLICH die Phase Initialisierung: also Risiken, die das "
+    "Erarbeiten der Initialisierungs-Ergebnisse gefaehrden (z.B. Schluesselpersonen/Fachexperten "
+    "nicht verfuegbar, Rechts-/Datenschutzfragen werden nicht rechtzeitig geklaert, Anforderungen "
+    "fuer die Studie bleiben unklar, Beschaffungsstrategie ungeklaert, knappe Termine der "
+    "Initialisierung, fehlende Stakeholder-Mitwirkung). NIEMALS Risiken der spaeteren Umsetzung/"
+    "Migration (Cutover, Rollback, Datenmigration, Testabdeckung, Go-Live, Parallelbetrieb) - "
+    "diese werden erst in spaeteren Phasen relevant.\n"
+    "- ERFINDE NIEMALS Fundstellen: keine SR-Nummern, keine kantonalen Erlass-Nummern (z.B. "
+    "'NG ...', 'BGS ...'), keine Aktenzeichen, keine Links. Wenn die exakte Nummer/Fundstelle "
+    "nicht zweifelsfrei bekannt ist, lass das Feld 'Nummer/Link' LEER und nenne NUR den Namen des "
+    "Erlasses. Eine falsche oder geratene Fundstelle ist schlimmer als gar keine.\n"
+    "- Formuliere KEINE feste Maximaldauer der Phase Initialisierung (z.B. 'innerhalb von X "
+    "Monaten/Wochen abzuschliessen', 'Dauer maximal ...') als Rahmenbedingung, Ziel oder Vorgabe. "
+    "Die Dauer der Initialisierung ergibt sich aus Komplexitaet und Terminplan, nicht aus einer "
+    "pauschalen Obergrenze."
 )
+
+
+# Deterministische Begriffskorrekturen: das LLM streut trotz HERMES_RULES
+# vereinzelt Nicht-HERMES-Begriffe ein. Hier an der QUELLE (vor dem Speichern)
+# korrigiert, damit Vorschau, Dokument und Nachweis konsistent sind.
+HERMES_TERM_FIXES = {
+    "Projektauftrags": "Durchführungsauftrags",
+    "Projektauftrag":  "Durchführungsauftrag",
+    "Steuerungsausschuss": "Projektausschuss",
+    "Lenkungsausschuss":   "Projektausschuss",
+    "Steuerungsgremium":   "Projektausschuss",
+}
+
+
+def fix_hermes_terms(value):
+    """Korrigiert Nicht-HERMES-Begriffe rekursiv in Strings/Listen/Dicts."""
+    if isinstance(value, str):
+        for wrong, right in HERMES_TERM_FIXES.items():
+            if wrong in value:
+                value = value.replace(wrong, right)
+        return value
+    if isinstance(value, list):
+        return [fix_hermes_terms(v) for v in value]
+    if isinstance(value, dict):
+        return {k: fix_hermes_terms(v) for k, v in value.items()}
+    return value
 
 
 def estimate_risk_assessment(llm_client, beschreibung):
     """Schaetzt EW, AG (je Tief/Mittel/Hoch) und eine Massnahme zu einem Risiko.
 
-    Interim per LLM; spaeter aus dem Mnemosyne-Korpus ableitbar.
+    Interim per LLM; spaeter aus dem pseudonymisierten Korpus ableitbar.
     """
     if not beschreibung or not beschreibung.strip() or llm_client is None:
         return {}
@@ -54,6 +123,205 @@ def estimate_risk_assessment(llm_client, beschreibung):
             out["ag"] = d["ag"]
         if d.get("massnahmen"):
             out["massnahmen"] = str(d["massnahmen"]).strip()
+        return fix_hermes_terms(out)
+    except Exception:
+        return {}
+
+
+COMPLEXITY_DIMENSIONS = [
+    ("Technologie", "technische Neuartigkeit, Architektur, Integrationen, Migration, Abhängigkeiten"),
+    ("Ressourcenverfügbarkeit", "Verfügbarkeit von Fachexperten/Schlüsselpersonen, Kapazität, Know-how"),
+    ("Politik & Stakeholder", "politische Brisanz, Anzahl und Interessen der Stakeholder, Behörden"),
+    ("Recht & Compliance", "rechtliche Unsicherheiten, Datenschutz, Beschaffungsrecht, Bewilligungen"),
+    ("Organisation & Prozesse", "Reorganisation, Betroffenheit, Veränderungsumfang, Prozesseingriff"),
+]
+
+_STUFEN = ("gering", "mittel", "hoch")
+
+
+def assess_complexity(llm_client, ausgangslage_text, dimensions=None):
+    """Schätzt aus der Ausgangslage je Dimension die Komplexität ('gering'|'mittel'|
+    'hoch') und formuliert eine kurze Einschätzung, die der PL bestätigen, ergänzen
+    oder widerlegen kann. Rückgabe: [{"dimension", "einschaetzung", "stufe"}].
+    """
+    if not ausgangslage_text or not ausgangslage_text.strip() or llm_client is None:
+        return []
+    dims = dimensions or COMPLEXITY_DIMENSIONS
+    dim_desc = "\n".join(f"- {name}: {hint}" for name, hint in dims)
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Projektberater. Schätze die Komplexität eines "
+        "Vorhabens je Dimension ein und begründe knapp. Erfahrungsgemäss wird die Phase "
+        "Initialisierung oft zu KURZ geplant; sei daher eher umsichtig (nicht untertreiben). "
+        "Formuliere die Einschätzung in neutralem, sachlichem Behördenstil als objektive Aussage "
+        "des Dokuments. Schreibe NICHT in der dritten Person über den Projektleiter (keine "
+        "Wendungen wie 'der Projektleiter relativiert/behauptet/sagt/schätzt ein') und ohne "
+        "direkte Anrede – der Projektinitialisierungsauftrag wird vom Projektleiter selbst "
+        "verfasst. Beschreibe Sachverhalt und Komplexitätsgrad direkt; vorhandene "
+        "Zusatzinformationen werden als Sachverhalt eingearbeitet, nicht als Aussage einer Person. "
+        "Antworte ausschliesslich mit validem JSON.\n\n" + HERMES_RULES
+    )
+    user = (
+        f"Ausgangslage:\n{ausgangslage_text}\n\n"
+        f"Dimensionen:\n{dim_desc}\n\n"
+        "Gib je Dimension eine Stufe ('gering', 'mittel' oder 'hoch') und eine Einschätzung "
+        "(1-2 Sätze, neutraler Behördenstil), die der Projektleiter im Interview bestätigen, "
+        "ergänzen oder widerlegen kann. "
+        "Stütze dich nur auf die Ausgangslage; wo Information fehlt, benenne die Annahme.\n\n"
+        'Rückgabe als JSON-Array: [{"dimension": "...", "stufe": "mittel", "einschaetzung": "..."}]'
+    )
+    def _norm(s):
+        return re.sub(r"[^a-zäöü]", "", str(s).lower())
+
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1536)
+        data = _parse_json(raw)
+    except Exception:
+        return []
+
+    # LLM-Ergebnisse je Dimension einsammeln (nach Name normalisiert).
+    by_dim = {}
+    if isinstance(data, list):
+        for d in data:
+            if isinstance(d, dict) and d.get("dimension"):
+                by_dim[_norm(d["dimension"])] = d
+
+    # GARANTIE: jede konfigurierte Dimension kommt vor – fehlt eine in der
+    # LLM-Antwort, wird sie mit einem neutralen Platzhalter ergänzt (statt zu fehlen).
+    out = []
+    for name, _hint in dims:
+        d = by_dim.get(_norm(name))
+        if d and d.get("einschaetzung"):
+            stufe = str(d.get("stufe", "")).lower().strip()
+            out.append({
+                "dimension": name,
+                "einschaetzung": fix_hermes_terms(str(d["einschaetzung"]).strip()),
+                "stufe": stufe if stufe in _STUFEN else "mittel",
+            })
+        else:
+            out.append({
+                "dimension": name,
+                "stufe": "mittel",
+                "einschaetzung": ("Diese Dimension konnte nicht automatisch eingeschätzt "
+                                  "werden – bitte selbst beurteilen."),
+            })
+    return out
+
+
+def analyze_results_options(llm_client, ausgangslage_text):
+    """Schliesst aus der Ausgangslage, ob eine Beschaffungsanalyse und/oder ein
+    Prototyp als Initialisierungs-Ergebnis sinnvoll sind, und formuliert je eine
+    Entscheidungsfrage an den Projektleiter (Stil gemaess Beispielen).
+
+    Rueckgabe:
+        {"beschaffung": {"relevant": bool, "frage": str},
+         "prototyp":    {"relevant": bool, "thema": str, "frage": str}}
+    oder {} wenn keine Analyse moeglich ist.
+    """
+    if not ausgangslage_text or not ausgangslage_text.strip() or llm_client is None:
+        return {}
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Projektberater. Analysiere die Ausgangslage "
+        "eines Vorhabens hinsichtlich zweier moeglicher Initialisierungs-Ergebnisse: "
+        "einer Beschaffungsanalyse und eines Prototyps. "
+        "Antworte ausschliesslich mit validem JSON, keine weiteren Erklaerungen.\n\n"
+        + HERMES_RULES
+    )
+    user = (
+        f"Ausgangslage:\n{ausgangslage_text}\n\n"
+        "Beurteile zwei Punkte und formuliere je eine Entscheidungsfrage an den "
+        "Projektleiter (hoeflich, Sie-Form):\n\n"
+        "1) Beschaffung: Ist erkennbar, dass im Projekt etwas beschafft (gekauft) wird "
+        "- ein Produkt, ein System oder eine Dienstleistung?\n"
+        "   - Wenn ja, setze beschaffung.relevant=true und formuliere die Frage im Stil: "
+        "\"Aus der Ausgangslage ist ersichtlich, dass Sie im Projekt etwas beschaffen "
+        "wollen. Wollen Sie eine Beschaffungsanalyse erstellen?\"\n"
+        "   - Wenn nein, setze beschaffung.relevant=false und formuliere die Frage im Stil: "
+        "\"Aus der Ausgangslage ist ersichtlich, dass Sie im Projekt nichts beschaffen "
+        "wollen. Ist dennoch eine Beschaffungsanalyse notwendig?\"\n\n"
+        "2) Prototyp: Waere ein Prototyp sinnvoll, um eine Unsicherheit fruehzeitig zu "
+        "klaeren, und zu welchem Thema?\n"
+        "   - Wenn ja, setze prototyp.relevant=true, prototyp.thema=<kurzes Thema> und "
+        "formuliere die Frage im Stil: \"Auf Basis der Ausgangslage empfehle ich Ihnen, "
+        "einen Prototypen zum Thema <Thema> durchzufuehren. Wollen Sie diesen einplanen?\"\n"
+        "   - Wenn nein, setze prototyp.relevant=false, prototyp.thema=\"\" und formuliere "
+        "die Frage im Stil: \"Auf Basis der Ausgangslage scheint kein Prototyp notwendig "
+        "zu sein. Wollen Sie auf diesen verzichten?\"\n\n"
+        'Rueckgabe als JSON: {"beschaffung": {"relevant": true, "frage": "..."}, '
+        '"prototyp": {"relevant": false, "thema": "", "frage": "..."}}'
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=512)
+        d = _parse_json(raw)
+        if not isinstance(d, dict):
+            return {}
+        out = {}
+        b = d.get("beschaffung")
+        if isinstance(b, dict) and b.get("frage"):
+            out["beschaffung"] = {
+                "relevant": bool(b.get("relevant")),
+                "frage": str(b["frage"]).strip(),
+            }
+        p = d.get("prototyp")
+        if isinstance(p, dict) and p.get("frage"):
+            out["prototyp"] = {
+                "relevant": bool(p.get("relevant")),
+                "thema": str(p.get("thema") or "").strip(),
+                "frage": str(p["frage"]).strip(),
+            }
+        return out
+    except Exception:
+        return {}
+
+
+def nachweis_begruendungen(llm_client, items, context):
+    """Erzeugt je Abschnitt eine kurze Begruendung, wie die Angaben zustande kamen.
+
+    items: [{"abschnitt": str, "herkunft": str, "pl_eingabe": str, "inhalt": str}]
+    Rueckgabe: {abschnitt: begruendung}. Leeres Dict bei fehlendem LLM/Fehler.
+    """
+    if not items or llm_client is None:
+        return {}
+    bullets = []
+    for idx, it in enumerate(items, 1):
+        bullets.append(
+            f"[{idx}] Abschnitt: {it['abschnitt']}\n"
+            f"     Herkunft: {it['herkunft']}\n"
+            f"     Angabe des Projektleiters: {it.get('pl_eingabe') or '(keine)'}\n"
+            f"     Resultierender Inhalt: {it.get('inhalt') or '(leer)'}"
+        )
+    system = (
+        "Du bist ein HERMES-2022-Projektberater und dokumentierst nachvollziehbar, wie die "
+        "Angaben eines Projektinitialisierungsauftrags zustande kamen. Schreibe je Abschnitt "
+        "eine knappe, KONKRETE Begruendung (1-2 Saetze, sachlicher Behoerdenstil). "
+        "Wenn die Herkunft 'HERMES PIA (kombiniert)' lautet, nenne die konkreten Gruende und "
+        "Ableitungen (woraus genau: welche Aussage der Ausgangslage, welcher Projekttyp, welcher "
+        "HERMES-2022-Standard, welche Entscheidung). Wenn 'Projektleiter (Interview)', halte fest, "
+        "dass es auf seinen Angaben beruht und nur sprachlich gefasst wurde. Bei 'Projektleiter + "
+        "HERMES PIA' trenne, was vom Projektleiter kam und was ergaenzt wurde. "
+        "Beschreibe ausschliesslich die tatsaechlich vorhandenen Angaben des Abschnitts; behaupte "
+        "NIEMALS, dass etwas (z.B. Summen- oder Totalzeilen) weggelassen oder 'bewusst nicht "
+        "erzeugt' wurde – im fertigen Dokument vorhandene Summen/Totale gelten als vorhanden. "
+        "Antworte ausschliesslich mit validem JSON.\n\n" + HERMES_RULES
+    )
+    user = (
+        f"Projektkontext:\n{context}\n\n"
+        f"Abschnitte:\n" + "\n".join(bullets) + "\n\n"
+        'Rueckgabe als JSON-Objekt mit den Nummern als Schluessel: '
+        '{"1": "<Begruendung>", "2": "<Begruendung>", ...} fuer jeden Abschnitt.'
+    )
+    try:
+        # Grosszuegiges Limit: bei ~13 Abschnitten wuerde ein zu kleines Limit das JSON
+        # abschneiden -> Parser scheitert -> alle fielen auf den Fallback zurueck.
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=4096)
+        d = _parse_json(raw)
+        if not isinstance(d, dict):
+            return {}
+        # Index-Keys ("1"...) zurueck auf die Abschnittstitel mappen.
+        out = {}
+        for idx, it in enumerate(items, 1):
+            val = d.get(str(idx)) or d.get(it["abschnitt"])
+            if val:
+                out[it["abschnitt"]] = str(val).strip()
         return out
     except Exception:
         return {}
@@ -77,10 +345,11 @@ def _vocab_values(col, vocabularies):
 
 def extract_fields(llm_client, section, raw_text, vocabularies=None):
     if section.get("type") == "free_text":
-        return _extract_free_text(llm_client, section["title"], raw_text)
+        return fix_hermes_terms(_extract_free_text(llm_client, section["title"], raw_text))
     if section.get("type") == "table":
-        return _extract_table(llm_client, section["title"], section.get("columns", []),
-                              raw_text, vocabularies or {})
+        return fix_hermes_terms(_extract_table(
+            llm_client, section["title"], section.get("columns", []),
+            raw_text, vocabularies or {}))
     return {}
 
 
@@ -236,7 +505,7 @@ def generate_followups(llm_client, section, raw_text):
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=512)
         result = _parse_json(raw) or {}
         items = result.get("followups", [])
-        return [f for f in items if isinstance(f, dict) and f.get("frage")]
+        return [fix_hermes_terms(f) for f in items if isinstance(f, dict) and f.get("frage")]
     except Exception:
         return []
 
@@ -252,9 +521,9 @@ def generate_suggestion(llm_client, section, context, vocabularies=None):
     oder None/[] wenn nichts Sinnvolles erzeugt werden konnte.
     """
     if section.get("type") == "table":
-        return _suggest_table(llm_client, section, context, vocabularies or {})
+        return fix_hermes_terms(_suggest_table(llm_client, section, context, vocabularies or {}))
     if section.get("type") == "free_text":
-        return _suggest_free_text(llm_client, section, context)
+        return fix_hermes_terms(_suggest_free_text(llm_client, section, context))
     return None
 
 
