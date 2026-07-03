@@ -1,3 +1,4 @@
+import base64
 import json
 from datetime import date
 
@@ -184,6 +185,7 @@ def interview_workspace(session_id):
         "interview.html",
         session=session, state=state, sections=sections, preview=preview, method=method,
         projekt=projekt,
+        stt_available=getattr(current_app.transcriber, "available", False),
     )
 
 
@@ -216,7 +218,11 @@ def interview_followup(session_id):
 @bp.post("/interview/<int:session_id>/transcribe")
 @permission_required("write")
 def interview_transcribe(session_id):
-    """Transkribiert ein Audiosegment (Meeting mithören) und gibt den Text zurück.
+    """Transkribiert ein Mikrofon-Audiosegment (Diktat) und gibt den Text zurück.
+
+    Bevorzugter Transportweg ist Base64 in JSON (Text-Body): der Hosting-Proxy
+    leitet Formular-/JSON-POSTs zuverlässig weiter, während rohe Binär-Bodies
+    dort scheiterten. Der Roh-Body-Pfad bleibt als Fallback erhalten.
 
     Datenschutz: Das Audio wird an den konfigurierten externen STT-Dienst gesendet.
     Für Behördendaten einen CH/EU- oder self-hosted-Endpoint (STT_API_URL) verwenden.
@@ -225,15 +231,23 @@ def interview_transcribe(session_id):
     tr = current_app.transcriber
     if not getattr(tr, "available", False):
         return jsonify({"text": "", "error": "Transkription ist nicht konfiguriert."}), 200
-    # Roher Request-Body statt multipart/form-data: der Multipart-Parser blockierte
-    # hinter dem Proxy beim Lesen (Worker-Timeout). get_data() liest exakt
-    # Content-Length Bytes und kehrt zurück, sobald der Body da ist.
-    audio = request.get_data(cache=False)
+    if (request.content_type or "").startswith("application/json"):
+        payload = request.get_json(silent=True) or {}
+        try:
+            audio = base64.b64decode(payload.get("audio") or "")
+        except Exception:  # noqa: BLE001 – kaputtes Base64 wie "keine Daten" behandeln
+            audio = b""
+        mimetype = payload.get("mime") or "audio/webm"
+    else:
+        # Roher Request-Body statt multipart/form-data: der Multipart-Parser blockierte
+        # hinter dem Proxy beim Lesen (Worker-Timeout). get_data() liest exakt
+        # Content-Length Bytes und kehrt zurück, sobald der Body da ist.
+        audio = request.get_data(cache=False)
+        mimetype = request.content_type or "audio/webm"
     if not audio:
         return jsonify({"text": "", "error": "Keine Audiodaten."}), 400
     try:
-        text = tr.transcribe(audio, filename="segment.webm",
-                             mimetype=request.content_type or "audio/webm")
+        text = tr.transcribe(audio, filename="segment.webm", mimetype=mimetype)
     except Exception as exc:  # noqa: BLE001 – Fehler an den Client melden, nicht crashen
         return jsonify({"text": "", "error": f"Transkription fehlgeschlagen: {exc}"}), 502
     return jsonify({"text": text})
