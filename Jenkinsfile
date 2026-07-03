@@ -75,7 +75,7 @@ pipeline {
                             nohup gunicorn run:app \\
                                 --bind 127.0.0.1:8000 --workers 2 --timeout 120 \\
                                 --access-logfile logs/access.log \\
-                                --error-logfile logs/error.log > /dev/null 2>&1 &
+                                --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
                             echo \$! > \$HOME/tmp/gunicorn.pid
                             sleep 2 && curl -sf http://127.0.0.1:8000 > /dev/null && echo "OK: prod laeuft"
                         '
@@ -115,7 +115,7 @@ pipeline {
                             nohup gunicorn run:app \\
                                 --bind 127.0.0.1:8002 --workers 1 --timeout 120 \\
                                 --access-logfile logs/access.log \\
-                                --error-logfile logs/error.log > /dev/null 2>&1 &
+                                --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
                             echo \$! > \$HOME/tmp/gunicorn-int.pid
                             sleep 2 && curl -sf http://127.0.0.1:8002 > /dev/null && echo "OK: int laeuft"
                         '
@@ -155,7 +155,7 @@ pipeline {
                             nohup gunicorn run:app \\
                                 --bind 127.0.0.1:8001 --workers 3 --timeout 120 \\
                                 --access-logfile logs/access.log \\
-                                --error-logfile logs/error.log > /dev/null 2>&1 &
+                                --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
                             echo \$! > \$HOME/tmp/gunicorn-test.pid
                             sleep 2 && curl -sf http://127.0.0.1:8001 > /dev/null && echo "OK: test laeuft"
                         '
