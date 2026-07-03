@@ -148,3 +148,19 @@ def test_set_role_laesst_super_admin_unberuehrt(app):
     assert auth.set_role(su_id, "member") is None      # Super-Admin bleibt unangetastet
     assert auth.get_user(su_id).role == "super_admin"
     assert auth.delete_user(su_id) is False            # und ist nicht löschbar
+
+
+def test_create_org_idempotent_bei_doppeltem_namen(app):
+    """Doppelter Org-Name (z.B. Doppelklick/erneutes Absenden) darf keinen 500
+    werfen, sondern liefert die bestehende Einheit zurück."""
+    auth = app.auth_service
+    a = auth.create_org("Testamt")
+    b = auth.create_org("Testamt")          # zweiter Aufruf: gleiche Einheit, kein Crash
+    assert a.id == b.id
+
+    c = app.test_client()
+    _login(c, "betreiber@test.ch", "pw-super")
+    r1 = c.post("/admin/organisationen/neu", data={"name": "Amt X"})
+    r2 = c.post("/admin/organisationen/neu", data={"name": "Amt X"})
+    assert r1.status_code == 302 and r2.status_code == 302
+    assert sum(1 for o in auth.list_orgs() if o.name == "Amt X") == 1
