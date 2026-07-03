@@ -24,8 +24,14 @@ class AuthService:
         return SessionLocal().get(Organisation, int(org_id))
 
     def create_org(self, name):
+        """Legt eine Organisationseinheit an. Idempotent: existiert der Name schon,
+        wird die bestehende Einheit zurückgegeben (statt UNIQUE-Fehler -> 500)."""
         db = SessionLocal()
-        org = Organisation(name=(name or "").strip())
+        name = (name or "").strip()
+        existing = db.query(Organisation).filter(Organisation.name == name).first()
+        if existing:
+            return existing
+        org = Organisation(name=name)
         db.add(org)
         db.commit()
         db.refresh(org)
