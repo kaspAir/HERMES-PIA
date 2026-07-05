@@ -54,31 +54,46 @@ def plan_eintraege(termine):
 # MS Project XML                                                           #
 # ---------------------------------------------------------------------- #
 
+# Reihenfolge gemaess mspdi-Schema (Project prueft die xsd:sequence STRIKT):
+# UID, ID, Name, ... OutlineLevel, ... Start, Finish, Duration, DurationFormat,
+# ... Milestone, ... ConstraintType, ConstraintDate, ... und die 2010er-Felder
+# (Active, Manual, ManualStart/Finish/Duration) am ENDE (im Schema angehaengt).
+_TASK_ELEMENT_ORDER = (
+    "UID", "ID", "Name", "OutlineLevel", "Start", "Finish", "Duration",
+    "DurationFormat", "Milestone", "ConstraintType", "ConstraintDate",
+    "Active", "Manual", "ManualStart", "ManualFinish", "ManualDuration",
+)
+
+
 def build_msproject_xml(eintraege, projektname):
-    """Minimales, von Microsoft Project direkt lesbares Projekt-XML."""
+    """Minimales, von Microsoft Project direkt lesbares Projekt-XML
+    (Element-Reihenfolge strikt nach mspdi-Schema)."""
     if not eintraege:
         return b""
     start = min(e[1] for e in eintraege)
     tasks = []
     for uid, (name, s, e, meilenstein, _abnahme) in enumerate(eintraege, 1):
         dauer_stunden = 0 if meilenstein else max((e - s).days, 1) * 8
-        tasks.append(
-            "    <Task>\n"
-            f"      <UID>{uid}</UID>\n"
-            f"      <ID>{uid}</ID>\n"
-            f"      <Name>{escape(name)}</Name>\n"
-            "      <Active>1</Active>\n"
-            "      <Manual>1</Manual>\n"
-            "      <OutlineLevel>1</OutlineLevel>\n"
-            f"      <Start>{s:%Y-%m-%d}T08:00:00</Start>\n"
-            f"      <Finish>{e:%Y-%m-%d}T17:00:00</Finish>\n"
-            f"      <ManualStart>{s:%Y-%m-%d}T08:00:00</ManualStart>\n"
-            f"      <ManualFinish>{e:%Y-%m-%d}T17:00:00</ManualFinish>\n"
-            f"      <Duration>PT{dauer_stunden}H0M0S</Duration>\n"
-            f"      <ManualDuration>PT{dauer_stunden}H0M0S</ManualDuration>\n"
-            f"      <Milestone>{1 if meilenstein else 0}</Milestone>\n"
-            "    </Task>"
-        )
+        werte = {
+            "UID": uid,
+            "ID": uid,
+            "Name": escape(name),
+            "OutlineLevel": 1,
+            "Start": f"{s:%Y-%m-%d}T08:00:00",
+            "Finish": f"{e:%Y-%m-%d}T17:00:00",
+            "Duration": f"PT{dauer_stunden}H0M0S",
+            "DurationFormat": 7,                      # Tage
+            "Milestone": 1 if meilenstein else 0,
+            "ConstraintType": 4,                      # Muss anfangen am (Datum bleibt fix)
+            "ConstraintDate": f"{s:%Y-%m-%d}T08:00:00",
+            "Active": 1,
+            "Manual": 1,
+            "ManualStart": f"{s:%Y-%m-%d}T08:00:00",
+            "ManualFinish": f"{e:%Y-%m-%d}T17:00:00",
+            "ManualDuration": f"PT{dauer_stunden}H0M0S",
+        }
+        felder = "\n".join(f"      <{k}>{werte[k]}</{k}>" for k in _TASK_ELEMENT_ORDER)
+        tasks.append("    <Task>\n" + felder + "\n    </Task>")
     xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<Project xmlns="http://schemas.microsoft.com/project">\n'
