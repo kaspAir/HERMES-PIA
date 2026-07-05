@@ -409,6 +409,29 @@ def test_update_free_text_fuehrt_zu_nachgeholter_komplexitaet(app):
     assert state["followup"]["type"] == "complexity"
 
 
+def test_answer_followup_ergaenzung_wird_uebernommen_oder_abgelehnt(app):
+    """'Haben Sie auch an ... gedacht?': Ja ergänzt die Zeilen, Nein lässt alles unverändert."""
+    svc = app.interview_service
+    svc.llm = None
+    for accepted, erwartet in ((True, 2), (False, 1)):
+        session = svc.start_session(method_id="hermes_pia",
+                                    project_name=f"P{accepted}", org_id=1)
+        sid = session.id
+        svc._persist_answers(session, {"sachmittel": {
+            "raw_text": "diktat",
+            "extracted": [{"bezeichnung": "Cloud-Testumgebung", "quantitaet": "1"}],
+            "complete": True,
+            "followups": [{"risk_id": "ergaenzung_sachmittel", "type": "ergaenzung",
+                           "status": "pending", "frage": "Haben Sie auch an ... gedacht?",
+                           "rows": [{"bezeichnung": "Projektmanagement-Werkzeug",
+                                     "quantitaet": "pauschal"}]}],
+        }})
+        svc.answer_followup(sid, "ergaenzung_sachmittel", accepted)
+        entry = svc._answers(svc.get_session(sid))["sachmittel"]
+        assert len(entry["extracted"]) == erwartet
+        assert entry["followups"][0]["status"] == ("accepted" if accepted else "dismissed")
+
+
 # --- Projekttyp: kein stilles Raten + Selbstheilung + Korrektur ------------ #
 
 class _TypeLLM:
