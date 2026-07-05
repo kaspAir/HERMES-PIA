@@ -1,0 +1,257 @@
+"""PIA-Upload + Präsentationsgenerierung: Parser, Builder, Vorlagen-Vorrang, Routen."""
+import base64
+import io
+
+import docx
+import pytest
+from pptx import Presentation
+
+from app.config import Config
+from app.domains.praesentation.parser import parse_pia
+from app.domains.praesentation.service import PraesentationService
+from app.factory import create_app
+
+
+# ---- Hilfen: Beispiel-PIA (.docx) und Vorlage (.pptx) im Speicher ------ #
+
+def _beispiel_pia_bytes():
+    d = docx.Document()
+    # Kopftabelle (vor der ersten Überschrift) -> Metadaten
+    meta = d.add_table(rows=2, cols=2)
+    meta.cell(0, 0).text = "Projektleiter/in"
+    meta.cell(0, 1).text = "Petra Muster"
+    meta.cell(1, 0).text = "Auftraggeber/in"
+    meta.cell(1, 1).text = "Hans Beispiel"
+
+    d.add_heading("Ausgangslage", level=1)
+    d.add_paragraph("Das System X wird abgelöst. Die Betriebssicherheit muss steigen. "
+                    "Alle Einheiten sind betroffen.")
+
+    d.add_heading("Ziele der Phase Initialisierung", level=2)
+    t = d.add_table(rows=2, cols=5)
+    for i, h in enumerate(("Nr.", "Kategorie", "Beschreibung", "Messgrösse", "Priorität")):
+        t.cell(0, i).text = h
+    t.cell(1, 0).text = "01"
+    t.cell(1, 2).text = "Die Studie liegt als Entscheidungsgrundlage vor."
+    t.cell(1, 3).text = "Studie abgenommen"
+
+    d.add_heading("Personalaufwand", level=2)
+    t = d.add_table(rows=3, cols=3)
+    for i, h in enumerate(("Rolle", "Name", "Aufwand in PT")):
+        t.cell(0, i).text = h
+    t.cell(1, 0).text = "Projektleiterin"; t.cell(1, 2).text = "25"
+    t.cell(2, 0).text = "Externe Fachexpertise (extern)"; t.cell(2, 2).text = "20"
+
+    d.add_heading("Kosten (in CHF inkl. MwSt.)", level=2)
+    t = d.add_table(rows=5, cols=2)
+    t.cell(0, 0).text = "Phase"; t.cell(0, 1).text = "Betrag"
+    t.cell(1, 0).text = "Interne Personalkosten"; t.cell(1, 1).text = "50400"
+    t.cell(2, 0).text = "Externe Fachexpertise (extern)"; t.cell(2, 1).text = "36000"
+    t.cell(3, 0).text = "Summe externe Kosten"; t.cell(3, 1).text = "36000"
+    t.cell(4, 0).text = "Total Initialisierung"; t.cell(4, 1).text = "86400"
+
+    d.add_heading("Ergebnisse und Termine", level=2)
+    t = d.add_table(rows=3, cols=5)
+    for i, h in enumerate(("Nr.", "Lieferergebnisse (abnahmerelevant)", "Liefertermin",
+                           "Abnahme durch (Rolle)", "Prüfmethode")):
+        t.cell(0, i).text = h
+    t.cell(1, 1).text = "Studie"; t.cell(1, 2).text = "26.10.2026"; t.cell(1, 3).text = "Projektleiter"
+    t.cell(2, 1).text = "Meilenstein Durchführungsfreigabe"; t.cell(2, 2).text = "14.12.2026"
+    t.cell(2, 3).text = "Auftraggeber"
+
+    d.add_heading("Risiken", level=1)
+    t = d.add_table(rows=3, cols=8)
+    for i, h in enumerate(("Nr.", "Risikobeschreibung", "Eintrittswahrscheinlichkeit",
+                           "Auswirkungsgrad", "Risikozahl", "Massnahmen",
+                           "Verantwortung", "Termin")):
+        t.cell(0, i).text = h
+    t.cell(1, 1).text = "Schlüsselpersonen nicht verfügbar."
+    t.cell(1, 2).text = "Hoch"; t.cell(1, 3).text = "Mittel"
+    t.cell(2, 1).text = "Externe Expertise fehlt."
+    t.cell(2, 4).text = "9"                     # EW/AG leer -> Fallback über Risikozahl
+
+    d.add_heading("Dokument-Protokoll", level=1)  # Ende-Marker
+    d.add_paragraph("Wird ignoriert.")
+
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+def _leere_pptx_bytes(width=None):
+    prs = Presentation()
+    if width:
+        prs.slide_width = width
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
+# ---- Parser ------------------------------------------------------------ #
+
+def test_parser_liest_abschnitte_und_tabellen():
+    pia = parse_pia(_beispiel_pia_bytes())
+    assert pia["projektleiter"] == "Petra Muster"
+    assert pia["auftraggeber"] == "Hans Beispiel"
+    assert "Betriebssicherheit" in pia["ausgangslage"]
+    assert pia["ziele"][0]["beschreibung"].startswith("Die Studie")
+    assert {p["rolle"]: p["aufwand"] for p in pia["personalaufwand"]} == {
+        "Projektleiterin": 25, "Externe Fachexpertise (extern)": 20}
+    assert any(k["position"] == "Total Initialisierung" and k["betrag"] == 86400
+               for k in pia["kosten"])
+    assert pia["termine"][0]["ergebnis"] == "Studie"
+    # Risiko 1: EW/AG aus Text; Risiko 2: Fallback aus Risikozahl 9 -> (3,3)
+    assert (pia["risiken"][0]["ew"], pia["risiken"][0]["ag"]) == (3, 2)
+    assert (pia["risiken"][1]["ew"], pia["risiken"][1]["ag"]) == (3, 3)
+
+
+# ---- Builder ------------------------------------------------------------ #
+
+def test_builder_erzeugt_praesentation_ohne_vorlage():
+    svc = PraesentationService(llm=None)
+    buf = svc.generate_from_docx(_beispiel_pia_bytes(), template_bytes=None,
+                                 fallback_name="Fallback", datum="05.07.2026")
+    prs = Presentation(buf)
+    # Titel, Ausgangslage, Ziele, Termine, Personal, Kosten, Matrix, Risiken, Antrag
+    assert len(prs.slides) >= 8
+    titel_texte = " ".join(s.text for s in prs.slides[0].shapes if s.has_text_frame
+                           for s in [s])
+    # Projektname kommt aus dem Dokument-Fallback (erste Absätze fehlen -> fallback_name)
+    assert "Projektinitialisierungsauftrag" in _slide_text(prs.slides[0])
+
+
+def _slide_text(slide):
+    return " ".join(sh.text_frame.text for sh in slide.shapes if sh.has_text_frame)
+
+
+def test_builder_baut_auf_vorlage_auf():
+    breite = 12192000  # 16:9-Breite in EMU
+    vorlage = _leere_pptx_bytes(width=breite)
+    svc = PraesentationService(llm=None)
+    buf = svc.generate_from_docx(_beispiel_pia_bytes(), template_bytes=vorlage,
+                                 fallback_name="X", datum="")
+    prs = Presentation(buf)
+    assert prs.slide_width == breite            # Foliengrösse der Vorlage übernommen
+    assert len(prs.slides) >= 8
+
+
+# ---- App-Fixture für Service/Routen ------------------------------------- #
+
+@pytest.fixture
+def app(tmp_path):
+    from app.shared.database import SessionLocal
+    db_path = str(tmp_path / "praes.db").replace("\\", "/")
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + db_path
+        SUPERADMIN_EMAIL = "betreiber@test.ch"
+        SUPERADMIN_PASSWORD = "pw-super"
+        SECRET_KEY = "test-secret"
+
+    SessionLocal.remove()
+    application = create_app(_Cfg)
+    SessionLocal.remove()
+    yield application
+    SessionLocal.remove()
+
+
+def _client_mit_projekt(app):
+    auth = app.auth_service
+    org_id = auth.create_org("Org").id      # ID sofort sichern (Detached-Falle)
+    auth.create_user("pl@org.ch", "pw", org_id=org_id,
+                     can_read=True, can_write=True, can_delete=True)
+    c = app.test_client()
+    c.post("/login", data={"email": "pl@org.ch", "password": "pw"})
+    c.post("/interview/start", data={"project_name": "P Demo", "projektleiter": "PL"})
+    pid = app.projekt_service.projekte_for_org(org_id)[0].id
+    eid = app.projekt_service.ergebnisse(pid)[0].id
+    return c, org_id, pid, eid
+
+
+# ---- Vorlagen-Vorrang ----------------------------------------------------- #
+
+def test_vorlage_projekt_schlaegt_org(app):
+    svc = app.projekt_service
+    c, org_id, pid, eid = _client_mit_projekt(app)
+    projekt = svc.get_projekt(pid)
+    assert svc.resolve_vorlage(projekt) is None
+    svc.add_vorlage("org.pptx", b"PKorg", org_id=org_id, projekt_id=None)
+    assert svc.resolve_vorlage(projekt).filename == "org.pptx"
+    svc.add_vorlage("projekt.pptx", b"PKprj", org_id=org_id, projekt_id=pid)
+    assert svc.resolve_vorlage(projekt).filename == "projekt.pptx"
+
+
+# ---- Routen ----------------------------------------------------------------- #
+
+def _b64(data):
+    return base64.b64encode(data).decode()
+
+
+def test_upload_download_und_status(app):
+    c, org_id, pid, eid = _client_mit_projekt(app)
+    pia = _beispiel_pia_bytes()
+    r = c.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
+               json={"filename": "PIA_v0.9.docx", "data": _b64(pia)})
+    assert r.status_code == 200
+    dok = app.projekt_service.latest_dokument(eid, art="freigabe")
+    assert dok.filename == "PIA_v0.9.docx" and dok.size == len(pia)
+    # Status des Ergebnisses wechselt auf "zur Freigabe"
+    erg = app.projekt_service.ergebnisse(pid)[0]
+    assert erg.status == "zur Freigabe"
+    # Download liefert die Originaldatei
+    r = c.get(f"/projekt/{pid}/dokument/{dok.id}")
+    assert r.status_code == 200 and r.data == pia
+
+
+def test_upload_validierung(app):
+    c, org_id, pid, eid = _client_mit_projekt(app)
+    url = f"/projekt/{pid}/ergebnis/{eid}/dokument"
+    assert c.post(url, json={"filename": "x.txt", "data": _b64(b"PKx")}).status_code == 400
+    assert c.post(url, json={"filename": "x.docx", "data": ""}).status_code == 400
+    assert c.post(url, json={"filename": "x.docx", "data": _b64(b"kein zip")}).status_code == 400
+
+
+def test_praesentation_route(app):
+    c, org_id, pid, eid = _client_mit_projekt(app)
+    # Ohne hochgeladenen PIA: klarer Hinweis statt Absturz
+    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/praesentation").status_code == 400
+    c.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
+           json={"filename": "PIA.docx", "data": _b64(_beispiel_pia_bytes())})
+    # Mit Projekt-Vorlage
+    c.post(f"/projekt/{pid}/vorlage",
+           json={"filename": "v.pptx", "data": _b64(_leere_pptx_bytes()), "scope": "projekt"})
+    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/praesentation")
+    assert r.status_code == 200
+    assert "presentationml" in r.mimetype
+    prs = Presentation(io.BytesIO(r.data))
+    assert len(prs.slides) >= 8
+
+
+def test_dokumente_fremder_org_gesperrt(app):
+    c, org_id, pid, eid = _client_mit_projekt(app)
+    pia = _beispiel_pia_bytes()
+    c.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
+           json={"filename": "PIA.docx", "data": _b64(pia)})
+    dok_id = app.projekt_service.latest_dokument(eid).id
+
+    auth = app.auth_service
+    other_id = auth.create_org("Andere").id
+    auth.create_user("fremd@x.ch", "pw", org_id=other_id,
+                     can_read=True, can_write=True, can_delete=False)
+    cb = app.test_client()
+    cb.post("/login", data={"email": "fremd@x.ch", "password": "pw"})
+    assert cb.get(f"/projekt/{pid}/dokument/{dok_id}").status_code == 403
+    assert cb.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
+                   json={"filename": "x.docx", "data": _b64(pia)}).status_code == 403
+
+
+def test_delete_projekt_raeumt_dokumente_und_vorlagen(app):
+    c, org_id, pid, eid = _client_mit_projekt(app)
+    c.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
+           json={"filename": "PIA.docx", "data": _b64(_beispiel_pia_bytes())})
+    c.post(f"/projekt/{pid}/vorlage",
+           json={"filename": "v.pptx", "data": _b64(_leere_pptx_bytes()), "scope": "projekt"})
+    dok_id = app.projekt_service.latest_dokument(eid).id
+    c.post(f"/projekt/{pid}/delete")
+    assert app.projekt_service.get_projekt(pid) is None
+    assert app.projekt_service.get_dokument(dok_id) is None

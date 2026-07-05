@@ -55,6 +55,27 @@
                  class="btn-link">{{ 'Bearbeiten' if current_user.can_write else 'Ansehen' }}</a>
             </div>
             {% endif %}
+            {% set dok = freigabe_docs.get(erg.id) %}
+            <div class="ergebnis-freigabe">
+              {% if dok %}
+              <div class="freigabe-info">
+                <span class="badge badge-freigabe">zur Freigabe</span>
+                <a href="{{ url_for('ui.ergebnis_dokument_download', projekt_id=projekt.id, dokument_id=dok.id) }}"
+                   class="btn-link" title="Hochgeladene Freigabeversion herunterladen">{{ dok.filename }}</a>
+                <span class="muted">({{ dok.created_at.strftime('%d.%m.%Y %H:%M') if dok.created_at }})</span>
+              </div>
+              <a class="btn-link"
+                 href="{{ url_for('ui.ergebnis_praesentation', projekt_id=projekt.id, ergebnis_id=erg.id) }}">
+                &#9654; Präsentation für Auftraggeber/Projektausschuss (.pptx)</a>
+              {% endif %}
+              {% if current_user.can_write %}
+              <label class="btn-link upload-label">
+                {{ 'Neue Freigabeversion hochladen (.docx)' if dok else 'Freigabeversion hochladen (.docx)' }}
+                <input type="file" accept=".docx" class="upload-input"
+                       data-url="{{ url_for('ui.ergebnis_dokument_upload', projekt_id=projekt.id, ergebnis_id=erg.id) }}">
+              </label>
+              {% endif %}
+            </div>
           </li>
           {% endfor %}
         </ul>
@@ -69,5 +90,71 @@
   <p class="admin-empty">Für dieses Projekt ist noch keine Phase angelegt.</p>
   {% endif %}
 
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Präsentationsvorlage</h3>
+    <p class="muted vorlage-status">
+      {% if vorlage and vorlage.projekt_id %}
+        Aktiv: Projekt-Vorlage «{{ vorlage.filename }}» (hat Vorrang vor der Vorlage der Organisationseinheit).
+      {% elif vorlage %}
+        Aktiv: Vorlage der Organisationseinheit «{{ vorlage.filename }}».
+      {% else %}
+        Keine Vorlage hochgeladen – Präsentationen verwenden ein neutrales Standardlayout.
+      {% endif %}
+      Auch eine leere Präsentation kann als Vorlage dienen (Folienmaster/Design werden übernommen).
+    </p>
+    {% if current_user.can_write %}
+    <div class="vorlage-actions">
+      <label class="btn-link upload-label">Vorlage für dieses Projekt hochladen (.pptx)
+        <input type="file" accept=".pptx" class="upload-input" data-scope="projekt"
+               data-url="{{ url_for('ui.praesentations_vorlage_upload', projekt_id=projekt.id) }}">
+      </label>
+      <label class="btn-link upload-label">Vorlage für die Organisationseinheit hochladen (.pptx)
+        <input type="file" accept=".pptx" class="upload-input" data-scope="org"
+               data-url="{{ url_for('ui.praesentations_vorlage_upload', projekt_id=projekt.id) }}">
+      </label>
+    </div>
+    {% endif %}
+  </section>
+
+  <div id="upload-status" class="muted upload-status"></div>
+
 </div>
+
+<script>
+// Datei-Uploads als Base64-in-JSON (Text-Body): derselbe proxy-erprobte
+// Transportweg wie beim Diktat – binaere POST-Bodies scheiterten am Hosting-Proxy.
+(function () {
+  var statusEl = document.getElementById('upload-status');
+  function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+
+  document.querySelectorAll('.upload-input').forEach(function (input) {
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      setStatus('Lade «' + file.name + '» hoch …');
+      var fr = new FileReader();
+      fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
+      fr.onload = function () {
+        var b64 = String(fr.result).split(',')[1] || '';
+        fetch(input.dataset.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, data: b64,
+                                 scope: input.dataset.scope || 'projekt' })
+        })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; })
+                  .then(function (d) { return { ok: r.ok, d: d }; });
+        })
+        .then(function (res) {
+          if (res.ok) { location.reload(); }
+          else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); input.value = ''; }
+        })
+        .catch(function () { setStatus('Netzwerkfehler beim Upload.'); input.value = ''; });
+      };
+      fr.readAsDataURL(file);
+    });
+  });
+}());
+</script>
 {% endblock %}

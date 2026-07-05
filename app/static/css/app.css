@@ -898,3 +898,23 @@ input:focus { outline: none; border-color: var(--color-accent); }
 .ergebnis-aufgabe { font-size: .82rem; margin-top: 2px; }
 .ergebnis-actions { margin-top: 6px; }
 .badge-rolle { background: #0f3460; color: #93c5fd; white-space: nowrap; }
+
+/* ---- Freigabe-Upload + Präsentationsvorlage ------------------------- */
+.ergebnis-freigabe {
+  margin-top: 10px; padding-top: 8px;
+  border-top: 1px dashed var(--color-border);
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.freigabe-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .88rem; }
+.badge-freigabe { background: #f59e0b; color: #1a1a2e; }
+.upload-label { cursor: pointer; }
+.upload-label input[type="file"] { display: none; }
+.vorlage-block {
+  margin-top: 28px; padding: 16px 18px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.vorlage-title { margin: 0 0 8px; font-size: 1rem; color: var(--color-text); }
+.vorlage-status { margin: 0 0 10px; font-size: .88rem; }
+.vorlage-actions { display: flex; flex-wrap: wrap; gap: 18px; }
+.upload-status { margin-top: 10px; min-height: 18px; font-size: .88rem; }
