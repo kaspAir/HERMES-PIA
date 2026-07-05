@@ -206,7 +206,13 @@ def _parse_termine(rows):
     header = rows[0]
     i_erg = _header_index(header, "ergebnis", "lieferergebnis")
     i_termin = _header_index(header, "termin")
-    i_abnahme = _header_index(header, "abnahme")
+    # "abnahme durch" zuerst: die Ergebnis-Spalte heisst "(abnahmerelevant)" und
+    # wuerde bei blossem "abnahme" faelschlich matchen.
+    i_abnahme = _header_index(header, "abnahme durch", "rolle")
+    if i_abnahme is None:
+        i_abnahme = _header_index(header, "abnahme")
+    if i_abnahme == i_erg:
+        i_abnahme = None
     out = []
     for cells in rows[1:]:
         def _get(i):
@@ -223,13 +229,16 @@ def _parse_personal(rows):
         return []
     header = rows[0]
     i_rolle = _header_index(header, "rolle")
+    i_name = _header_index(header, "name")
     i_aufwand = _header_index(header, "aufwand")
     out = []
     for cells in rows[1:]:
-        rolle = cells[i_rolle].strip() if i_rolle is not None and i_rolle < len(cells) else ""
-        aufwand = _num(cells[i_aufwand]) if i_aufwand is not None and i_aufwand < len(cells) else None
+        def _get(i):
+            return cells[i].strip() if i is not None and i < len(cells) else ""
+        rolle = _get(i_rolle)
+        aufwand = _num(_get(i_aufwand))
         if rolle:
-            out.append({"rolle": rolle, "aufwand": aufwand})
+            out.append({"rolle": rolle, "name": _get(i_name), "aufwand": aufwand})
     return out
 
 
