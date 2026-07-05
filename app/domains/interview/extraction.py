@@ -372,9 +372,11 @@ def detect_project_type(llm_client, available_types, ausgangslage_text):
         result = _parse_json(raw) or {}
         pt = result.get("project_type_id", "")
         known = {t["id"] for t in available_types}
-        return pt if pt in known else available_types[0]["id"]
+        # Kein stilles Raten: bei unbekannter Antwort lieber KEIN Typ (None) als der
+        # zufaellig erste Listeneintrag - die Erkennung wird spaeter nachgeholt.
+        return pt if pt in known else None
     except Exception:
-        return available_types[0]["id"]
+        return None
 
 
 def detect_gender(llm_client, name):
