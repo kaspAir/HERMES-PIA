@@ -315,6 +315,8 @@ class _CountingAssessLLM:
 def _session_mit_ausgangslage_ohne_followups(app, followups=None, komplexitaet=None):
     svc = app.interview_service
     session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    # Projekttyp setzen, damit die (separate) Typ-Selbstheilung hier nicht feuert.
+    svc._set_project_type(session, "fachanwendung_einfuehrung")
     entry = {"raw_text": "diktat", "extracted": {"text": "Die Ausgangslage."},
              "complete": True, "followups": followups or []}
     if komplexitaet:
@@ -380,6 +382,60 @@ def test_update_free_text_fuehrt_zu_nachgeholter_komplexitaet(app):
     state = svc.current_state(svc.get_session(sid))
     assert state["phase"] == "followup"
     assert state["followup"]["type"] == "complexity"
+
+
+# --- Projekttyp: kein stilles Raten + Selbstheilung + Korrektur ------------ #
+
+class _TypeLLM:
+    """Beantwortet Klassifizierung mit 'betriebsabloesung', alles andere neutral."""
+    def complete(self, system, messages, max_tokens=None):
+        if "Klassifiziere" in messages[0]["content"]:
+            return '{"project_type_id": "betriebsabloesung", "confidence": 0.9}'
+        return '{"text": "Neu formuliert."}'
+
+
+class _BrokenLLM:
+    def complete(self, system, messages, max_tokens=None):
+        raise RuntimeError("kaputt")
+
+
+def test_detect_project_type_raet_nie_stillschweigend():
+    from app.domains.interview.extraction import detect_project_type
+    types = [{"id": "a", "description": "x"}, {"id": "b", "description": "y"}]
+
+    class _Unknown:
+        def complete(self, system, messages, max_tokens=None):
+            return '{"project_type_id": "gibtsnicht"}'
+
+    assert detect_project_type(_Unknown(), types, "Text") is None   # unbekannt -> None
+    assert detect_project_type(_BrokenLLM(), types, "Text") is None  # Fehler -> None
+
+
+def test_current_state_holt_projekttyp_nach(app):
+    """Scheiterte die Typ-Erkennung beim Submit, wird sie beim nächsten
+    Seitenaufbau nachgeholt (statt für immer falsch/leer zu bleiben)."""
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    svc._persist_answers(session, {"ausgangslage": {
+        "raw_text": "x", "extracted": {"text": "Wir migrieren alle Server in die Cloud."},
+        "complete": True, "followups": [],
+        "komplexitaet": {"Technologie": {"stufe": "hoch", "einschaetzung": "T."}}}})
+    assert session.project_type_id is None
+    svc.llm = _TypeLLM()
+    svc.current_state(svc.get_session(session.id))
+    assert svc.get_session(session.id).project_type_id == "betriebsabloesung"
+
+
+def test_update_free_text_korrigiert_falschen_projekttyp(app):
+    """Nachbesprechen der Ausgangslage erkennt den Typ NEU und korrigiert eine
+    frühere (z.B. auf halbem Text beruhende) Fehleinstufung."""
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    sid = session.id
+    svc._set_project_type(session, "fachanwendung_einfuehrung")   # falsch eingestuft
+    svc.llm = _TypeLLM()
+    svc.update_free_text(sid, "ausgangslage", "Wir migrieren alle Server in die Cloud.")
+    assert svc.get_session(sid).project_type_id == "betriebsabloesung"
 
 
 # --- assess_complexity Parsing -------------------------------------------- #
