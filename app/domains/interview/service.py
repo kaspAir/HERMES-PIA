@@ -1246,12 +1246,21 @@ class InterviewService:
             # Aussagen über ihn in dritter Person; der Pushback steht im Interview + Nachweis).
             base = self._section_text_from_answers(answers, "ausgangslage")
             hint = next((h for n, h in COMPLEXITY_DIMENSIONS if n == dim), "")
+            # Die RICHTUNG der Rückmeldung muss in die Neubewertung einfliessen –
+            # ein Widerspruch soll die Stufe senken können (sonst bleibt «umsichtig
+            # nicht untertreiben» stärker als der Einwand). Nur die FORMULIERUNG
+            # bleibt neutral (keine Aussagen über den Projektleiter im Dokument).
+            if refuted:
+                haltung = ("Diese Einschätzung wurde im Interview BESTRITTEN – sie wird als "
+                           "zu hoch bzw. unzutreffend beurteilt. Senke die Stufe, sofern die "
+                           "folgende Begründung das stützt.")
+            else:
+                haltung = "Diese Einschätzung wurde im Interview bestätigt und ergänzt."
             combined = (f"{base}\n\nBisherige Einschätzung «{dim}» ({stufe}): {einsch}\n"
-                        f"Zusätzliche Sachinformation zu dieser Dimension (mündlich erfasst, ggf. "
-                        f"ungeschliffen): {raw_text}\n"
-                        f"Aktualisiere die Einschätzung sachlich und neutral. Arbeite die Information "
-                        f"als Sachverhalt ein – ohne den Projektleiter oder seine Haltung in dritter "
-                        f"Person zu erwähnen.")
+                        f"{haltung}\n"
+                        f"Ergänzende Aussage dazu (mündlich erfasst, ggf. ungeschliffen): {raw_text}\n"
+                        f"Bewerte die Dimension neu und arbeite die Aussage als Sachverhalt ein – "
+                        f"ohne den Projektleiter oder seine Haltung in dritter Person zu erwähnen.")
             re_assessed = assess_complexity(self.llm, combined, [(dim, hint)])
             if re_assessed:
                 stufe = re_assessed[0]["stufe"]

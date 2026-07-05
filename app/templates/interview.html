@@ -521,10 +521,15 @@
   forms.forEach(function (form) {
     form.addEventListener('submit', function (e) {
       if (e.defaultPrevented) return;   // z.B. Aufnahme-Guard hat den Submit gestoppt
-      var buttons = form.querySelectorAll('button[type="submit"]');
-      buttons.forEach(function (b) { b.disabled = true; });
-      var first = buttons[0];
-      if (first) { first.dataset.label = first.textContent; first.textContent = 'Wird verarbeitet …'; }
+      // WICHTIG: erst NACH der Konstruktion der Formulardaten sperren (setTimeout).
+      // Ein im submit-Event deaktivierter Submit-Button wird von Chromium NICHT
+      // mitgesendet - dann fehlt z.B. "accepted" und jede Antwort wirkt wie "Nein".
+      setTimeout(function () {
+        var buttons = form.querySelectorAll('button[type="submit"]');
+        buttons.forEach(function (b) { b.disabled = true; });
+        var first = buttons[0];
+        if (first) { first.dataset.label = first.textContent; first.textContent = 'Wird verarbeitet …'; }
+      }, 0);
     });
   });
 }());
