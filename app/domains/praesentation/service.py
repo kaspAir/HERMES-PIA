@@ -26,6 +26,7 @@ from pptx.dml.color import RGBColor
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_SHAPE, PP_PLACEHOLDER
+from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
 from app.domains.praesentation.parser import parse_pia
@@ -37,6 +38,7 @@ _ROT = RGBColor(0xFF, 0xC7, 0xCE)
 _GRAU = RGBColor(0xF2, 0xF2, 0xF2)
 _SCHWARZ = RGBColor(0x00, 0x00, 0x00)
 _BALKENBLAU = RGBColor(0x2E, 0x75, 0xB6)
+_HELLBLAU = RGBColor(0xBD, 0xD7, 0xEE)
 _RAUTENDUNKEL = RGBColor(0x1F, 0x38, 0x64)
 _LINIENGRAU = RGBColor(0xD9, 0xD9, 0xD9)
 
@@ -501,6 +503,20 @@ class _Builder:
                 balken.fill.solid()
                 balken.fill.fore_color.rgb = _BALKENBLAU
                 balken.line.fill.background()
+                # Lückenlos bis zum Entscheid: folgt als Nächstes ein Meilenstein,
+                # führt eine helle Verlängerung vom Termin bis zu dessen Raute
+                # (z.B. Studie -> «Weiteres Vorgehen»).
+                naechster = eintraege[i + 1] if i + 1 < len(eintraege) else None
+                if naechster and naechster[2] and naechster[1] > datum:
+                    x3 = x_von(naechster[1])
+                    if x3 > x2:
+                        ext = slide.shapes.add_shape(
+                            MSO_SHAPE.ROUNDED_RECTANGLE, self._x(x2),
+                            self._y(y + (zeile_h - balken_h) / 2),
+                            self._x(x3 - x2), self._y(balken_h))
+                        ext.fill.solid()
+                        ext.fill.fore_color.rgb = _HELLBLAU
+                        ext.line.fill.background()
                 ende_x = x2 + 0.004
             # Das ECHTE Datum am Balkenende bzw. neben der Raute – die X-Achse
             # zeigt damit konkrete Termine, nicht Kalendertage ab Start.
@@ -521,29 +537,52 @@ class _Builder:
             "der Auftraggeber bzw. der Projektausschuss gefordert."))
 
     def personalaufwand(self, pia):
+        """Aufwandsbalken selbst gezeichnet (statt Diagramm): PowerPoint rendert
+        keine Zeilenumbrüche in Achsenbeschriftungen – so steht der Name sauber
+        RECHTSBÜNDIG unter der Rolle («N. N.», wenn keiner erfasst ist)."""
         personal = [p for p in (pia.get("personalaufwand") or []) if p.get("aufwand")]
         if not personal:
             return
+        personal = personal[:9]
         slide, top = self._slide("Personalaufwand der Initialisierung (PT)")
-        data = CategoryChartData()
-        data.categories = [
-            p["rolle"] + (f"\n{p['name']}" if p.get("name") else "")
-            for p in personal
-        ]
-        data.add_series("PT", [p["aufwand"] for p in personal])
-        frame = slide.shapes.add_chart(
-            XL_CHART_TYPE.BAR_CLUSTERED, self._x(0.06), self._y(top),
-            self._x(0.88), self._y(min(0.68, 0.92 - top)), data,
-        )
-        chart = frame.chart
-        chart.has_legend = False
-        plot = chart.plots[0]
-        plot.has_data_labels = True
-        plot.data_labels.font.size = Pt(11)
-        try:
-            chart.category_axis.tick_labels.font.size = Pt(10)
-        except Exception:  # noqa: BLE001
-            pass
+        max_pt = max(p["aufwand"] for p in personal)
+        label_l, label_w = 0.06, 0.30
+        plot_l, plot_r = 0.38, 0.86
+        zeile_h = min(0.085, (0.90 - top) / len(personal))
+        for i, person in enumerate(personal):
+            y = top + i * zeile_h
+            box = slide.shapes.add_textbox(self._x(label_l), self._y(y),
+                                           self._x(label_w), self._y(zeile_h))
+            tf = box.text_frame
+            tf.word_wrap = True
+            p1 = tf.paragraphs[0]
+            p1.text = person["rolle"]
+            p1.font.size = Pt(10)
+            p1.font.color.rgb = _SCHWARZ
+            p2 = tf.add_paragraph()
+            p2.text = person.get("name") or "N. N."
+            p2.alignment = PP_ALIGN.RIGHT
+            p2.font.size = Pt(9)
+            p2.font.color.rgb = _SCHWARZ
+
+            balken_h = zeile_h * 0.45
+            breite = (plot_r - plot_l) * (person["aufwand"] / max_pt)
+            balken = slide.shapes.add_shape(
+                MSO_SHAPE.ROUNDED_RECTANGLE, self._x(plot_l),
+                self._y(y + (zeile_h - balken_h) / 2),
+                self._x(max(breite, 0.01)), self._y(balken_h))
+            balken.fill.solid()
+            balken.fill.fore_color.rgb = _BALKENBLAU
+            balken.line.fill.background()
+
+            wert = slide.shapes.add_textbox(
+                self._x(plot_l + max(breite, 0.01) + 0.005),
+                self._y(y + zeile_h * 0.18), self._x(0.08), self._y(zeile_h * 0.7))
+            wp = wert.text_frame.paragraphs[0]
+            wp.text = f"{person['aufwand']} PT"
+            wp.font.size = Pt(9)
+            wp.font.bold = True
+            wp.font.color.rgb = _SCHWARZ
         total = sum(p["aufwand"] for p in personal)
         groesste = max(personal, key=lambda p: p["aufwand"])
         self._notizen(slide, (

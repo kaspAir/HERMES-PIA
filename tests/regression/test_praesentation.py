@@ -189,11 +189,73 @@ def test_gantt_folie_mit_balken_und_meilenstein_rauten():
     assert gantt is not None
     formen = [_prst_geom(sh) for sh in gantt.shapes]
     assert formen.count("diamond") == 1        # 1 Meilenstein -> 1 Raute (Dauer 0)
-    assert formen.count("roundRect") == 2      # 2 Ergebnisse -> 2 Balken
+    # 2 Ergebnis-Balken + 1 helle Verlängerung (Studie -> Meilenstein, lückenlos)
+    assert formen.count("roundRect") == 3
     # Echte Daten an Balken/Rauten (statt Kalendertage ab Start)
     text = _slide_text(gantt)
     assert "26.10.26" in text and "14.12.26" in text
     assert "Kalendertage" not in text
+
+
+def test_personalaufwand_namen_rechtsbuendig_mit_nn_platzhalter():
+    from pptx.enum.text import PP_ALIGN
+    svc = PraesentationService(llm=None)
+    buf = svc.generate_from_docx(_beispiel_pia_bytes(), None, "X", "")
+    prs = Presentation(buf)
+    folie = next(s for s in prs.slides if "Personalaufwand" in _slide_text(s))
+    text = _slide_text(folie)
+    assert "Petra Muster" in text               # erfasster Name erscheint
+    assert "N. N." in text                      # fehlender Name -> Platzhalter
+    assert "25 PT" in text and "20 PT" in text  # Werte an den Balken
+    # Namenszeile ist rechtsbündig
+    for sh in folie.shapes:
+        if sh.has_text_frame and "Petra Muster" in sh.text_frame.text:
+            name_absatz = sh.text_frame.paragraphs[1]
+            assert name_absatz.alignment == PP_ALIGN.RIGHT
+
+
+def test_projektplan_msproject_und_excel():
+    from app.domains.praesentation.parser import parse_pia
+    from app.domains.praesentation import projektplan
+    import xml.etree.ElementTree as ET
+
+    pia = parse_pia(_beispiel_pia_bytes())
+    eintraege = projektplan.plan_eintraege(pia["termine"])
+    assert len(eintraege) == 3
+    # Kaskade: Studie startet am Termin der Rechtsgrundlagenanalyse
+    namen = [e[0] for e in eintraege]
+    studie = eintraege[namen.index("Studie")]
+    assert studie[1].strftime("%d.%m.%Y") == "05.10.2026"
+    assert studie[2].strftime("%d.%m.%Y") == "26.10.2026"
+    ms = next(e for e in eintraege if e[3])
+    assert ms[1] == ms[2]                       # Meilenstein: Dauer 0
+
+    xml_bytes = projektplan.build_msproject_xml(eintraege, "P Demo")
+    root = ET.fromstring(xml_bytes)
+    ns = "{http://schemas.microsoft.com/project}"
+    tasks = root.findall(f"{ns}Tasks/{ns}Task")
+    assert len(tasks) == 3
+    flags = [t.findtext(f"{ns}Milestone") for t in tasks]
+    assert flags.count("1") == 1
+
+    excel = projektplan.build_excel(eintraege, "P Demo")
+    assert excel.startswith(b"PK")              # gültige xlsx-(ZIP-)Datei
+
+
+def test_projektplan_routen(app):
+    c, org_id, pid, eid = _client_mit_projekt(app)
+    # Ohne hochgeladenen PIA: klarer Hinweis
+    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/excel").status_code == 400
+    c.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
+           json={"filename": "PIA.docx", "data": _b64(_beispiel_pia_bytes())})
+    import re as _re
+    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/excel")
+    assert r.status_code == 200 and r.data.startswith(b"PK")
+    assert _re.search(r"\d{8}_P_Demo_Projektplan\.xlsx",
+                      r.headers.get("Content-Disposition", ""))
+    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/msproject")
+    assert r.status_code == 200 and b"schemas.microsoft.com/project" in r.data
+    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/quatsch").status_code == 404
 
 
 def test_risiken_volltext_notizen_und_keine_auslassungspunkte():

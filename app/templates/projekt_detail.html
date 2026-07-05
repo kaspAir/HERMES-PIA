@@ -67,6 +67,12 @@
               <a class="btn-link"
                  href="{{ url_for('ui.ergebnis_praesentation', projekt_id=projekt.id, ergebnis_id=erg.id) }}">
                 &#9654; Präsentation für Auftraggeber/Projektausschuss (.pptx)</a>
+              <a class="btn-link"
+                 href="{{ url_for('ui.ergebnis_projektplan', projekt_id=projekt.id, ergebnis_id=erg.id, fmt='msproject') }}">
+                &#9654; Projektplan für Microsoft Project (.xml)</a>
+              <a class="btn-link"
+                 href="{{ url_for('ui.ergebnis_projektplan', projekt_id=projekt.id, ergebnis_id=erg.id, fmt='excel') }}">
+                &#9654; Projektplan als Excel (.xlsx)</a>
               {% endif %}
               {% if current_user.can_write %}
               <label class="btn-link upload-label">
