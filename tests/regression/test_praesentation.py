@@ -45,7 +45,8 @@ def _beispiel_pia_bytes():
     t = d.add_table(rows=3, cols=3)
     for i, h in enumerate(("Rolle", "Name", "Aufwand in PT")):
         t.cell(0, i).text = h
-    t.cell(1, 0).text = "Projektleiterin"; t.cell(1, 2).text = "25"
+    t.cell(1, 0).text = "Projektleiterin"; t.cell(1, 1).text = "Petra Muster"
+    t.cell(1, 2).text = "25"
     t.cell(2, 0).text = "Externe Fachexpertise (extern)"; t.cell(2, 2).text = "20"
 
     d.add_heading("Kosten (in CHF inkl. MwSt.)", level=2)
@@ -105,9 +106,13 @@ def test_parser_liest_abschnitte_und_tabellen():
     assert pia["ziele"][0]["beschreibung"].startswith("Die Studie")
     assert {p["rolle"]: p["aufwand"] for p in pia["personalaufwand"]} == {
         "Projektleiterin": 25, "Externe Fachexpertise (extern)": 20}
+    assert pia["personalaufwand"][0]["name"] == "Petra Muster"
     assert any(k["position"] == "Total Initialisierung" and k["betrag"] == 86400
                for k in pia["kosten"])
     assert pia["termine"][0]["ergebnis"] == "Rechtsgrundlagenanalyse"
+    # "Abnahme durch (Rolle)" darf NICHT auf "(abnahmerelevant)" matchen:
+    assert pia["termine"][0]["abnahme"] == "Projektleiter"
+    assert pia["termine"][2]["abnahme"] == "Auftraggeber"
     # Risiko 1: EW/AG aus Text; Risiko 2: Fallback aus Risikozahl 9 -> (3,3)
     assert (pia["risiken"][0]["ew"], pia["risiken"][0]["ag"]) == (3, 2)
     assert (pia["risiken"][1]["ew"], pia["risiken"][1]["ag"]) == (3, 3)
@@ -170,33 +175,45 @@ def test_beispielfolien_raus_titel_und_schluss_aus_vorlage():
     assert "Besten Dank" in _slide_text(prs.slides[-1])
 
 
-def test_gantt_folie_mit_gestapelten_balken():
-    from pptx.enum.chart import XL_CHART_TYPE
+def _prst_geom(shape):
+    el = shape._element.find(
+        ".//{http://schemas.openxmlformats.org/drawingml/2006/main}prstGeom")
+    return el.get("prst") if el is not None else None
+
+
+def test_gantt_folie_mit_balken_und_meilenstein_rauten():
     svc = PraesentationService(llm=None)
     buf = svc.generate_from_docx(_beispiel_pia_bytes(), None, "X", "")
     prs = Presentation(buf)
     gantt = next((s for s in prs.slides if "Terminplan" in _slide_text(s)), None)
     assert gantt is not None
-    chart = next(sh.chart for sh in gantt.shapes if getattr(sh, "has_chart", False))
-    assert chart.chart_type == XL_CHART_TYPE.BAR_STACKED
-    assert len(chart.series) == 2                          # Vorlauf (unsichtbar) + Dauer
+    formen = [_prst_geom(sh) for sh in gantt.shapes]
+    assert formen.count("diamond") == 1        # 1 Meilenstein -> 1 Raute (Dauer 0)
+    assert formen.count("roundRect") == 2      # 2 Ergebnisse -> 2 Balken
 
 
-def test_risiken_volltext_und_notizen():
+def test_risiken_volltext_notizen_und_keine_auslassungspunkte():
     svc = PraesentationService(llm=None)
     buf = svc.generate_from_docx(_beispiel_pia_bytes(), None, "X", "")
     prs = Presentation(buf)
-    # Volle Risikobeschreibung in einer Tabelle - keine '…'-Kürzung.
+    # Volle Risikobeschreibung in einer Tabelle - keine Kürzung.
     zelltexte = []
     for slide in prs.slides:
         for sh in slide.shapes:
             if getattr(sh, "has_table", False):
                 zelltexte += [c.text for r in sh.table.rows for c in r.cells]
     assert any(LANGES_RISIKO == t for t in zelltexte)
-    # Jede Folie traegt Sprechnotizen fuer den Projektleiter.
+    # HERMES-Terminologie: "Ergebnis", nicht "Lieferergebnis".
+    assert "Ergebnis" in zelltexte and not any("Lieferergebnis" in t for t in zelltexte)
+    # NIRGENDS abgeschnittene Sätze mit '…' - weder auf Folien noch in Notizen.
     for slide in prs.slides:
+        for sh in slide.shapes:
+            if sh.has_text_frame:
+                assert "…" not in sh.text_frame.text
+        assert "…" not in " ".join(zelltexte)
         assert slide.has_notes_slide
-        assert slide.notes_slide.notes_text_frame.text.strip()
+        notizen = slide.notes_slide.notes_text_frame.text
+        assert notizen.strip() and "…" not in notizen and "Lieferergebnis" not in notizen
 
 
 def test_parser_risiken_mit_verschobenen_spalten():
@@ -303,6 +320,10 @@ def test_praesentation_route(app):
     r = c.get(f"/projekt/{pid}/ergebnis/{eid}/praesentation")
     assert r.status_code == 200
     assert "presentationml" in r.mimetype
+    # Dateiname: yyyymmdd_Projektname.pptx
+    import re as _re
+    cd = r.headers.get("Content-Disposition", "")
+    assert _re.search(r"\d{8}_P_Demo\.pptx", cd), cd
     prs = Presentation(io.BytesIO(r.data))
     assert len(prs.slides) >= 8
 
