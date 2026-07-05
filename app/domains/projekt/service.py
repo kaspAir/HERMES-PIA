@@ -5,7 +5,15 @@ den Referenz-Katalog. Bewusst ohne Kenntnis der Interview-/PIA-Domäne – die
 Verknüpfung der `InterviewSession` an ihren Ergebnis-Knoten setzt der Aufrufer
 (über `ergebnis_id`). So bleibt die Container-Domäne von ihren Inhalten entkoppelt.
 """
-from app.domains.projekt.models import Ergebnis, Meilenstein, Modul, Phase, Projekt
+from app.domains.projekt.models import (
+    Ergebnis,
+    ErgebnisDokument,
+    Meilenstein,
+    Modul,
+    Phase,
+    PraesentationsVorlage,
+    Projekt,
+)
 from app.domains.projekt.reference import (
     ERG_PIA,
     ERGEBNISTYPEN,
@@ -50,6 +58,12 @@ class ProjektService:
             modul_ids = [m.id for m in db.query(Modul).filter(
                 Modul.phase_id.in_(phase_ids)).all()]
             if modul_ids:
+                ergebnis_ids = [e.id for e in db.query(Ergebnis).filter(
+                    Ergebnis.modul_id.in_(modul_ids)).all()]
+                if ergebnis_ids:
+                    db.query(ErgebnisDokument).filter(
+                        ErgebnisDokument.ergebnis_id.in_(ergebnis_ids)).delete(
+                        synchronize_session=False)
                 db.query(Ergebnis).filter(Ergebnis.modul_id.in_(modul_ids)).delete(
                     synchronize_session=False)
                 db.query(Modul).filter(Modul.id.in_(modul_ids)).delete(
@@ -58,6 +72,9 @@ class ProjektService:
                 synchronize_session=False)
             db.query(Phase).filter(Phase.id.in_(phase_ids)).delete(
                 synchronize_session=False)
+        db.query(PraesentationsVorlage).filter(
+            PraesentationsVorlage.projekt_id == projekt.id).delete(
+            synchronize_session=False)
         db.delete(projekt)
         db.commit()
         return True
@@ -158,6 +175,73 @@ class ProjektService:
         ).join(Modul, Modul.phase_id == Phase.id).join(
             Ergebnis, Ergebnis.modul_id == Modul.id
         ).filter(Ergebnis.id == int(ergebnis_id)).first()
+
+    # ------------------------------------------------------------------ #
+    # Dokumente am Ergebnis (z.B. freigabebereiter PIA)                    #
+    # ------------------------------------------------------------------ #
+
+    def add_dokument(self, ergebnis_id, filename, data, mimetype=None,
+                     art="freigabe", uploaded_by=None):
+        """Hängt eine hochgeladene Datei an ein Ergebnis. Bei art='freigabe'
+        wechselt der Ergebnis-Status auf 'zur Freigabe'."""
+        db = SessionLocal()
+        ergebnis = db.get(Ergebnis, int(ergebnis_id))
+        if ergebnis is None:
+            return None
+        dok = ErgebnisDokument(
+            ergebnis_id=ergebnis.id, art=art, filename=filename,
+            mimetype=mimetype, size=len(data or b""), data=data,
+            uploaded_by=uploaded_by,
+        )
+        db.add(dok)
+        if art == "freigabe":
+            ergebnis.status = "zur Freigabe"
+        db.commit()
+        db.refresh(dok)
+        return dok
+
+    def get_dokument(self, dokument_id):
+        return SessionLocal().get(ErgebnisDokument, int(dokument_id))
+
+    def dokumente_for_ergebnis(self, ergebnis_id, art=None):
+        q = SessionLocal().query(ErgebnisDokument).filter(
+            ErgebnisDokument.ergebnis_id == int(ergebnis_id))
+        if art:
+            q = q.filter(ErgebnisDokument.art == art)
+        return q.order_by(ErgebnisDokument.created_at.desc()).all()
+
+    def latest_dokument(self, ergebnis_id, art="freigabe"):
+        docs = self.dokumente_for_ergebnis(ergebnis_id, art=art)
+        return docs[0] if docs else None
+
+    # ------------------------------------------------------------------ #
+    # Präsentationsvorlagen (Projekt-Vorlage schlägt Org-Vorlage)          #
+    # ------------------------------------------------------------------ #
+
+    def add_vorlage(self, filename, data, org_id=None, projekt_id=None, uploaded_by=None):
+        db = SessionLocal()
+        v = PraesentationsVorlage(
+            org_id=org_id, projekt_id=projekt_id, filename=filename,
+            size=len(data or b""), data=data, uploaded_by=uploaded_by,
+        )
+        db.add(v)
+        db.commit()
+        db.refresh(v)
+        return v
+
+    def resolve_vorlage(self, projekt):
+        """Massgebliche Vorlage: neueste Projekt-Vorlage; sonst neueste Vorlage
+        der Organisationseinheit; sonst None (dann leere Standard-Präsentation)."""
+        db = SessionLocal()
+        v = db.query(PraesentationsVorlage).filter(
+            PraesentationsVorlage.projekt_id == projekt.id
+        ).order_by(PraesentationsVorlage.created_at.desc()).first()
+        if v:
+            return v
+        return db.query(PraesentationsVorlage).filter(
+            PraesentationsVorlage.org_id == projekt.org_id,
+            PraesentationsVorlage.projekt_id.is_(None),
+        ).order_by(PraesentationsVorlage.created_at.desc()).first()
 
     def structure(self, projekt):
         """Verschachtelte Sicht für die UI: Phase -> Module(+Ergebnisse) + Meilensteine."""

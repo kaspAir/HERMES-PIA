@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 from datetime import date
 
@@ -270,15 +271,138 @@ def projekt_detail(projekt_id):
     projekt = _load_projekt(projekt_id)
     svc = current_app.projekt_service
     structure = svc.structure(projekt)
-    # PIA-Ergebnisse mit ihrer Session verknüpfen (für „Weiter"/Download-Links).
-    sessions = {}
+    # PIA-Ergebnisse mit ihrer Session bzw. Freigabe-Dokumenten verknüpfen.
+    sessions, freigabe_docs = {}, {}
     for modul in structure["module"]:
         for erg in modul["ergebnisse"]:
             s = current_app.interview_service.session_for_ergebnis(erg.id)
             if s:
                 sessions[erg.id] = s
+            dok = svc.latest_dokument(erg.id, art="freigabe")
+            if dok:
+                freigabe_docs[erg.id] = dok
+    vorlage = svc.resolve_vorlage(projekt)
     return render_template("projekt_detail.html", projekt=projekt,
-                           structure=structure, sessions=sessions)
+                           structure=structure, sessions=sessions,
+                           freigabe_docs=freigabe_docs, vorlage=vorlage)
+
+
+# ---- Dokumente & Präsentation am Ergebnis ------------------------------ #
+
+_UPLOAD_LIMIT = 15 * 1024 * 1024   # 15 MB (decodiert)
+
+
+def _json_upload(allowed_ext):
+    """Liest einen Base64-JSON-Upload {filename, data} und validiert ihn.
+    Rückgabe: (filename, bytes) oder (None, Fehlermeldung)."""
+    payload = request.get_json(silent=True) or {}
+    filename = (payload.get("filename") or "").strip()
+    if not filename.lower().endswith(allowed_ext):
+        return None, f"Nur {allowed_ext}-Dateien sind erlaubt."
+    try:
+        data = base64.b64decode(payload.get("data") or "")
+    except Exception:  # noqa: BLE001 – kaputtes Base64 = keine Daten
+        data = b""
+    if not data:
+        return None, "Keine Dateidaten empfangen."
+    if len(data) > _UPLOAD_LIMIT:
+        return None, "Datei zu gross (max. 15 MB)."
+    if not data.startswith(b"PK"):     # docx/pptx sind ZIP-Container
+        return None, "Die Datei ist keine gültige Office-Datei."
+    return filename, data
+
+
+def _load_ergebnis(projekt_id, ergebnis_id):
+    """Stellt sicher, dass das Ergebnis zum (zugriffsgeprüften) Projekt gehört."""
+    _load_projekt(projekt_id)
+    projekt = current_app.projekt_service.projekt_for_ergebnis(ergebnis_id)
+    if not projekt or projekt.id != int(projekt_id):
+        abort(404)
+    return projekt
+
+
+@bp.post("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/dokument")
+@permission_required("write")
+def ergebnis_dokument_upload(projekt_id, ergebnis_id):
+    """Lädt den freigabebereiten PIA (.docx) zum Ergebnis hoch (Base64-JSON)."""
+    _load_ergebnis(projekt_id, ergebnis_id)
+    filename, data = _json_upload(".docx")
+    if filename is None:
+        return jsonify({"error": data}), 400
+    user = current_user()
+    dok = current_app.projekt_service.add_dokument(
+        ergebnis_id, filename, data, art="freigabe",
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        uploaded_by=getattr(user, "email", None),
+    )
+    if dok is None:
+        abort(404)
+    return jsonify({"ok": True, "dokument_id": dok.id})
+
+
+@bp.get("/projekt/<int:projekt_id>/dokument/<int:dokument_id>")
+@permission_required("read")
+def ergebnis_dokument_download(projekt_id, dokument_id):
+    _load_projekt(projekt_id)
+    dok = current_app.projekt_service.get_dokument(dokument_id)
+    if not dok:
+        abort(404)
+    projekt = current_app.projekt_service.projekt_for_ergebnis(dok.ergebnis_id)
+    if not projekt or projekt.id != int(projekt_id):
+        abort(404)
+    return send_file(
+        io.BytesIO(dok.data),
+        mimetype=dok.mimetype or "application/octet-stream",
+        as_attachment=True,
+        download_name=dok.filename,
+    )
+
+
+@bp.post("/projekt/<int:projekt_id>/vorlage")
+@permission_required("write")
+def praesentations_vorlage_upload(projekt_id):
+    """Lädt eine .pptx-Vorlage hoch – für dieses Projekt oder die ganze
+    Organisationseinheit (Projekt-Vorlage hat beim Generieren Vorrang)."""
+    projekt = _load_projekt(projekt_id)
+    filename, data = _json_upload(".pptx")
+    if filename is None:
+        return jsonify({"error": data}), 400
+    scope = (request.get_json(silent=True) or {}).get("scope", "projekt")
+    user = current_user()
+    current_app.projekt_service.add_vorlage(
+        filename, data,
+        org_id=projekt.org_id,
+        projekt_id=projekt.id if scope == "projekt" else None,
+        uploaded_by=getattr(user, "email", None),
+    )
+    return jsonify({"ok": True})
+
+
+@bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/praesentation")
+@permission_required("read")
+def ergebnis_praesentation(projekt_id, ergebnis_id):
+    """Generiert die Präsentation für Auftraggeber/Projektausschuss aus dem
+    zuletzt hochgeladenen freigabebereiten PIA (auf Basis der Vorlage)."""
+    projekt = _load_ergebnis(projekt_id, ergebnis_id)
+    svc = current_app.projekt_service
+    dok = svc.latest_dokument(ergebnis_id, art="freigabe")
+    if not dok:
+        return ("Bitte zuerst den freigabebereiten PIA (.docx) hochladen – "
+                "die Präsentation wird aus dessen Inhalt erstellt."), 400
+    vorlage = svc.resolve_vorlage(projekt)
+    buf = current_app.praesentation_service.generate_from_docx(
+        dok.data,
+        template_bytes=vorlage.data if vorlage else None,
+        fallback_name=projekt.name,
+        datum=date.today().strftime("%d.%m.%Y"),
+    )
+    safe_name = _safe_filename(projekt.name or "Projekt")
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        as_attachment=True,
+        download_name=f"{safe_name}_PIA_Praesentation.pptx",
+    )
 
 
 @bp.post("/projekt/<int:projekt_id>/delete")

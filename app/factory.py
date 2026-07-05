@@ -15,6 +15,7 @@ import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registr
 import app.domains.projekt.models     # noqa: F401 – Projektstruktur-Tabellen registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
+from app.domains.praesentation.service import PraesentationService
 from app.domains.projekt.service import ProjektService
 from app.domains.stt.transcriber import Transcriber
 from app.shared.database import Base, SessionLocal, init_engine
@@ -105,6 +106,7 @@ def create_app(config_class=None):
     )
     app.generation_service = GenerationService(app.method_service)
     app.projekt_service = ProjektService()
+    app.praesentation_service = PraesentationService(llm_client)
     app.auth_service = AuthService()
     app.transcriber = Transcriber(
         api_url=app.config.get("STT_API_URL"),
