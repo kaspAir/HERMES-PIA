@@ -6,12 +6,13 @@ Vorlagenlogik: Die hochgeladene .pptx liefert Design UND Layout-Zuordnung.
   ihre Layouts: das Layout der ersten Folie wird zum Titel-Layout, das der
   letzten zur Schlussfolie (z.B. das blaue Dank-Deckblatt einer Firmenvorlage).
 * Inhaltsfolien nutzen ein Layout MIT Titel-Platzhalter (z.B. «Nur Titel») –
-  damit bleiben Logo, Design und Titelposition der Vorlage erhalten, statt von
-  eigenen Textrahmen überdeckt zu werden.
+  damit bleiben Logo, Design und Titelposition der Vorlage erhalten.
 * Fusszeilen-/Datums-/Seitenzahl-Platzhalter des Layouts werden in jede Folie
   übernommen (python-pptx klont sie sonst nicht -> Fusszeile fehlte).
-Ohne Vorlage dient eine leere Standard-Präsentation als Basis.
 
+Stilregeln: KEINE mit «…» abgeschnittenen Sätze (Volltext in Tabellen),
+schwarze Schrift in allen erzeugten Tabellen, HERMES-Terminologie («Ergebnis»,
+nicht «Lieferergebnis»). Meilensteine im Gantt als Raute mit Dauer 0.
 Jede Folie erhält Notizen mit Sprechhinweisen für den Projektleiter.
 """
 import io
@@ -21,10 +22,10 @@ from copy import deepcopy
 from datetime import datetime
 
 from pptx import Presentation
-from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
+from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-from pptx.enum.shapes import PP_PLACEHOLDER
+from pptx.enum.shapes import MSO_SHAPE, PP_PLACEHOLDER
 from pptx.util import Emu, Pt
 
 from app.domains.praesentation.parser import parse_pia
@@ -34,10 +35,16 @@ _GRUEN = RGBColor(0xC6, 0xEF, 0xCE)
 _GELB = RGBColor(0xFF, 0xEB, 0x9C)
 _ROT = RGBColor(0xFF, 0xC7, 0xCE)
 _GRAU = RGBColor(0xF2, 0xF2, 0xF2)
+_SCHWARZ = RGBColor(0x00, 0x00, 0x00)
+_BALKENBLAU = RGBColor(0x2E, 0x75, 0xB6)
+_RAUTENDUNKEL = RGBColor(0x1F, 0x38, 0x64)
+_LINIENGRAU = RGBColor(0xD9, 0xD9, 0xD9)
 
 _TITEL_TYPEN = (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE)
 _DEKOR_TYPEN = (PP_PLACEHOLDER.FOOTER, PP_PLACEHOLDER.DATE, PP_PLACEHOLDER.SLIDE_NUMBER)
 _STUFEN_TEXT = {1: "Tief", 2: "Mittel", 3: "Hoch"}
+_MONATE = ("Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+           "Jul", "Aug", "Sep", "Okt", "Nov", "Dez")
 
 
 class PraesentationService:
@@ -82,9 +89,9 @@ class PraesentationService:
                 raw = self.llm.complete(
                     "Du fasst die Ausgangslage eines Projektinitialisierungsauftrags "
                     "fuer eine Praesentation vor Auftraggeber und Projektausschuss "
-                    "zusammen. Sachlicher Behoerdenstil, keine Erfindungen, keine "
-                    "Ergaenzungen - nur, was im Text steht. Antworte ausschliesslich "
-                    "mit validem JSON.",
+                    "zusammen. Sachlicher Behoerdenstil, nur VOLLSTAENDIGE Saetze oder "
+                    "Stichpunkte (nie mit '...' abbrechen), keine Erfindungen - nur, "
+                    "was im Text steht. Antworte ausschliesslich mit validem JSON.",
                     [{"role": "user", "content":
                         f"Ausgangslage:\n{text}\n\n"
                         'Gib 3-5 praegnante Stichpunkte (je max. 15 Woerter) als '
@@ -104,7 +111,7 @@ class PraesentationService:
 
 
 # ---------------------------------------------------------------------- #
-# Folienbau                                                                #
+# Hilfen                                                                   #
 # ---------------------------------------------------------------------- #
 
 def _alle_layouts(prs):
@@ -138,15 +145,38 @@ def _parse_datum(text):
         return None
 
 
+def _ohne_klammern(text):
+    """Saubere Kurzform ohne Abschneiden: Klammerzusätze entfernen."""
+    return re.sub(r"\s*\([^)]*\)", "", str(text or "")).strip()
+
+
+def _erster_satz(text):
+    teile = re.split(r"(?<=[.!?])\s+", str(text or "").strip())
+    return teile[0] if teile and teile[0] else str(text or "").strip()
+
+
+def _monatsanfaenge(start, ende):
+    d = datetime(start.year, start.month, 1)
+    out = []
+    while d <= ende:
+        if d >= start:
+            out.append(d)
+        d = datetime(d.year + (1 if d.month == 12 else 0), d.month % 12 + 1, 1)
+    return out
+
+
+def _ist_summe(position):
+    p = (position or "").lower()
+    return "summe" in p or "total" in p
+
+
 class _Builder:
 
     def __init__(self, prs):
         self.prs = prs
         self.sw = prs.slide_width
         self.sh = prs.slide_height
-        # Layouts der Beispiel-Folien merken (Design-Absicht der Vorlage) ...
         vorlage_layouts = [s.slide_layout for s in prs.slides]
-        # ... und die Beispiel-Folien entfernen.
         self._remove_all_slides(prs)
 
         self.content_layout = self._pick_content_layout(prs)
@@ -215,8 +245,6 @@ class _Builder:
         return Emu(int(self.sh * frac))
 
     def _slide(self, titel):
-        """Inhaltsfolie: Titel in den Vorlagen-Platzhalter (Design/Logo bleiben),
-        sonst eigener Textrahmen. Rückgabe: (slide, oberkante_inhalt als Bruch)."""
         slide = self._add(self.content_layout)
         ph = _titel_platzhalter(slide)
         if ph is not None:
@@ -235,8 +263,6 @@ class _Builder:
         return slide, top
 
     def _ph_unterkante(self, slide, ph):
-        """Unterkante des Titel-Platzhalters als Bruch der Folienhöhe (Position
-        kann auf Folie fehlen und erst im Layout definiert sein)."""
         top, height = ph.top, ph.height
         if top is None or height is None:
             lay_ph = _titel_platzhalter(slide.slide_layout)
@@ -261,6 +287,20 @@ class _Builder:
             p.font.size = Pt(size)
             p.space_after = Pt(8)
         return box
+
+    def _style_tabelle(self, table, kopfzeile=True):
+        """Einheitlich: schwarze Schrift überall, Kopfzeile hellgrau + fett –
+        unabhängig vom (teils dunklen) Tabellenstil der Vorlage."""
+        for r_i, row in enumerate(table.rows):
+            for cell in row.cells:
+                cell.text_frame.word_wrap = True
+                if kopfzeile and r_i == 0:
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = _GRAU
+                for p in cell.text_frame.paragraphs:
+                    p.font.color.rgb = _SCHWARZ
+                    if kopfzeile and r_i == 0:
+                        p.font.bold = True
 
     def _notizen(self, slide, text):
         slide.notes_slide.notes_text_frame.text = text
@@ -331,8 +371,21 @@ class _Builder:
         if not ziele:
             return
         slide, top = self._slide("Ziele der Phase Initialisierung")
-        items = [_kurz(z["beschreibung"], 160) for z in ziele[:6]]
-        self._bullets(slide, items, top, size=14)
+        rows = ziele[:8]
+        table = slide.shapes.add_table(
+            len(rows) + 1, 2, self._x(0.06), self._y(top),
+            self._x(0.88), self._y(min(0.1 * len(rows) + 0.05, 0.9 - top)),
+        ).table
+        table.columns[0].width = self._x(0.07)
+        table.columns[1].width = self._x(0.81)
+        table.cell(0, 0).text = "Nr."
+        table.cell(0, 1).text = "Ziel"
+        for r, ziel in enumerate(rows, 1):
+            table.cell(r, 0).text = f"{r:02d}"
+            table.cell(r, 1).text = ziel["beschreibung"]        # Volltext, keine Kürzung
+            for p in table.cell(r, 1).text_frame.paragraphs:
+                p.font.size = Pt(11)
+        self._style_tabelle(table)
         self._notizen(slide, (
             "Gehen Sie die Ziele zügig durch, nicht wörtlich vorlesen. "
             "Kernaussage: Die Initialisierung schafft die Entscheidungsgrundlagen "
@@ -348,20 +401,21 @@ class _Builder:
             len(rows) + 1, 3, self._x(0.06), self._y(top),
             self._x(0.88), self._y(min(0.05 * (len(rows) + 1), 0.9 - top)),
         ).table
-        for c, kopf in enumerate(("Lieferergebnis", "Termin", "Abnahme durch")):
-            cell = table.cell(0, c)
-            cell.text = kopf
-            cell.text_frame.paragraphs[0].font.size = Pt(12)
-            cell.text_frame.paragraphs[0].font.bold = True
+        table.columns[0].width = self._x(0.56)
+        table.columns[1].width = self._x(0.14)
+        table.columns[2].width = self._x(0.18)
+        for c, kopf in enumerate(("Ergebnis", "Termin", "Abnahme durch")):
+            table.cell(0, c).text = kopf
         for r, row in enumerate(rows, 1):
-            werte = (_kurz(row["ergebnis"], 80), row.get("termin", ""), row.get("abnahme", ""))
+            werte = (row["ergebnis"], row.get("termin", ""), row.get("abnahme", ""))
             meilenstein = "meilenstein" in row["ergebnis"].lower()
             for c, wert in enumerate(werte):
                 cell = table.cell(r, c)
                 cell.text = wert
-                p = cell.text_frame.paragraphs[0]
-                p.font.size = Pt(11)
-                p.font.bold = meilenstein
+                for p in cell.text_frame.paragraphs:
+                    p.font.size = Pt(10)
+                    p.font.bold = meilenstein
+        self._style_tabelle(table)
         letzter = max((t.get("termin", "") for t in termine), default="")
         self._notizen(slide, (
             "Erläutern Sie die HERMES-Logik der Reihenfolge: Die Analysen fliessen in "
@@ -371,7 +425,8 @@ class _Builder:
             "Meilensteine sind fett hervorgehoben."))
 
     def gantt(self, pia):
-        """Terminplan zusätzlich als einfaches Gantt (gestapelte Balken)."""
+        """Terminplan als gezeichnetes Gantt: Balken für Ergebnisse, Rauten
+        (Dauer 0) für Meilensteine, Monatslinien als Orientierung."""
         eintraege = []
         for t in pia.get("termine") or []:
             datum = _parse_datum(t.get("termin"))
@@ -381,42 +436,77 @@ class _Builder:
         if len(eintraege) < 3:
             return
         eintraege.sort(key=lambda e: e[1])
+        eintraege = eintraege[:10]
         start = eintraege[0][1]
-        namen, offsets, dauern = [], [], []
-        vorher = start
-        for name, datum, meilenstein in eintraege[:10]:
-            offsets.append(max((vorher - start).days, 0))
-            dauern.append(max((datum - vorher).days, 2))
-            namen.append(("◆ " if meilenstein else "") + _kurz(name, 38))
-            vorher = datum
+        ende = eintraege[-1][1]
+        spann = max((ende - start).days, 1)
 
         slide, top = self._slide("Terminplan (Übersicht)")
-        data = CategoryChartData()
-        data.categories = list(reversed(namen))          # erste Aufgabe zuoberst
-        data.add_series("Vorlauf", list(reversed(offsets)))
-        data.add_series("Dauer", list(reversed(dauern)))
-        frame = slide.shapes.add_chart(
-            XL_CHART_TYPE.BAR_STACKED, self._x(0.06), self._y(top),
-            self._x(0.88), self._y(min(0.68, 0.92 - top)), data,
-        )
-        chart = frame.chart
-        chart.has_legend = False
-        chart.series[0].format.fill.background()          # Vorlauf unsichtbar
-        chart.series[0].format.line.fill.background()
-        try:
-            chart.category_axis.tick_labels.font.size = Pt(10)
-            chart.value_axis.tick_labels.font.size = Pt(9)
-            chart.value_axis.has_title = True
-            chart.value_axis.axis_title.text_frame.text = \
-                f"Kalendertage ab {start.strftime('%d.%m.%Y')}"
-            chart.value_axis.axis_title.text_frame.paragraphs[0].font.size = Pt(10)
-        except Exception:  # noqa: BLE001 – Achsen-Feinschliff darf nie blockieren
-            pass
+        label_l, label_w = 0.06, 0.30
+        plot_l, plot_r = label_l + label_w + 0.01, 0.94
+        unten = 0.88
+        zeile_h = min(0.065, (unten - top - 0.05) / len(eintraege))
+
+        def x_von(d):
+            return plot_l + (plot_r - plot_l) * ((d - start).days / spann)
+
+        # Monatslinien + Beschriftung
+        for m in _monatsanfaenge(start, ende):
+            xf = x_von(m)
+            linie = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, self._x(xf), self._y(top + 0.035),
+                Emu(9525), self._y(unten - top - 0.035))
+            linie.fill.solid()
+            linie.fill.fore_color.rgb = _LINIENGRAU
+            linie.line.fill.background()
+            lbl = slide.shapes.add_textbox(self._x(xf - 0.03), self._y(top),
+                                           self._x(0.06), self._y(0.035))
+            p = lbl.text_frame.paragraphs[0]
+            p.text = f"{_MONATE[m.month - 1]} {m.strftime('%y')}"
+            p.font.size = Pt(9)
+            p.font.color.rgb = _SCHWARZ
+
+        vorher = start
+        for i, (name, datum, meilenstein) in enumerate(eintraege):
+            y = top + 0.05 + i * zeile_h
+            lbl = slide.shapes.add_textbox(self._x(label_l), self._y(y),
+                                           self._x(label_w), self._y(zeile_h))
+            p = lbl.text_frame.paragraphs[0]
+            lbl.text_frame.word_wrap = True
+            p.text = _ohne_klammern(name)
+            p.font.size = Pt(9)
+            p.font.bold = meilenstein
+            p.font.color.rgb = _SCHWARZ
+
+            balken_h = zeile_h * 0.55
+            if meilenstein:
+                # Meilenstein: Dauer 0 – Raute am Termin.
+                seite = self._y(balken_h * 1.4)
+                raute = slide.shapes.add_shape(
+                    MSO_SHAPE.DIAMOND,
+                    Emu(int(self._x(x_von(datum))) - int(seite) // 2),
+                    self._y(y + (zeile_h - balken_h * 1.4) / 2), seite, seite)
+                raute.fill.solid()
+                raute.fill.fore_color.rgb = _RAUTENDUNKEL
+                raute.line.fill.background()
+            else:
+                x1, x2 = x_von(vorher), x_von(datum)
+                if x2 - x1 < 0.008:
+                    x2 = x1 + 0.008
+                balken = slide.shapes.add_shape(
+                    MSO_SHAPE.ROUNDED_RECTANGLE, self._x(x1),
+                    self._y(y + (zeile_h - balken_h) / 2),
+                    self._x(x2 - x1), self._y(balken_h))
+                balken.fill.solid()
+                balken.fill.fore_color.rgb = _BALKENBLAU
+                balken.line.fill.background()
+            vorher = datum
+
         self._notizen(slide, (
-            "Zeigen Sie den zeitlichen Ablauf: Die Balkenlänge entspricht dem Zeitraum "
-            "bis zum jeweiligen Liefertermin, die Reihenfolge folgt den Abhängigkeiten. "
-            "Weisen Sie auf die Entscheid-Meilensteine (◆) hin – dort ist der "
-            "Auftraggeber bzw. der Projektausschuss gefordert."))
+            "Zeigen Sie den zeitlichen Ablauf: Balken entsprechen dem Zeitraum bis "
+            "zum jeweiligen Termin, die Reihenfolge folgt den Abhängigkeiten. "
+            "Die Rauten sind die Entscheid-Meilensteine (Dauer 0 Tage) – dort ist "
+            "der Auftraggeber bzw. der Projektausschuss gefordert."))
 
     def personalaufwand(self, pia):
         personal = [p for p in (pia.get("personalaufwand") or []) if p.get("aufwand")]
@@ -424,7 +514,10 @@ class _Builder:
             return
         slide, top = self._slide("Personalaufwand der Initialisierung (PT)")
         data = CategoryChartData()
-        data.categories = [_kurz(p["rolle"], 40) for p in personal]
+        data.categories = [
+            p["rolle"] + (f"\n{p['name']}" if p.get("name") else "")
+            for p in personal
+        ]
         data.add_series("PT", [p["aufwand"] for p in personal])
         frame = slide.shapes.add_chart(
             XL_CHART_TYPE.BAR_CLUSTERED, self._x(0.06), self._y(top),
@@ -435,6 +528,10 @@ class _Builder:
         plot = chart.plots[0]
         plot.has_data_labels = True
         plot.data_labels.font.size = Pt(11)
+        try:
+            chart.category_axis.tick_labels.font.size = Pt(10)
+        except Exception:  # noqa: BLE001
+            pass
         total = sum(p["aufwand"] for p in personal)
         groesste = max(personal, key=lambda p: p["aufwand"])
         self._notizen(slide, (
@@ -453,7 +550,7 @@ class _Builder:
         slide, top = self._slide("Kosten der Initialisierung (CHF inkl. MwSt.)")
         if einzel:
             data = CategoryChartData()
-            data.categories = [_kurz(k["position"], 45) for k in einzel]
+            data.categories = [k["position"] for k in einzel]
             data.add_series("CHF", [k["betrag"] for k in einzel])
             frame = slide.shapes.add_chart(
                 XL_CHART_TYPE.PIE, self._x(0.06), self._y(top),
@@ -513,6 +610,7 @@ class _Builder:
                 cell = table.cell(r, c)
                 p = cell.text_frame.paragraphs[0]
                 p.font.size = Pt(12)
+                p.font.color.rgb = _SCHWARZ
                 if r == 0 or c == 0:
                     p.font.bold = True
                     cell.fill.solid()
@@ -528,12 +626,13 @@ class _Builder:
             r = 4 - risiko["ew"]
             c = risiko["ag"]
             cell = table.cell(r, c)
-            bestehend = cell.text_frame.paragraphs[0].text
+            p = cell.text_frame.paragraphs[0]
+            bestehend = p.text
             neu = f"R{risiko['nr']}"
-            cell.text_frame.paragraphs[0].text = (
-                f"{bestehend}  {neu}".strip() if bestehend else neu)
-            cell.text_frame.paragraphs[0].font.size = Pt(14)
-            cell.text_frame.paragraphs[0].font.bold = True
+            p.text = f"{bestehend}  {neu}".strip() if bestehend else neu
+            p.font.size = Pt(14)
+            p.font.bold = True
+            p.font.color.rgb = _SCHWARZ
         rot = sum(1 for r in risiken if r["ew"] * r["ag"] >= 6)
         self._notizen(slide, (
             f"Lagebild: {gesamt} Risiken der Initialisierung, davon {rot} im roten "
@@ -541,7 +640,7 @@ class _Builder:
             "– Details auf den Folgefolien. Gehen Sie hier nur auf die roten ein."))
 
     def _risiko_tabellen(self, risiken, pro_folie=4):
-        """Risiken als Tabelle(n) mit VOLLEM Beschreibungstext (keine '…'-Kürzung)."""
+        """Risiken als Tabelle(n) mit VOLLEM Beschreibungstext (keine Kürzung)."""
         seiten = [risiken[i:i + pro_folie] for i in range(0, len(risiken), pro_folie)]
         for idx, seite in enumerate(seiten, 1):
             suffix = f" ({idx}/{len(seiten)})" if len(seiten) > 1 else ""
@@ -555,10 +654,7 @@ class _Builder:
             table.columns[2].width = self._x(0.10)
             table.columns[3].width = self._x(0.10)
             for c, kopf in enumerate(("Nr.", "Risiko", "EW", "AG")):
-                cell = table.cell(0, c)
-                cell.text = kopf
-                cell.text_frame.paragraphs[0].font.size = Pt(11)
-                cell.text_frame.paragraphs[0].font.bold = True
+                table.cell(0, c).text = kopf
             for r, risiko in enumerate(seite, 1):
                 werte = (f"R{risiko['nr']}", risiko["beschreibung"],
                          _STUFEN_TEXT.get(risiko.get("ew"), ""),
@@ -566,14 +662,14 @@ class _Builder:
                 for c, wert in enumerate(werte):
                     cell = table.cell(r, c)
                     cell.text = wert
-                    cell.text_frame.word_wrap = True
                     for p in cell.text_frame.paragraphs:
                         p.font.size = Pt(10)
+            self._style_tabelle(table)
             top_risiko = seite[0]
             self._notizen(slide, (
                 "Nicht alle Risiken vorlesen – heben Sie das gewichtigste hervor: "
-                f"R{top_risiko['nr']}: {_kurz(top_risiko['beschreibung'], 120)} "
-                "Botschaft: Zu jedem Risiko existiert eine Massnahme (im PIA, Kap. Risiken)."))
+                f"R{top_risiko['nr']}: {_erster_satz(top_risiko['beschreibung'])} "
+                "Botschaft: Zu jedem Risiko existiert eine Massnahme (im PIA, Kapitel Risiken)."))
 
     def antrag(self, pia):
         slide, top = self._slide("Antrag an den Auftraggeber")
@@ -586,7 +682,7 @@ class _Builder:
         naechste = [t for t in (pia.get("termine") or [])
                     if "meilenstein" in t.get("ergebnis", "").lower()]
         for t in naechste[:2]:
-            zeile = f"{t['ergebnis']}"
+            zeile = _ohne_klammern(t["ergebnis"])
             if t.get("termin"):
                 zeile += f" – geplant {t['termin']}"
             items.append(zeile)
@@ -598,8 +694,6 @@ class _Builder:
             "Projektentscheide Steuerung) fest."))
 
     def schluss(self, pia, datum):
-        """Abschlussfolie im Design der Vorlage (Layout der letzten Beispiel-Folie,
-        z.B. das blaue Dank-Deckblatt)."""
         if self.closing_layout is None:
             return
         slide = self._add(self.closing_layout)
@@ -627,13 +721,3 @@ class _Builder:
             "Bedanken Sie sich für die Aufmerksamkeit. Nennen Sie den nächsten "
             "Schritt: Nach erteilter Freigabe startet die Phase Initialisierung "
             "gemäss Terminplan."))
-
-
-def _kurz(text, limit):
-    text = (text or "").strip()
-    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
-
-
-def _ist_summe(position):
-    p = (position or "").lower()
-    return "summe" in p or "total" in p

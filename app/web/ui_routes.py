@@ -401,7 +401,7 @@ def ergebnis_praesentation(projekt_id, ergebnis_id):
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         as_attachment=True,
-        download_name=f"{safe_name}_PIA_Praesentation.pptx",
+        download_name=f"{date.today():%Y%m%d}_{safe_name}.pptx",
     )
 
 
