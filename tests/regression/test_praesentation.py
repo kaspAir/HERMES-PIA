@@ -245,6 +245,14 @@ def test_projektplan_msproject_und_excel():
 
     excel = projektplan.build_excel(eintraege, "P Demo")
     assert excel.startswith(b"PK")              # gültige xlsx-(ZIP-)Datei
+    # Gantt-Raster: Monatsköpfe, Meilenstein-Raute und Balkenfarbe vorhanden
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(excel)) as z:
+        strings = z.read("xl/sharedStrings.xml").decode("utf-8")
+        styles = z.read("xl/styles.xml").decode("utf-8")
+    assert "Okt 26" in strings and "Dez 26" in strings   # Monatsblöcke über den KW-Spalten
+    assert "◆" in strings                                # Meilenstein-Raute im Raster
+    assert "2E75B6" in styles                            # Balken-Füllfarbe
 
 
 def test_projektplan_routen(app):
