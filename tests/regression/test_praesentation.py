@@ -14,6 +14,12 @@ from app.factory import create_app
 
 # ---- Hilfen: Beispiel-PIA (.docx) und Vorlage (.pptx) im Speicher ------ #
 
+LANGES_RISIKO = ("Schlüsselpersonen aus dem IT-Betrieb sind wegen operativer Belastung "
+                 "nicht ausreichend für die Erarbeitung der Studie, der Schutzbedarfsanalyse "
+                 "und des Projektmanagementplans verfügbar, wodurch die fristgerechte "
+                 "Fertigstellung der Initialisierungsergebnisse gefährdet wird.")
+
+
 def _beispiel_pia_bytes():
     d = docx.Document()
     # Kopftabelle (vor der ersten Überschrift) -> Metadaten
@@ -51,13 +57,15 @@ def _beispiel_pia_bytes():
     t.cell(4, 0).text = "Total Initialisierung"; t.cell(4, 1).text = "86400"
 
     d.add_heading("Ergebnisse und Termine", level=2)
-    t = d.add_table(rows=3, cols=5)
+    t = d.add_table(rows=4, cols=5)
     for i, h in enumerate(("Nr.", "Lieferergebnisse (abnahmerelevant)", "Liefertermin",
                            "Abnahme durch (Rolle)", "Prüfmethode")):
         t.cell(0, i).text = h
-    t.cell(1, 1).text = "Studie"; t.cell(1, 2).text = "26.10.2026"; t.cell(1, 3).text = "Projektleiter"
-    t.cell(2, 1).text = "Meilenstein Durchführungsfreigabe"; t.cell(2, 2).text = "14.12.2026"
-    t.cell(2, 3).text = "Auftraggeber"
+    t.cell(1, 1).text = "Rechtsgrundlagenanalyse"; t.cell(1, 2).text = "05.10.2026"
+    t.cell(1, 3).text = "Projektleiter"
+    t.cell(2, 1).text = "Studie"; t.cell(2, 2).text = "26.10.2026"; t.cell(2, 3).text = "Projektleiter"
+    t.cell(3, 1).text = "Meilenstein Durchführungsfreigabe"; t.cell(3, 2).text = "14.12.2026"
+    t.cell(3, 3).text = "Auftraggeber"
 
     d.add_heading("Risiken", level=1)
     t = d.add_table(rows=3, cols=8)
@@ -65,7 +73,7 @@ def _beispiel_pia_bytes():
                            "Auswirkungsgrad", "Risikozahl", "Massnahmen",
                            "Verantwortung", "Termin")):
         t.cell(0, i).text = h
-    t.cell(1, 1).text = "Schlüsselpersonen nicht verfügbar."
+    t.cell(1, 1).text = LANGES_RISIKO
     t.cell(1, 2).text = "Hoch"; t.cell(1, 3).text = "Mittel"
     t.cell(2, 1).text = "Externe Expertise fehlt."
     t.cell(2, 4).text = "9"                     # EW/AG leer -> Fallback über Risikozahl
@@ -99,7 +107,7 @@ def test_parser_liest_abschnitte_und_tabellen():
         "Projektleiterin": 25, "Externe Fachexpertise (extern)": 20}
     assert any(k["position"] == "Total Initialisierung" and k["betrag"] == 86400
                for k in pia["kosten"])
-    assert pia["termine"][0]["ergebnis"] == "Studie"
+    assert pia["termine"][0]["ergebnis"] == "Rechtsgrundlagenanalyse"
     # Risiko 1: EW/AG aus Text; Risiko 2: Fallback aus Risikozahl 9 -> (3,3)
     assert (pia["risiken"][0]["ew"], pia["risiken"][0]["ag"]) == (3, 2)
     assert (pia["risiken"][1]["ew"], pia["risiken"][1]["ag"]) == (3, 3)
@@ -133,6 +141,78 @@ def test_builder_baut_auf_vorlage_auf():
     prs = Presentation(buf)
     assert prs.slide_width == breite            # Foliengrösse der Vorlage übernommen
     assert len(prs.slides) >= 8
+
+
+def _vorlage_mit_beispielfolien():
+    """Vorlage wie eine Firmenvorlage: 3 Beispiel-Folien auf unterschiedlichen
+    Layouts (erste = Titeldesign, letzte = Schlussdesign)."""
+    prs = Presentation()
+    s1 = prs.slides.add_slide(prs.slide_layouts[0])
+    s1.shapes.add_textbox(0, 0, 100, 100).text_frame.text = "BEISPIEL-MARKER-1"
+    prs.slides.add_slide(prs.slide_layouts[1])
+    s3 = prs.slides.add_slide(prs.slide_layouts[2])
+    s3.shapes.add_textbox(0, 0, 100, 100).text_frame.text = "BEISPIEL-MARKER-3"
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue(), prs.slide_layouts[0].name, prs.slide_layouts[2].name
+
+
+def test_beispielfolien_raus_titel_und_schluss_aus_vorlage():
+    vorlage, titel_layout, schluss_layout = _vorlage_mit_beispielfolien()
+    svc = PraesentationService(llm=None)
+    buf = svc.generate_from_docx(_beispiel_pia_bytes(), template_bytes=vorlage,
+                                 fallback_name="X", datum="06.07.2026")
+    prs = Presentation(buf)
+    alle_texte = " ".join(_slide_text(s) for s in prs.slides)
+    assert "BEISPIEL-MARKER" not in alle_texte            # Beispiel-Folien entfernt
+    assert prs.slides[0].slide_layout.name == titel_layout   # Titeldesign der Vorlage
+    assert prs.slides[-1].slide_layout.name == schluss_layout  # Schlussdesign (z.B. blau)
+    assert "Besten Dank" in _slide_text(prs.slides[-1])
+
+
+def test_gantt_folie_mit_gestapelten_balken():
+    from pptx.enum.chart import XL_CHART_TYPE
+    svc = PraesentationService(llm=None)
+    buf = svc.generate_from_docx(_beispiel_pia_bytes(), None, "X", "")
+    prs = Presentation(buf)
+    gantt = next((s for s in prs.slides if "Terminplan" in _slide_text(s)), None)
+    assert gantt is not None
+    chart = next(sh.chart for sh in gantt.shapes if getattr(sh, "has_chart", False))
+    assert chart.chart_type == XL_CHART_TYPE.BAR_STACKED
+    assert len(chart.series) == 2                          # Vorlauf (unsichtbar) + Dauer
+
+
+def test_risiken_volltext_und_notizen():
+    svc = PraesentationService(llm=None)
+    buf = svc.generate_from_docx(_beispiel_pia_bytes(), None, "X", "")
+    prs = Presentation(buf)
+    # Volle Risikobeschreibung in einer Tabelle - keine '…'-Kürzung.
+    zelltexte = []
+    for slide in prs.slides:
+        for sh in slide.shapes:
+            if getattr(sh, "has_table", False):
+                zelltexte += [c.text for r in sh.table.rows for c in r.cells]
+    assert any(LANGES_RISIKO == t for t in zelltexte)
+    # Jede Folie traegt Sprechnotizen fuer den Projektleiter.
+    for slide in prs.slides:
+        assert slide.has_notes_slide
+        assert slide.notes_slide.notes_text_frame.text.strip()
+
+
+def test_parser_risiken_mit_verschobenen_spalten():
+    """Datenzeilen kuerzer als der Kopf (leere SDT-Zellen) -> Felder inhaltlich finden."""
+    from app.domains.praesentation.parser import _parse_risiken
+    rows = [
+        ["Nr.", "Risikobeschreibung", "Eintrittswahrscheinlichkeit", "Auswirkungsgrad",
+         "Risikozahl", "Massnahmen", "Verantwortung", "Termin"],
+        ["01", "Externe Fachexpertise ist nicht rechtzeitig verfuegbar und gefaehrdet die Studie.",
+         "9", "Fruehzeitig Marktsondierung einleiten und Anbieter anfragen.",
+         "Projektleiter", "laufend"],
+    ]
+    out = _parse_risiken(rows)
+    assert len(out) == 1
+    assert (out[0]["ew"], out[0]["ag"]) == (3, 3)          # Risikozahl 9 -> hoch/hoch
+    assert out[0]["beschreibung"].startswith("Externe Fachexpertise")
 
 
 # ---- App-Fixture für Service/Routen ------------------------------------- #
