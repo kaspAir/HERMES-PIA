@@ -190,6 +190,10 @@ def test_gantt_folie_mit_balken_und_meilenstein_rauten():
     formen = [_prst_geom(sh) for sh in gantt.shapes]
     assert formen.count("diamond") == 1        # 1 Meilenstein -> 1 Raute (Dauer 0)
     assert formen.count("roundRect") == 2      # 2 Ergebnisse -> 2 Balken
+    # Echte Daten an Balken/Rauten (statt Kalendertage ab Start)
+    text = _slide_text(gantt)
+    assert "26.10.26" in text and "14.12.26" in text
+    assert "Kalendertage" not in text
 
 
 def test_risiken_volltext_notizen_und_keine_auslassungspunkte():
@@ -276,6 +280,33 @@ def test_vorlage_projekt_schlaegt_org(app):
     assert svc.resolve_vorlage(projekt).filename == "org.pptx"
     svc.add_vorlage("projekt.pptx", b"PKprj", org_id=org_id, projekt_id=pid)
     assert svc.resolve_vorlage(projekt).filename == "projekt.pptx"
+
+
+def test_pmo_seite_und_orgweite_vorlage(app):
+    """PMO-Bereich: organisationsweite Vorlage hochladen; Projekt-Upload bleibt
+    projektspezifisch und übersteuert die PMO-Vorlage."""
+    c, org_id, pid, eid = _client_mit_projekt(app)
+
+    r = c.get("/pmo")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "PMO" in html and "Noch keine Vorlage" in html
+
+    # PMO-Vorlage hochladen -> gilt organisationsweit
+    r = c.post("/pmo/vorlage",
+               json={"filename": "pmo.pptx", "data": _b64(_leere_pptx_bytes())})
+    assert r.status_code == 200
+    svc = app.projekt_service
+    assert svc.org_vorlage(org_id).filename == "pmo.pptx"
+    assert svc.resolve_vorlage(svc.get_projekt(pid)).filename == "pmo.pptx"
+    assert "pmo.pptx" in c.get("/pmo").get_data(as_text=True)
+
+    # Projekt-Upload ist IMMER projektspezifisch (auch mit scope-Altparameter)
+    c.post(f"/projekt/{pid}/vorlage",
+           json={"filename": "override.pptx", "data": _b64(_leere_pptx_bytes()),
+                 "scope": "org"})
+    assert svc.resolve_vorlage(svc.get_projekt(pid)).filename == "override.pptx"
+    assert svc.org_vorlage(org_id).filename == "pmo.pptx"   # PMO-Vorlage unangetastet
 
 
 # ---- Routen ----------------------------------------------------------------- #

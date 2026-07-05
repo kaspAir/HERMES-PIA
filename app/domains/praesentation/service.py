@@ -489,6 +489,7 @@ class _Builder:
                 raute.fill.solid()
                 raute.fill.fore_color.rgb = _RAUTENDUNKEL
                 raute.line.fill.background()
+                ende_x = x_von(datum) + 0.006
             else:
                 x1, x2 = x_von(vorher), x_von(datum)
                 if x2 - x1 < 0.008:
@@ -500,6 +501,17 @@ class _Builder:
                 balken.fill.solid()
                 balken.fill.fore_color.rgb = _BALKENBLAU
                 balken.line.fill.background()
+                ende_x = x2 + 0.004
+            # Das ECHTE Datum am Balkenende bzw. neben der Raute – die X-Achse
+            # zeigt damit konkrete Termine, nicht Kalendertage ab Start.
+            datum_lbl = slide.shapes.add_textbox(
+                self._x(min(ende_x, 0.885)), self._y(y + zeile_h * 0.08),
+                self._x(0.075), self._y(zeile_h * 0.8))
+            dp = datum_lbl.text_frame.paragraphs[0]
+            dp.text = datum.strftime("%d.%m.%y")
+            dp.font.size = Pt(8)
+            dp.font.bold = meilenstein
+            dp.font.color.rgb = _SCHWARZ
             vorher = datum
 
         self._notizen(slide, (

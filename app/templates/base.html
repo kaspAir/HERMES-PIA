@@ -17,6 +17,7 @@
         <a href="{{ url_for('ui.admin_orgs') }}" class="user-link">Organisationen</a>
       {% else %}
         <a href="{{ url_for('ui.index') }}" class="user-link">Projekte</a>
+        <a href="{{ url_for('ui.pmo') }}" class="user-link">PMO</a>
         {% if current_user.is_org_admin %}
         <a href="{{ url_for('ui.admin_users') }}" class="user-link">Benutzer</a>
         {% endif %}
