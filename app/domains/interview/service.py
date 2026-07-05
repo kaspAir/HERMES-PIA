@@ -24,7 +24,9 @@ from app.domains.interview.extraction import (
     extract_fields,
     generate_followups,
     generate_suggestion,
+    item_label,
     nachweis_begruendungen,
+    suggest_missing_items,
 )
 from app.domains.interview.gap_check import build_followups, find_missing_risks
 from app.domains.interview.models import InterviewSession
@@ -34,6 +36,15 @@ _INTERVIEWABLE = {"free_text", "table"}
 # Abschnitte, deren Inhalt durch HERMES verbindlich vorgegeben ist: hier ist der
 # Referenzkatalog massgebend, nicht die freie LLM-Erfindung.
 CATALOG_FIRST_SECTIONS = {"termine"}
+
+# Abschnitte mit "Haben Sie auch an ... gedacht?"-Ergänzungsangebot, wenn der PL
+# selbst Inhalte geliefert hat. Bewusst NICHT dabei: termine (Katalog + Entscheide),
+# risiken (eigener Katalog-Gap-Check), kosten (deterministisch aus Kap. 3.1),
+# projektorganisation (deterministisch aus Kap. 3.1 + Dauer).
+_ERGAENZUNG_SECTIONS = {
+    "referenzierte_dokumente", "mitgeltende_unterlagen", "definitionen", "ziele",
+    "rahmenbedingungen", "personalaufwand", "sachmittel", "kommunikation",
+}
 _AVAILABLE_PROJECT_TYPES = [
     {
         "id": "fachanwendung_einfuehrung",
@@ -310,6 +321,8 @@ class InterviewService:
                         section = self._section_by_id(session.method_id, sid)
                         if section and followup.get("type") == "offer":
                             self._fill_from_suggestion(session, section, section_answer, answers)
+                        elif section and followup.get("type") == "ergaenzung":
+                            self._apply_ergaenzung(section, section_answer, followup, answers)
                         elif section:
                             self._apply_followup(section, section_answer, followup, raw_text)
                     self._persist_answers(session, answers)
@@ -740,7 +753,8 @@ class InterviewService:
     def _herkunft(raw, accepted):
         has_pl = bool(raw)
         has_combined = (not has_pl) or any(
-            f.get("type") in ("offer", "decision", "ai", "catalog") for f in accepted
+            f.get("type") in ("offer", "decision", "ai", "catalog", "ergaenzung")
+            for f in accepted
         )
         if has_pl and not has_combined:
             return "Projektleiter (Interview)"
@@ -803,6 +817,23 @@ class InterviewService:
             if s.get("id") == sid:
                 return s
         return None
+
+    def _apply_ergaenzung(self, section, section_answer, followup, answers):
+        """Übernimmt die angebotenen 'Haben Sie auch an ...'-Zeilen in den Abschnitt
+        (inkl. Nachbearbeitung, z.B. Fundstellen-Blanking bei Referenzierte/Mitgeltende)."""
+        if section.get("type") != "table":
+            return
+        rows = section_answer.get("extracted")
+        if not isinstance(rows, list):
+            rows = []
+            section_answer["extracted"] = rows
+        col_ids = {c["id"] for c in section.get("columns", []) if c.get("id") != "nr"}
+        for r in followup.get("rows") or []:
+            if isinstance(r, dict):
+                row = {k: v for k, v in r.items() if k in col_ids and str(v).strip()}
+                if row:
+                    rows.append(row)
+        self._postprocess_section(section, section_answer, answers)
 
     def _apply_followup(self, section, section_answer, followup, raw_text):
         """Uebernimmt einen akzeptierten Vorschlag in die Abschnittsdaten."""
@@ -1148,6 +1179,26 @@ class InterviewService:
             opts = analyze_results_options(self.llm, ausgangslage)
             factor = self._complexity_factor(answers)
             followups.extend(self._decision_followups(opts, session.start_datum, factor))
+
+        # "Haben Sie auch an ... gedacht?": hat der PL selbst Inhalte geliefert,
+        # prüft HERMES PIA gegen die typischen Positionen des Abschnitts und bietet
+        # die fehlenden EINMAL gesammelt zur Ergänzung an – statt sie still wegzulassen.
+        if (self.llm and section.get("type") == "table"
+                and section["id"] in _ERGAENZUNG_SECTIONS
+                and not self._is_empty(extracted)):
+            context = self._suggestion_context(session, answers)
+            missing = suggest_missing_items(self.llm, section, context, extracted,
+                                            self._vocabularies(session.method_id))
+            if missing:
+                namen = ", ".join(f"«{item_label(r)}»" for r in missing if item_label(r))
+                followups.append({
+                    "risk_id": f"ergaenzung_{section['id']}",
+                    "frage": f"Haben Sie auch an {namen} gedacht? "
+                             f"Soll ich diese Position(en) ergänzen?",
+                    "type": "ergaenzung",
+                    "status": "pending",
+                    "rows": missing,
+                })
 
         # Ausgangslage: Komplexität aus verschiedenen Blickwinkeln einschätzen lassen,
         # damit daraus (verlängerte) Dauern für die Ergebnisse abgeleitet werden.

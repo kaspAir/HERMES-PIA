@@ -185,3 +185,79 @@ def test_fill_from_suggestion_appends_not_replaces():
     # Bestehender Eintrag bleibt erhalten, Katalog-Vorschläge kommen dazu
     assert rows[0]["empfaenger"] == "Gemeinderat"
     assert len(rows) > 1
+
+
+# --- "Haben Sie auch an ... gedacht?" (Ergänzungs-Followup) ---------------- #
+
+class _MissingLLM:
+    """Liefert fehlende typische Positionen für einen teilgefüllten Abschnitt."""
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, system, messages, max_tokens=1536):
+        self.calls += 1
+        return ('{"fehlend": ['
+                '{"bezeichnung": "Projektmanagement-Werkzeug", "beschreibung": "Lizenz", '
+                '"quantitaet": "pauschal", "unbekannt": "weg"},'
+                '{"bezeichnung": "Raummiete für Workshops", "beschreibung": "Sitzungen"}'
+                ']}')
+
+
+def test_suggest_missing_items_validiert_spalten_und_deckelt():
+    from app.domains.interview.extraction import suggest_missing_items
+    svc = _interview()
+    section = svc._section_by_id("hermes_pia", "sachmittel")
+    rows = suggest_missing_items(_MissingLLM(), section, "Kontext",
+                                 [{"bezeichnung": "Cloud-Testumgebung"}])
+    assert len(rows) == 2
+    assert rows[0]["bezeichnung"] == "Projektmanagement-Werkzeug"
+    assert "unbekannt" not in rows[0]              # fremde Spalten werden verworfen
+    # Ohne bestehende Einträge (leerer Abschnitt) kein Ergänzungs-Check:
+    assert suggest_missing_items(_MissingLLM(), section, "Kontext", []) == []
+
+
+def test_item_label_bevorzugt_benennungs_spalten():
+    from app.domains.interview.extraction import item_label
+    assert item_label({"beschreibung": "lang", "bezeichnung": "Beamer"}) == "Beamer"
+    assert item_label({"rolle": "Entwickler"}) == "Entwickler"
+    assert item_label({}) == ""
+
+
+def test_build_followups_bietet_ergaenzung_bei_eigenem_inhalt():
+    llm = _MissingLLM()
+    svc = _interview(llm)
+    section = svc._section_by_id("hermes_pia", "sachmittel")
+    extracted = [{"bezeichnung": "Cloud-Testumgebung", "beschreibung": "Test", "quantitaet": "1"}]
+    fus = svc._build_followups(section, extracted, "diktat", _Sess(), {})
+    erg = [f for f in fus if f.get("type") == "ergaenzung"]
+    assert len(erg) == 1
+    assert "Projektmanagement-Werkzeug" in erg[0]["frage"]
+    assert "gedacht" in erg[0]["frage"]
+    assert len(erg[0]["rows"]) == 2
+
+    # Leerer Abschnitt -> KEIN Ergänzungs-Followup (dort greift das Vorschlags-Angebot)
+    assert not [f for f in svc._build_followups(section, [], "", _Sess(), {})
+                if f.get("type") == "ergaenzung"]
+
+    # Nicht vorgesehene Abschnitte (z.B. Kosten, deterministisch aus 3.1) bleiben aussen vor
+    kosten = svc._section_by_id("hermes_pia", "kosten")
+    fus_kosten = svc._build_followups(kosten, [{"phase": "Sachmittel", "betrag": "100"}],
+                                      "x", _Sess(), {})
+    assert not [f for f in fus_kosten if f.get("type") == "ergaenzung"]
+
+
+def test_apply_ergaenzung_haengt_zeilen_an_und_postprocessed():
+    svc = _interview()
+    # Referenzierte Dokumente: angebotene Zeilen mit (erfundener) Nummer ->
+    # anhängen UND die Fundstellen-Spalte wird geleert (No-Hallucination-Regel).
+    section = svc._section_by_id("hermes_pia", "referenzierte_dokumente")
+    section_answer = {"extracted": [{"name": "IT-Strategie", "link": ""}]}
+    followup = {"type": "ergaenzung", "status": "accepted",
+                "rows": [{"name": "Datenschutzgesetz (DSG)", "link": "SR 235.1"},
+                         {"fremdspalte": "weg"}]}
+    svc._apply_ergaenzung(section, section_answer, followup, {})
+    rows = section_answer["extracted"]
+    assert len(rows) == 2                          # ungültige Zeile verworfen
+    assert rows[1]["name"] == "Datenschutzgesetz (DSG)"
+    assert rows[1]["link"] == ""                   # Fundstelle geleert
+    assert rows[0]["name"] == "IT-Strategie"       # Bestehendes bleibt
