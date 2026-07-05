@@ -67,8 +67,17 @@ pipeline {
                             source ${VENV}/bin/activate
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn.pid
-                            [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
-                            for i in \$(seq 1 20); do [ -f "\$PID_FILE" ] && kill -0 \$(cat "\$PID_FILE") 2>/dev/null || break; sleep 1; done
+                            # Nur killen, wenn die PID wirklich noch ein Gunicorn ist:
+                            # eine wiederverwendete PID wuerde sonst einen fremden Prozess
+                            # treffen - schlimmstenfalls die eigene SSH-Deploy-Sitzung.
+                            if [ -f "\$PID_FILE" ]; then
+                                OLD_PID=\$(cat "\$PID_FILE")
+                                if grep -qa gunicorn "/proc/\$OLD_PID/cmdline" 2>/dev/null; then
+                                    kill "\$OLD_PID" 2>/dev/null || true
+                                    for i in \$(seq 1 20); do kill -0 "\$OLD_PID" 2>/dev/null || break; sleep 1; done
+                                fi
+                                rm -f "\$PID_FILE"
+                            fi
                             fuser -k 8000/tcp 2>/dev/null || true
                             sleep 2
                             set -a; source .env; set +a
@@ -102,8 +111,14 @@ pipeline {
                             source ${VENV}/bin/activate
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn-int.pid
-                            [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
-                            for i in \$(seq 1 20); do [ -f "\$PID_FILE" ] && kill -0 \$(cat "\$PID_FILE") 2>/dev/null || break; sleep 1; done
+                            if [ -f "\$PID_FILE" ]; then
+                                OLD_PID=\$(cat "\$PID_FILE")
+                                if grep -qa gunicorn "/proc/\$OLD_PID/cmdline" 2>/dev/null; then
+                                    kill "\$OLD_PID" 2>/dev/null || true
+                                    for i in \$(seq 1 20); do kill -0 "\$OLD_PID" 2>/dev/null || break; sleep 1; done
+                                fi
+                                rm -f "\$PID_FILE"
+                            fi
                             fuser -k 8002/tcp 2>/dev/null || true
                             sleep 2
                             set -a
@@ -142,8 +157,14 @@ pipeline {
                             source ${VENV}/bin/activate
                             pip install -r requirements.txt -q
                             PID_FILE=\$HOME/tmp/gunicorn-test.pid
-                            [ -f "\$PID_FILE" ] && kill \$(cat "\$PID_FILE") 2>/dev/null || true
-                            for i in \$(seq 1 20); do [ -f "\$PID_FILE" ] && kill -0 \$(cat "\$PID_FILE") 2>/dev/null || break; sleep 1; done
+                            if [ -f "\$PID_FILE" ]; then
+                                OLD_PID=\$(cat "\$PID_FILE")
+                                if grep -qa gunicorn "/proc/\$OLD_PID/cmdline" 2>/dev/null; then
+                                    kill "\$OLD_PID" 2>/dev/null || true
+                                    for i in \$(seq 1 20); do kill -0 "\$OLD_PID" 2>/dev/null || break; sleep 1; done
+                                fi
+                                rm -f "\$PID_FILE"
+                            fi
                             fuser -k 8001/tcp 2>/dev/null || true
                             sleep 2
                             set -a
