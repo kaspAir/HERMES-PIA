@@ -279,6 +279,109 @@ def test_risiken_gapcheck_nur_bei_eingegebenen_risiken():
     assert any(f.get("type") == "catalog" for f in fus)
 
 
+# --- Garantie: Komplexitäts-Abfrage wird nachgeholt (Selbstheilung) -------- #
+
+import pytest
+
+
+@pytest.fixture
+def app(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    db_path = str(tmp_path / "cx.db").replace("\\", "/")
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + db_path
+        SECRET_KEY = "x"
+
+    SessionLocal.remove()
+    application = create_app(_Cfg)
+    SessionLocal.remove()
+    yield application
+    SessionLocal.remove()
+
+
+class _CountingAssessLLM:
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, system, messages, max_tokens=1536):
+        self.calls += 1
+        return '[{"dimension":"Technologie","stufe":"hoch","einschaetzung":"T."}]'
+
+
+def _session_mit_ausgangslage_ohne_followups(app, followups=None, komplexitaet=None):
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    entry = {"raw_text": "diktat", "extracted": {"text": "Die Ausgangslage."},
+             "complete": True, "followups": followups or []}
+    if komplexitaet:
+        entry["komplexitaet"] = komplexitaet
+    svc._persist_answers(session, {"ausgangslage": entry})
+    return svc, svc.get_session(session.id)
+
+
+def test_current_state_holt_fehlende_komplexitaet_nach(app):
+    """Ausgangslage beantwortet, aber keine Komplexitäts-Followups (LLM-Fehler beim
+    Submit oder Bearbeiten-Pfad): current_state MUSS sie nacherzeugen."""
+    svc, session = _session_mit_ausgangslage_ohne_followups(app)
+    llm = _CountingAssessLLM()
+    svc.llm = llm
+
+    state = svc.current_state(session)
+    assert state["phase"] == "followup"
+    assert state["followup"]["type"] == "complexity"
+    # Alle 5 Dimensionen garantiert und persistiert
+    fus = svc._answers(session)["ausgangslage"]["followups"]
+    assert sum(1 for f in fus if f.get("type") == "complexity") == 5
+
+    # Zweiter Aufruf: nichts Neues, kein weiterer LLM-Call
+    svc.current_state(session)
+    assert llm.calls == 1
+    assert sum(1 for f in svc._answers(session)["ausgangslage"]["followups"]
+               if f.get("type") == "complexity") == 5
+
+
+def test_keine_nachholung_wenn_komplexitaet_vorhanden(app):
+    svc, session = _session_mit_ausgangslage_ohne_followups(
+        app, komplexitaet={"Technologie": {"stufe": "hoch", "einschaetzung": "X."}})
+    llm = _CountingAssessLLM()
+    svc.llm = llm
+    state = svc.current_state(session)
+    assert llm.calls == 0                      # bereits verarbeitet -> kein Re-Ask
+    assert state["phase"] == "question"        # weiter zum nächsten Abschnitt
+
+
+def test_keine_nachholung_wenn_followups_schon_gestellt(app):
+    """Auch dismissed/accepted Complexity-Followups verhindern eine erneute Abfrage."""
+    svc, session = _session_mit_ausgangslage_ohne_followups(
+        app, followups=[{"risk_id": "complexity_0", "type": "complexity",
+                         "status": "dismissed", "frage": "?"}])
+    llm = _CountingAssessLLM()
+    svc.llm = llm
+    svc.current_state(session)
+    assert llm.calls == 0
+
+
+def test_update_free_text_fuehrt_zu_nachgeholter_komplexitaet(app):
+    """Der Bearbeiten-Pfad (Ausgangslage nachbesprechen) muss in die
+    Komplexitäts-Abfrage münden, nicht direkt zum nächsten Abschnitt."""
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    sid = session.id
+    svc._persist_answers(session, {"ausgangslage": {
+        "raw_text": "alt", "extracted": {"text": "Alt."}, "complete": True,
+        "followups": []}})
+    svc.llm = None                             # Bearbeiten ohne LLM-Reformulierung
+    svc.update_free_text(sid, "ausgangslage", "Neuer nachgesprochener Text.")
+    svc.llm = _CountingAssessLLM()             # beim nächsten Seitenaufbau verfügbar
+    state = svc.current_state(svc.get_session(sid))
+    assert state["phase"] == "followup"
+    assert state["followup"]["type"] == "complexity"
+
+
 # --- assess_complexity Parsing -------------------------------------------- #
 
 def test_assess_complexity_parst_array():
