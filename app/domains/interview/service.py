@@ -170,6 +170,9 @@ class InterviewService:
     def current_state(self, session):
         """Gibt den aktuellen Interviewzustand zurueck (fuer UI und API)."""
         answers = self._answers(session)
+        # GARANTIE: die Komplexitäts-Abfrage zur Ausgangslage darf nie ausfallen –
+        # weder nach einem LLM-Fehler beim Submit noch nach dem Bearbeiten-Pfad.
+        self._ensure_complexity_followups(session, answers)
         sections = self._interviewable_sections(session.method_id)
         progress = self._progress(answers, sections)
 
@@ -891,6 +894,40 @@ class InterviewService:
 
     def _pending_followups(self, section_answer):
         return [f for f in section_answer.get("followups", []) if f.get("status") == "pending"]
+
+    def _ensure_complexity_followups(self, session, answers):
+        """Selbstheilung: erzeugt die Komplexitäts-Followups zur Ausgangslage nach,
+        falls sie fehlen (LLM-Fehler beim Submit oder Bearbeiten-Pfad, der keine
+        Followups baut). Läuft höchstens einmal erfolgreich – danach existieren
+        die Followups bzw. die Komplexitätsdaten und die Bedingung greift nie mehr."""
+        entry = answers.get("ausgangslage")
+        if not entry or not self.llm:
+            return False
+        if self._is_empty(entry.get("extracted")):
+            return False
+        if entry.get("komplexitaet"):
+            return False                       # bereits beantwortet/verarbeitet
+        if any(f.get("type") == "complexity" for f in entry.get("followups", [])):
+            return False                       # bereits gestellt (egal welcher Status)
+        text = self._section_text_from_answers(answers, "ausgangslage")
+        assessed = assess_complexity(self.llm, text)
+        if not assessed:
+            return False                       # LLM erneut gescheitert -> nächster Aufruf probiert wieder
+        followups = entry.setdefault("followups", [])
+        for i, a in enumerate(assessed):
+            followups.append({
+                "risk_id": f"complexity_{i}",
+                "frage": f"Komplexität «{a['dimension']}» – meine Einschätzung: "
+                         f"{a['stufe']}. {a['einschaetzung']} "
+                         f"Bestätigen, ergänzen (sprechen) oder widerlegen?",
+                "type": "complexity",
+                "status": "pending",
+                "dimension": a["dimension"],
+                "stufe": a["stufe"],
+                "einschaetzung": a["einschaetzung"],
+            })
+        self._persist_answers(session, answers)
+        return True
 
     def _extract(self, section, raw_text, vocabularies=None):
         if not raw_text or not raw_text.strip():
