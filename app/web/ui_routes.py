@@ -282,9 +282,18 @@ def projekt_detail(projekt_id):
             if dok:
                 freigabe_docs[erg.id] = dok
     vorlage = svc.resolve_vorlage(projekt)
+    # Download-Dateinamen (yyyymmdd_Projektname.*) stehen in der URL, weil der
+    # Hosting-Proxy den Content-Disposition-Header verschluckt.
+    stamp = f"{date.today():%Y%m%d}_{_safe_filename(projekt.name or 'Projekt')}"
+    downloads = {
+        "praesentation": f"{stamp}.pptx",
+        "plan_msproject": f"{stamp}_Projektplan.xml",
+        "plan_excel": f"{stamp}_Projektplan.xlsx",
+    }
     return render_template("projekt_detail.html", projekt=projekt,
                            structure=structure, sessions=sessions,
-                           freigabe_docs=freigabe_docs, vorlage=vorlage)
+                           freigabe_docs=freigabe_docs, vorlage=vorlage,
+                           downloads=downloads)
 
 
 # ---- Dokumente & Präsentation am Ergebnis ------------------------------ #
@@ -340,9 +349,12 @@ def ergebnis_dokument_upload(projekt_id, ergebnis_id):
     return jsonify({"ok": True, "dokument_id": dok.id})
 
 
-@bp.get("/projekt/<int:projekt_id>/dokument/<int:dokument_id>")
+@bp.get("/projekt/<int:projekt_id>/dokument/<int:dokument_id>/<path:filename>")
 @permission_required("read")
-def ergebnis_dokument_download(projekt_id, dokument_id):
+def ergebnis_dokument_download(projekt_id, dokument_id, filename):
+    # Der Dateiname steht IN DER URL: der Hosting-Proxy verschluckt den
+    # Content-Disposition-Header, der Browser benennt die Datei sonst nach
+    # dem letzten URL-Segment (gleiches Muster wie beim PIA-Word-Download).
     _load_projekt(projekt_id)
     dok = current_app.projekt_service.get_dokument(dokument_id)
     if not dok:
@@ -409,11 +421,12 @@ def pmo_vorlage_upload():
     return jsonify({"ok": True})
 
 
-@bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/praesentation")
+@bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/praesentation/<path:filename>")
 @permission_required("read")
-def ergebnis_praesentation(projekt_id, ergebnis_id):
+def ergebnis_praesentation(projekt_id, ergebnis_id, filename):
     """Generiert die Präsentation für Auftraggeber/Projektausschuss aus dem
-    zuletzt hochgeladenen freigabebereiten PIA (auf Basis der Vorlage)."""
+    zuletzt hochgeladenen freigabebereiten PIA (auf Basis der Vorlage).
+    Dateiname in der URL (Proxy verschluckt Content-Disposition)."""
     projekt = _load_ergebnis(projekt_id, ergebnis_id)
     svc = current_app.projekt_service
     dok = svc.latest_dokument(ergebnis_id, art="freigabe")
@@ -427,19 +440,19 @@ def ergebnis_praesentation(projekt_id, ergebnis_id):
         fallback_name=projekt.name,
         datum=date.today().strftime("%d.%m.%Y"),
     )
-    safe_name = _safe_filename(projekt.name or "Projekt")
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         as_attachment=True,
-        download_name=f"{date.today():%Y%m%d}_{safe_name}.pptx",
+        download_name=filename,
     )
 
 
-@bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/projektplan/<fmt>")
+@bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/projektplan/<fmt>/<path:filename>")
 @permission_required("read")
-def ergebnis_projektplan(projekt_id, ergebnis_id, fmt):
-    """Projektplan aus dem hochgeladenen PIA – als MS-Project-XML oder Excel."""
+def ergebnis_projektplan(projekt_id, ergebnis_id, fmt, filename):
+    """Projektplan aus dem hochgeladenen PIA – als MS-Project-XML oder Excel.
+    Dateiname in der URL (Proxy verschluckt Content-Disposition)."""
     if fmt not in ("msproject", "excel"):
         abort(404)
     projekt = _load_ergebnis(projekt_id, ergebnis_id)
@@ -454,22 +467,14 @@ def ergebnis_projektplan(projekt_id, ergebnis_id, fmt):
         return ("Der hochgeladene PIA enthält keine datierten Termine – "
                 "bitte Kapitel «Ergebnisse und Termine» prüfen."), 400
     name = projekt.name or "Projekt"
-    safe_name = _safe_filename(name)
     if fmt == "excel":
         data = projektplan.build_excel(eintraege, name)
-        return send_file(
-            io.BytesIO(data),
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            as_attachment=True,
-            download_name=f"{date.today():%Y%m%d}_{safe_name}_Projektplan.xlsx",
-        )
-    data = projektplan.build_msproject_xml(eintraege, name)
-    return send_file(
-        io.BytesIO(data),
-        mimetype="application/xml",
-        as_attachment=True,
-        download_name=f"{date.today():%Y%m%d}_{safe_name}_Projektplan.xml",
-    )
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        data = projektplan.build_msproject_xml(eintraege, name)
+        mimetype = "application/xml"
+    return send_file(io.BytesIO(data), mimetype=mimetype, as_attachment=True,
+                     download_name=filename)
 
 
 @bp.post("/projekt/<int:projekt_id>/delete")
