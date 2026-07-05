@@ -263,15 +263,29 @@ def _parse_risiken(rows):
     for nr, cells in enumerate(rows[1:], 1):
         def _get(i):
             return cells[i].strip() if i is not None and i < len(cells) else ""
-        beschreibung = _get(i_beschr)
+
+        if len(cells) == len(header):
+            beschreibung = _get(i_beschr)
+            ew = _STUFEN.get(_norm(_get(i_ew)))
+            ag = _STUFEN.get(_norm(_get(i_ag)))
+            zahl = _num(_get(i_zahl))
+            massnahmen = _get(i_massn)
+        else:
+            # Datenzeile kürzer als der Kopf (leere SDT-Dropdown-Zellen verschieben
+            # die Spalten) -> Felder inhaltlich statt über Indizes bestimmen.
+            beschreibung = max(cells[1:] if len(cells) > 1 else cells, key=len, default="").strip()
+            stufen = [_STUFEN[_norm(c)] for c in cells if _norm(c) in _STUFEN]
+            ew = stufen[0] if len(stufen) > 0 else None
+            ag = stufen[1] if len(stufen) > 1 else None
+            # Risikozahl = einstellige Zahl (1-9); cells[0] ist die Nr.-Spalte ("01").
+            zahl = next((int(c) for c in (c.strip() for c in cells[1:])
+                         if c.isdigit() and len(c) == 1), None)
+            laenger = sorted((c for c in cells if c.strip()), key=len)
+            massnahmen = laenger[-2].strip() if len(laenger) >= 2 else ""
         if not beschreibung:
             continue
-        ew = _STUFEN.get(_norm(_get(i_ew)))
-        ag = _STUFEN.get(_norm(_get(i_ag)))
-        if (ew is None or ag is None):
-            zahl = _num(_get(i_zahl))
-            if zahl in _RISIKOZAHL_POS:
-                ew, ag = _RISIKOZAHL_POS[zahl]
+        if (ew is None or ag is None) and zahl in _RISIKOZAHL_POS:
+            ew, ag = _RISIKOZAHL_POS[zahl]
         out.append({"nr": nr, "beschreibung": beschreibung,
-                    "ew": ew, "ag": ag, "massnahmen": _get(i_massn)})
+                    "ew": ew, "ag": ag, "massnahmen": massnahmen})
     return out
