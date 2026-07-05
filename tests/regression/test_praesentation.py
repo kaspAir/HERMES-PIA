@@ -245,17 +245,15 @@ def test_projektplan_msproject_und_excel():
 def test_projektplan_routen(app):
     c, org_id, pid, eid = _client_mit_projekt(app)
     # Ohne hochgeladenen PIA: klarer Hinweis
-    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/excel").status_code == 400
+    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/excel/x.xlsx").status_code == 400
     c.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
            json={"filename": "PIA.docx", "data": _b64(_beispiel_pia_bytes())})
-    import re as _re
-    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/excel")
+    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/excel/20260706_P_Demo_Projektplan.xlsx")
     assert r.status_code == 200 and r.data.startswith(b"PK")
-    assert _re.search(r"\d{8}_P_Demo_Projektplan\.xlsx",
-                      r.headers.get("Content-Disposition", ""))
-    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/msproject")
+    assert "20260706_P_Demo_Projektplan.xlsx" in r.headers.get("Content-Disposition", "")
+    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/msproject/20260706_P_Demo_Projektplan.xml")
     assert r.status_code == 200 and b"schemas.microsoft.com/project" in r.data
-    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/quatsch").status_code == 404
+    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/quatsch/x.xml").status_code == 404
 
 
 def test_risiken_volltext_notizen_und_keine_auslassungspunkte():
@@ -388,8 +386,8 @@ def test_upload_download_und_status(app):
     # Status des Ergebnisses wechselt auf "zur Freigabe"
     erg = app.projekt_service.ergebnisse(pid)[0]
     assert erg.status == "zur Freigabe"
-    # Download liefert die Originaldatei
-    r = c.get(f"/projekt/{pid}/dokument/{dok.id}")
+    # Download liefert die Originaldatei (Dateiname in der URL, wegen Proxy)
+    r = c.get(f"/projekt/{pid}/dokument/{dok.id}/{dok.filename}")
     assert r.status_code == 200 and r.data == pia
 
 
@@ -404,21 +402,26 @@ def test_upload_validierung(app):
 def test_praesentation_route(app):
     c, org_id, pid, eid = _client_mit_projekt(app)
     # Ohne hochgeladenen PIA: klarer Hinweis statt Absturz
-    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/praesentation").status_code == 400
+    assert c.get(f"/projekt/{pid}/ergebnis/{eid}/praesentation/x.pptx").status_code == 400
     c.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
            json={"filename": "PIA.docx", "data": _b64(_beispiel_pia_bytes())})
     # Mit Projekt-Vorlage
     c.post(f"/projekt/{pid}/vorlage",
            json={"filename": "v.pptx", "data": _b64(_leere_pptx_bytes()), "scope": "projekt"})
-    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/praesentation")
+    # Dateiname steht IN DER URL (Proxy verschluckt Content-Disposition) und
+    # wird zusätzlich als download_name gesetzt.
+    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/praesentation/20260706_P_Demo.pptx")
     assert r.status_code == 200
     assert "presentationml" in r.mimetype
-    # Dateiname: yyyymmdd_Projektname.pptx
-    import re as _re
-    cd = r.headers.get("Content-Disposition", "")
-    assert _re.search(r"\d{8}_P_Demo\.pptx", cd), cd
+    assert "20260706_P_Demo.pptx" in r.headers.get("Content-Disposition", "")
     prs = Presentation(io.BytesIO(r.data))
     assert len(prs.slides) >= 8
+    # Die Projektseite verlinkt mit yyyymmdd_Projektname.pptx in der URL.
+    import re as _re
+    html = c.get(f"/projekt/{pid}").get_data(as_text=True)
+    assert _re.search(r"/praesentation/\d{8}_P_Demo\.pptx", html)
+    assert _re.search(r"/projektplan/msproject/\d{8}_P_Demo_Projektplan\.xml", html)
+    assert _re.search(r"/projektplan/excel/\d{8}_P_Demo_Projektplan\.xlsx", html)
 
 
 def test_dokumente_fremder_org_gesperrt(app):
@@ -434,7 +437,7 @@ def test_dokumente_fremder_org_gesperrt(app):
                      can_read=True, can_write=True, can_delete=False)
     cb = app.test_client()
     cb.post("/login", data={"email": "fremd@x.ch", "password": "pw"})
-    assert cb.get(f"/projekt/{pid}/dokument/{dok_id}").status_code == 403
+    assert cb.get(f"/projekt/{pid}/dokument/{dok_id}/PIA.docx").status_code == 403
     assert cb.post(f"/projekt/{pid}/ergebnis/{eid}/dokument",
                    json={"filename": "x.docx", "data": _b64(pia)}).status_code == 403
 
