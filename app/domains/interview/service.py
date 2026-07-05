@@ -170,6 +170,11 @@ class InterviewService:
     def current_state(self, session):
         """Gibt den aktuellen Interviewzustand zurueck (fuer UI und API)."""
         answers = self._answers(session)
+        # GARANTIE: die Komplexitäts-Abfrage zur Ausgangslage darf nie ausfallen –
+        # weder nach einem LLM-Fehler beim Submit noch nach dem Bearbeiten-Pfad.
+        self._ensure_complexity_followups(session, answers)
+        # Ebenso den Projekttyp nachholen, falls die Erkennung beim Submit scheiterte.
+        self._ensure_project_type(session, answers)
         sections = self._interviewable_sections(session.method_id)
         progress = self._progress(answers, sections)
 
@@ -254,15 +259,13 @@ class InterviewService:
             self._postprocess_section(section, entry, answers)
             entry["complete"] = self._is_complete(section, entry["extracted"])
 
-        # Nach der Ausgangslage: Projekttyp aus dem Text ableiten
+        # Nach der Ausgangslage: Projekttyp ableiten – aus dem bereinigten Text
+        # (nicht dem rohen Diktat), das klassifiziert zuverlässiger.
         if section["id"] == "ausgangslage" and not session.project_type_id:
-            pt = self._detect_type(raw_text)
+            text = extracted.get("text") if isinstance(extracted, dict) else None
+            pt = self._detect_type(text or raw_text)
             if pt:
-                db = SessionLocal()
-                s = db.get(InterviewSession, session.id)
-                s.project_type_id = pt
-                db.commit()
-                session.project_type_id = pt
+                self._set_project_type(session, pt)
 
         # Nachfragen: KI für alle Abschnitte + Katalog-Gap-Check für Risiken
         # + Beschaffungs-/Prototyp-Entscheidung bei den Ergebnissen/Terminen.
@@ -892,6 +895,59 @@ class InterviewService:
     def _pending_followups(self, section_answer):
         return [f for f in section_answer.get("followups", []) if f.get("status") == "pending"]
 
+    def _set_project_type(self, session, project_type_id):
+        db = SessionLocal()
+        s = db.get(InterviewSession, session.id)
+        s.project_type_id = project_type_id
+        db.commit()
+        session.project_type_id = project_type_id
+
+    def _ensure_project_type(self, session, answers):
+        """Selbstheilung: holt die Projekttyp-Erkennung nach, falls sie beim Submit
+        scheiterte (dann bleibt project_type_id leer statt falsch geraten)."""
+        if session.project_type_id or not self.llm:
+            return
+        entry = answers.get("ausgangslage")
+        if not entry or self._is_empty(entry.get("extracted")):
+            return
+        pt = self._detect_type(self._section_text_from_answers(answers, "ausgangslage"))
+        if pt:
+            self._set_project_type(session, pt)
+
+    def _ensure_complexity_followups(self, session, answers):
+        """Selbstheilung: erzeugt die Komplexitäts-Followups zur Ausgangslage nach,
+        falls sie fehlen (LLM-Fehler beim Submit oder Bearbeiten-Pfad, der keine
+        Followups baut). Läuft höchstens einmal erfolgreich – danach existieren
+        die Followups bzw. die Komplexitätsdaten und die Bedingung greift nie mehr."""
+        entry = answers.get("ausgangslage")
+        if not entry or not self.llm:
+            return False
+        if self._is_empty(entry.get("extracted")):
+            return False
+        if entry.get("komplexitaet"):
+            return False                       # bereits beantwortet/verarbeitet
+        if any(f.get("type") == "complexity" for f in entry.get("followups", [])):
+            return False                       # bereits gestellt (egal welcher Status)
+        text = self._section_text_from_answers(answers, "ausgangslage")
+        assessed = assess_complexity(self.llm, text)
+        if not assessed:
+            return False                       # LLM erneut gescheitert -> nächster Aufruf probiert wieder
+        followups = entry.setdefault("followups", [])
+        for i, a in enumerate(assessed):
+            followups.append({
+                "risk_id": f"complexity_{i}",
+                "frage": f"Komplexität «{a['dimension']}» – meine Einschätzung: "
+                         f"{a['stufe']}. {a['einschaetzung']} "
+                         f"Bestätigen, ergänzen (sprechen) oder widerlegen?",
+                "type": "complexity",
+                "status": "pending",
+                "dimension": a["dimension"],
+                "stufe": a["stufe"],
+                "einschaetzung": a["einschaetzung"],
+            })
+        self._persist_answers(session, answers)
+        return True
+
     def _extract(self, section, raw_text, vocabularies=None):
         if not raw_text or not raw_text.strip():
             return {"text": ""} if section.get("type") == "free_text" else []
@@ -900,8 +956,10 @@ class InterviewService:
         return extract_fields(self.llm, section, raw_text, vocabularies or {})
 
     def _detect_type(self, text):
-        if not self.llm:
-            return _AVAILABLE_PROJECT_TYPES[0]["id"]
+        """Projekttyp aus dem Ausgangslage-Text (None, wenn nicht erkennbar –
+        NIE stilles Raten; die Erkennung wird beim nächsten Seitenaufbau nachgeholt)."""
+        if not self.llm or not (text or "").strip():
+            return None
         return detect_project_type(self.llm, _AVAILABLE_PROJECT_TYPES, text)
 
     def _is_empty(self, extracted):
@@ -961,6 +1019,12 @@ class InterviewService:
         entry["complete"] = bool(text.strip())
         answers[section_id] = entry
         self._persist_answers(session, answers)
+        # Ausgangslage nachbearbeitet: Projekttyp NEU erkennen – eine frühere
+        # (evtl. auf halbem Text beruhende) Einstufung wird korrigiert.
+        if section_id == "ausgangslage":
+            pt = self._detect_type(text)
+            if pt and pt != session.project_type_id:
+                self._set_project_type(session, pt)
         return True
 
     # ------------------------------------------------------------------ #
