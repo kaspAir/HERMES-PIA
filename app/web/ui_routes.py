@@ -436,6 +436,42 @@ def ergebnis_praesentation(projekt_id, ergebnis_id):
     )
 
 
+@bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/projektplan/<fmt>")
+@permission_required("read")
+def ergebnis_projektplan(projekt_id, ergebnis_id, fmt):
+    """Projektplan aus dem hochgeladenen PIA – als MS-Project-XML oder Excel."""
+    if fmt not in ("msproject", "excel"):
+        abort(404)
+    projekt = _load_ergebnis(projekt_id, ergebnis_id)
+    dok = current_app.projekt_service.latest_dokument(ergebnis_id, art="freigabe")
+    if not dok:
+        return ("Bitte zuerst den freigabebereiten PIA (.docx) hochladen – "
+                "der Projektplan wird aus dessen Terminen erstellt."), 400
+    from app.domains.praesentation import projektplan
+    from app.domains.praesentation.parser import parse_pia
+    eintraege = projektplan.plan_eintraege(parse_pia(dok.data).get("termine"))
+    if not eintraege:
+        return ("Der hochgeladene PIA enthält keine datierten Termine – "
+                "bitte Kapitel «Ergebnisse und Termine» prüfen."), 400
+    name = projekt.name or "Projekt"
+    safe_name = _safe_filename(name)
+    if fmt == "excel":
+        data = projektplan.build_excel(eintraege, name)
+        return send_file(
+            io.BytesIO(data),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"{date.today():%Y%m%d}_{safe_name}_Projektplan.xlsx",
+        )
+    data = projektplan.build_msproject_xml(eintraege, name)
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/xml",
+        as_attachment=True,
+        download_name=f"{date.today():%Y%m%d}_{safe_name}_Projektplan.xml",
+    )
+
+
 @bp.post("/projekt/<int:projekt_id>/delete")
 @permission_required("delete")
 def projekt_delete(projekt_id):
