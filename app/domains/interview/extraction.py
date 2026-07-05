@@ -525,7 +525,12 @@ def _extract_table(llm_client, section_title, columns, raw_text, vocabularies=No
         f"aus diesem Beitrag.\n\n"
         f"Felder je Eintrag:\n{col_desc}\n\n"
         f"Beitrag: {raw_text}\n\n"
-        f"Rueckgabe als JSON-Array. Felder ohne Information mit leerem String befuellen."
+        "WICHTIG: JEDE vom Projektleiter explizit genannte Position wird als eigene "
+        "Zeile erfasst - nichts weglassen, nichts wegdiskutieren, auch wenn sie dir "
+        "unueblich oder unnoetig erscheint (z.B. eine genannte Anleitung, ein Handbuch, "
+        "ein internes Dokument). Die HERMES-Vorgaben beschraenken nur, was DU von dir "
+        "aus ergaenzen darfst - NICHT, was der Projektleiter selbst nennt.\n\n"
+        "Rueckgabe als JSON-Array. Felder ohne Information mit leerem String befuellen."
     )
     try:
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
