@@ -60,18 +60,18 @@
               {% if dok %}
               <div class="freigabe-info">
                 <span class="badge badge-freigabe">zur Freigabe</span>
-                <a href="{{ url_for('ui.ergebnis_dokument_download', projekt_id=projekt.id, dokument_id=dok.id) }}"
+                <a href="{{ url_for('ui.ergebnis_dokument_download', projekt_id=projekt.id, dokument_id=dok.id, filename=dok.filename) }}"
                    class="btn-link" title="Hochgeladene Freigabeversion herunterladen">{{ dok.filename }}</a>
                 <span class="muted">({{ dok.created_at.strftime('%d.%m.%Y %H:%M') if dok.created_at }})</span>
               </div>
               <a class="btn-link"
-                 href="{{ url_for('ui.ergebnis_praesentation', projekt_id=projekt.id, ergebnis_id=erg.id) }}">
+                 href="{{ url_for('ui.ergebnis_praesentation', projekt_id=projekt.id, ergebnis_id=erg.id, filename=downloads.praesentation) }}">
                 &#9654; Präsentation für Auftraggeber/Projektausschuss (.pptx)</a>
               <a class="btn-link"
-                 href="{{ url_for('ui.ergebnis_projektplan', projekt_id=projekt.id, ergebnis_id=erg.id, fmt='msproject') }}">
+                 href="{{ url_for('ui.ergebnis_projektplan', projekt_id=projekt.id, ergebnis_id=erg.id, fmt='msproject', filename=downloads.plan_msproject) }}">
                 &#9654; Projektplan für Microsoft Project (.xml)</a>
               <a class="btn-link"
-                 href="{{ url_for('ui.ergebnis_projektplan', projekt_id=projekt.id, ergebnis_id=erg.id, fmt='excel') }}">
+                 href="{{ url_for('ui.ergebnis_projektplan', projekt_id=projekt.id, ergebnis_id=erg.id, fmt='excel', filename=downloads.plan_excel) }}">
                 &#9654; Projektplan als Excel (.xlsx)</a>
               {% endif %}
               {% if current_user.can_write %}
