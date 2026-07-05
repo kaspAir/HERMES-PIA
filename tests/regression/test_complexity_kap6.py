@@ -82,6 +82,31 @@ def test_widerlegen_ohne_text_ersetzt_widerspruechlichen_volltext():
     assert "nicht" in res["einschaetzung"].lower()
 
 
+def test_apply_complexity_reassess_kennt_die_richtung():
+    """Die Neubewertung muss wissen, OB widersprochen oder bestätigt wurde –
+    sonst kann ein starker Widerspruch die Stufe nie senken. Die Formulierungs-
+    Anweisung bleibt neutral (keine dritte Person über den PL)."""
+    class _PromptCapture:
+        def __init__(self):
+            self.prompts = []
+
+        def complete(self, system, messages, max_tokens=1536):
+            self.prompts.append(messages[0]["content"])
+            return '[{"dimension":"Technologie","stufe":"gering","einschaetzung":"Neu."}]'
+
+    for refuted, marker in ((True, "BESTRITTEN"), (False, "bestätigt und ergänzt")):
+        llm = _PromptCapture()
+        svc = _svc(llm)
+        answers = {"ausgangslage": {"extracted": {"text": "Basis"}}}
+        fu = {"type": "complexity", "dimension": "Technologie", "stufe": "hoch",
+              "einschaetzung": "alt"}
+        svc._apply_complexity(answers, fu, raw_text="ist doch simpel", refuted=refuted)
+        assert marker in llm.prompts[0]
+        assert "ohne den Projektleiter" in llm.prompts[0]   # Formulierung bleibt neutral
+        # Die (ggf. gesenkte) Neubewertung wird übernommen
+        assert answers["ausgangslage"]["komplexitaet"]["Technologie"]["stufe"] == "gering"
+
+
 def test_apply_complexity_gesprochenes_wird_nie_woertlich_uebernommen():
     """Auch beim Widerlegen mit Sprache: sauber neu formuliert, kein Rohtext."""
     svc = _svc(_ReassessLLM())
