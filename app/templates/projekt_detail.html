@@ -94,22 +94,21 @@
     <h3 class="vorlage-title">Präsentationsvorlage</h3>
     <p class="muted vorlage-status">
       {% if vorlage and vorlage.projekt_id %}
-        Aktiv: Projekt-Vorlage «{{ vorlage.filename }}» (hat Vorrang vor der Vorlage der Organisationseinheit).
+        Aktiv: Projekt-Vorlage «{{ vorlage.filename }}» – sie übersteuert die
+        <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO-Vorlage</a>.
       {% elif vorlage %}
-        Aktiv: Vorlage der Organisationseinheit «{{ vorlage.filename }}».
+        Aktiv: PMO-Vorlage «{{ vorlage.filename }}» (organisationsweit, siehe
+        <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO</a>).
       {% else %}
-        Keine Vorlage hochgeladen – Präsentationen verwenden ein neutrales Standardlayout.
+        Keine Vorlage vorhanden – Präsentationen verwenden ein neutrales Standardlayout.
+        Die organisationsweite Vorlage wird im <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO-Bereich</a> gepflegt.
       {% endif %}
       Auch eine leere Präsentation kann als Vorlage dienen (Folienmaster/Design werden übernommen).
     </p>
     {% if current_user.can_write %}
     <div class="vorlage-actions">
-      <label class="btn-link upload-label">Vorlage für dieses Projekt hochladen (.pptx)
-        <input type="file" accept=".pptx" class="upload-input" data-scope="projekt"
-               data-url="{{ url_for('ui.praesentations_vorlage_upload', projekt_id=projekt.id) }}">
-      </label>
-      <label class="btn-link upload-label">Vorlage für die Organisationseinheit hochladen (.pptx)
-        <input type="file" accept=".pptx" class="upload-input" data-scope="org"
+      <label class="btn-link upload-label">Eigene Vorlage für dieses Projekt hochladen (.pptx)
+        <input type="file" accept=".pptx" class="upload-input"
                data-url="{{ url_for('ui.praesentations_vorlage_upload', projekt_id=projekt.id) }}">
       </label>
     </div>

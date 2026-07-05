@@ -229,19 +229,23 @@ class ProjektService:
         db.refresh(v)
         return v
 
-    def resolve_vorlage(self, projekt):
-        """Massgebliche Vorlage: neueste Projekt-Vorlage; sonst neueste Vorlage
-        der Organisationseinheit; sonst None (dann leere Standard-Präsentation)."""
-        db = SessionLocal()
-        v = db.query(PraesentationsVorlage).filter(
-            PraesentationsVorlage.projekt_id == projekt.id
-        ).order_by(PraesentationsVorlage.created_at.desc()).first()
-        if v:
-            return v
-        return db.query(PraesentationsVorlage).filter(
-            PraesentationsVorlage.org_id == projekt.org_id,
+    def org_vorlage(self, org_id):
+        """Neueste PMO-Vorlage der Organisationseinheit (projektunabhängig)."""
+        return SessionLocal().query(PraesentationsVorlage).filter(
+            PraesentationsVorlage.org_id == org_id,
             PraesentationsVorlage.projekt_id.is_(None),
         ).order_by(PraesentationsVorlage.created_at.desc()).first()
+
+    def projekt_vorlage(self, projekt_id):
+        """Neueste projektspezifische Vorlage (übersteuert die PMO-Vorlage)."""
+        return SessionLocal().query(PraesentationsVorlage).filter(
+            PraesentationsVorlage.projekt_id == int(projekt_id)
+        ).order_by(PraesentationsVorlage.created_at.desc()).first()
+
+    def resolve_vorlage(self, projekt):
+        """Massgebliche Vorlage: Projekt-Vorlage übersteuert die PMO-Vorlage der
+        Organisationseinheit; sonst None (dann leere Standard-Präsentation)."""
+        return self.projekt_vorlage(projekt.id) or self.org_vorlage(projekt.org_id)
 
     def structure(self, projekt):
         """Verschachtelte Sicht für die UI: Phase -> Module(+Ergebnisse) + Meilensteine."""
