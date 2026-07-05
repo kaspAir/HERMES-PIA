@@ -237,6 +237,11 @@ def test_projektplan_msproject_und_excel():
     assert len(tasks) == 3
     flags = [t.findtext(f"{ns}Milestone") for t in tasks]
     assert flags.count("1") == 1
+    # Project prueft die xsd:sequence STRIKT - Element-Reihenfolge muss dem
+    # mspdi-Schema entsprechen (2010er-Felder Active/Manual/... am Ende).
+    for task in tasks:
+        kinder = tuple(el.tag.replace(ns, "") for el in task)
+        assert kinder == projektplan._TASK_ELEMENT_ORDER
 
     excel = projektplan.build_excel(eintraege, "P Demo")
     assert excel.startswith(b"PK")              # gültige xlsx-(ZIP-)Datei
