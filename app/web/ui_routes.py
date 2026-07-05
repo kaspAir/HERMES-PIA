@@ -361,18 +361,49 @@ def ergebnis_dokument_download(projekt_id, dokument_id):
 @bp.post("/projekt/<int:projekt_id>/vorlage")
 @permission_required("write")
 def praesentations_vorlage_upload(projekt_id):
-    """Lädt eine .pptx-Vorlage hoch – für dieses Projekt oder die ganze
-    Organisationseinheit (Projekt-Vorlage hat beim Generieren Vorrang)."""
+    """Lädt eine projektspezifische .pptx-Vorlage hoch – sie ÜBERSTEUERT die
+    PMO-Vorlage der Organisationseinheit. Die organisationsweite Vorlage wird
+    im PMO-Bereich gepflegt."""
     projekt = _load_projekt(projekt_id)
     filename, data = _json_upload(".pptx")
     if filename is None:
         return jsonify({"error": data}), 400
-    scope = (request.get_json(silent=True) or {}).get("scope", "projekt")
     user = current_user()
     current_app.projekt_service.add_vorlage(
         filename, data,
         org_id=projekt.org_id,
-        projekt_id=projekt.id if scope == "projekt" else None,
+        projekt_id=projekt.id,
+        uploaded_by=getattr(user, "email", None),
+    )
+    return jsonify({"ok": True})
+
+
+# ---- PMO: organisationsweite Vorgaben ---------------------------------- #
+
+@bp.get("/pmo")
+@permission_required("read")
+def pmo():
+    """PMO-Bereich: organisationsweite Präsentationsvorlage für alle Projekte.
+    Aktuell für alle Benutzer der Organisationseinheit zugänglich; eine eigene
+    PMO-Rolle kann später darauf aufsetzen."""
+    user = current_user()
+    vorlage = current_app.projekt_service.org_vorlage(user.org_id)
+    return render_template("pmo.html", vorlage=vorlage)
+
+
+@bp.post("/pmo/vorlage")
+@permission_required("write")
+def pmo_vorlage_upload():
+    """Lädt die PMO-Präsentationsvorlage der Organisationseinheit hoch
+    (gilt für alle Projekte ohne eigene Projekt-Vorlage)."""
+    filename, data = _json_upload(".pptx")
+    if filename is None:
+        return jsonify({"error": data}), 400
+    user = current_user()
+    current_app.projekt_service.add_vorlage(
+        filename, data,
+        org_id=user.org_id,
+        projekt_id=None,
         uploaded_by=getattr(user, "email", None),
     )
     return jsonify({"ok": True})

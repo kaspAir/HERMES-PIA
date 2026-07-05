@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}PMO – Vorgaben{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+  <h1>PMO – Vorgaben für alle Projekte</h1>
+  <p class="hero-desc">Hier pflegt das PMO die organisationsweiten Vorgaben.
+    Sie gelten für alle Projekte der Organisationseinheit; einzelne Projekte können
+    sie mit einer eigenen Vorlage übersteuern.</p>
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Präsentationsvorlage (organisationsweit)</h3>
+    <p class="muted vorlage-status">
+      {% if vorlage %}
+        Aktiv: «{{ vorlage.filename }}»
+        {% if vorlage.created_at %}(hochgeladen {{ vorlage.created_at.strftime('%d.%m.%Y %H:%M') }}{% if vorlage.uploaded_by %} von {{ vorlage.uploaded_by }}{% endif %}){% endif %}.
+      {% else %}
+        Noch keine Vorlage hochgeladen – Präsentationen verwenden ein neutrales Standardlayout.
+      {% endif %}
+      Auch eine leere Präsentation im Corporate Design genügt (Folienmaster/Design werden übernommen);
+      vorhandene Folien der Vorlage geben zusätzlich das Titel- und Schlussfolien-Design vor.
+    </p>
+    {% if current_user.can_write %}
+    <div class="vorlage-actions">
+      <label class="btn-link upload-label">Neue PMO-Vorlage hochladen (.pptx)
+        <input type="file" accept=".pptx" class="upload-input"
+               data-url="{{ url_for('ui.pmo_vorlage_upload') }}">
+      </label>
+    </div>
+    {% endif %}
+  </section>
+
+  <div id="upload-status" class="muted upload-status"></div>
+</div>
+
+<script>
+(function () {
+  var statusEl = document.getElementById('upload-status');
+  function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+
+  document.querySelectorAll('.upload-input').forEach(function (input) {
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      setStatus('Lade «' + file.name + '» hoch …');
+      var fr = new FileReader();
+      fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
+      fr.onload = function () {
+        var b64 = String(fr.result).split(',')[1] || '';
+        fetch(input.dataset.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, data: b64 })
+        })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; })
+                  .then(function (d) { return { ok: r.ok, d: d }; });
+        })
+        .then(function (res) {
+          if (res.ok) { location.reload(); }
+          else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); input.value = ''; }
+        })
+        .catch(function () { setStatus('Netzwerkfehler beim Upload.'); input.value = ''; });
+      };
+      fr.readAsDataURL(file);
+    });
+  });
+}());
+</script>
+{% endblock %}
