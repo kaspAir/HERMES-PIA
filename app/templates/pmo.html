@@ -30,6 +30,54 @@
     {% endif %}
   </section>
 
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Erscheinungsbild (CI/CD)</h3>
+    <p class="muted vorlage-status">Eigenes Logo und Farben Ihrer Organisationseinheit –
+      sie gelten für alle Benutzer sofort nach dem Speichern. «Zurücksetzen» stellt das
+      Standard-Erscheinungsbild wieder her.</p>
+
+    <div class="branding-zeile">
+      <span class="branding-label">Logo:</span>
+      {% if current_branding and current_branding.logo_filename %}
+        <img src="{{ url_for('ui.branding_logo', v=(current_branding.updated_at.timestamp() | int) if current_branding.updated_at else 0) }}"
+             alt="Logo" class="branding-logo-vorschau">
+        <span class="muted">{{ current_branding.logo_filename }}</span>
+      {% else %}
+        <span class="muted">Standard (BKI)</span>
+      {% endif %}
+      {% if current_user.can_write %}
+      <label class="btn-link upload-label">Logo hochladen (.png/.jpg, max. 2 MB)
+        <input type="file" accept=".png,.jpg,.jpeg" class="upload-input"
+               data-url="{{ url_for('ui.pmo_branding_logo') }}">
+      </label>
+      {% endif %}
+    </div>
+
+    {% if current_user.can_write %}
+    <form method="post" action="{{ url_for('ui.pmo_branding_farben') }}"
+          class="branding-zeile">
+      <span class="branding-label">Farben:</span>
+      <label class="chk">Kopfleiste
+        <input type="color" name="kopfleiste_farbe"
+               value="{{ current_branding.kopfleiste_farbe if current_branding and current_branding.kopfleiste_farbe else '#16213e' }}">
+      </label>
+      <label class="chk">Titel/Links
+        <input type="color" name="akzent_farbe"
+               value="{{ current_branding.akzent_farbe if current_branding and current_branding.akzent_farbe else '#0f3460' }}">
+      </label>
+      <label class="chk">Buttons
+        <input type="color" name="primaer_farbe"
+               value="{{ current_branding.primaer_farbe if current_branding and current_branding.primaer_farbe else '#e94560' }}">
+      </label>
+      <button type="submit" class="btn-link">Speichern</button>
+    </form>
+    <form method="post" action="{{ url_for('ui.pmo_branding_reset') }}" class="inline-form"
+          onsubmit="return confirm('Logo und Farben auf den Standard zurücksetzen?');">
+      <button type="submit" class="btn-link btn-danger">Zurücksetzen auf Standard</button>
+    </form>
+    {% endif %}
+  </section>
+
   <div id="upload-status" class="muted upload-status"></div>
 </div>
 
