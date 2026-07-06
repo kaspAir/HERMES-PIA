@@ -138,6 +138,12 @@ def parse_pia(docx_bytes):
             text = block.text.strip()
             if text and current:
                 sections_text.setdefault(current, []).append(text)
+            elif text and current is None and "\t" in text:
+                # Titelseite der offiziellen Vorlage: Metadaten als
+                # Tab-getrennte Absätze («Verwaltungseinheit⇥Demoamt»).
+                label, _, wert = text.partition("\t")
+                if label.strip() and wert.strip():
+                    meta[_norm(label)] = wert.strip()
         else:  # Tabelle
             rows = _table_rows(block)
             if current is None:
@@ -152,6 +158,8 @@ def parse_pia(docx_bytes):
         "projektname": _meta_value(meta, "projektname") or _title_fallback(document),
         "projektleiter": _meta_value(meta, "projektleiter"),
         "auftraggeber": _meta_value(meta, "auftraggeber"),
+        "verwaltungseinheit": _meta_value(meta, "verwaltungseinheit"),
+        "geschaeftsbereich": _meta_value(meta, "geschaeftsbereich"),
         "version": _meta_value(meta, "version"),
         "ausgangslage": "\n".join(sections_text.get("ausgangslage", [])),
         "ziele": _parse_ziele(sections_table.get("ziele")),

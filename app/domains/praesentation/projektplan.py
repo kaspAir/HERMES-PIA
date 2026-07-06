@@ -115,34 +115,87 @@ def build_msproject_xml(eintraege, projektname):
 _MONATE_KURZ = ("Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
                 "Jul", "Aug", "Sep", "Okt", "Nov", "Dez")
 
-
-def _zeiteinheiten(start, ende):
-    """Spalten des Excel-Gantt: Kalenderwochen; bei sehr langen Plänen Monate.
-    Rückgabe: (einheit, [(von, bis, label, monatslabel)])."""
-    montag = start - timedelta(days=start.weekday())
-    wochen = []
-    d = montag
-    while d <= ende:
-        wochen.append((d, d + timedelta(days=6),
-                       f"{d.isocalendar()[1]:02d}",
-                       f"{_MONATE_KURZ[d.month - 1]} {d.strftime('%y')}"))
-        d += timedelta(days=7)
-    if len(wochen) <= 40:
-        return "KW", wochen
-    monate = []
-    d = datetime(start.year, start.month, 1)
-    while d <= ende:
-        naechster = datetime(d.year + (1 if d.month == 12 else 0), d.month % 12 + 1, 1)
-        monate.append((d, naechster - timedelta(days=1),
-                       _MONATE_KURZ[d.month - 1],
-                       d.strftime("%Y")))
-        d = naechster
-    return "Monat", monate
+ZEITEINHEITEN = ("tag", "woche", "monat", "quartal", "semester", "jahr")
+ZEITEINHEITEN_NAMEN = {"tag": "Tage", "woche": "Wochen", "monat": "Monate",
+                       "quartal": "Quartale", "semester": "Semester", "jahr": "Jahre"}
 
 
-def build_excel(eintraege, projektname):
+def vorschlag_zeiteinheit(start, ende):
+    """Vorschlag von HERMES PIA: kleinste Einheit, die noch übersichtlich bleibt."""
+    tage = max((ende - start).days, 1)
+    if tage <= 31:
+        return "tag"
+    if tage <= 40 * 7:
+        return "woche"
+    if tage <= 366 * 3:
+        return "monat"
+    if tage <= 366 * 6:
+        return "quartal"
+    if tage <= 366 * 10:
+        return "semester"
+    return "jahr"
+
+
+def _naechster_monat(d):
+    return datetime(d.year + (1 if d.month == 12 else 0), d.month % 12 + 1, 1)
+
+
+def _zeiteinheiten(start, ende, einheit=None):
+    """Spalten des Excel-Gantt in der gewählten Zeiteinheit.
+    Rückgabe: (einheit, [(von, bis, label, gruppenlabel)])."""
+    if einheit not in ZEITEINHEITEN:
+        einheit = vorschlag_zeiteinheit(start, ende)
+    out = []
+    if einheit == "tag":
+        d = start
+        while d <= ende:
+            out.append((d, d, f"{d.day:02d}",
+                        f"{_MONATE_KURZ[d.month - 1]} {d.strftime('%y')}"))
+            d += timedelta(days=1)
+    elif einheit == "woche":
+        d = start - timedelta(days=start.weekday())
+        while d <= ende:
+            out.append((d, d + timedelta(days=6),
+                        f"{d.isocalendar()[1]:02d}",
+                        f"{_MONATE_KURZ[d.month - 1]} {d.strftime('%y')}"))
+            d += timedelta(days=7)
+    elif einheit == "monat":
+        d = datetime(start.year, start.month, 1)
+        while d <= ende:
+            naechster = _naechster_monat(d)
+            out.append((d, naechster - timedelta(days=1),
+                        _MONATE_KURZ[d.month - 1], d.strftime("%Y")))
+            d = naechster
+    elif einheit == "quartal":
+        d = datetime(start.year, ((start.month - 1) // 3) * 3 + 1, 1)
+        while d <= ende:
+            naechster = d
+            for _ in range(3):
+                naechster = _naechster_monat(naechster)
+            out.append((d, naechster - timedelta(days=1),
+                        f"Q{(d.month - 1) // 3 + 1}", d.strftime("%Y")))
+            d = naechster
+    elif einheit == "semester":
+        d = datetime(start.year, 1 if start.month <= 6 else 7, 1)
+        while d <= ende:
+            naechster = datetime(d.year + (0 if d.month == 1 else 1),
+                                 7 if d.month == 1 else 1, 1)
+            out.append((d, naechster - timedelta(days=1),
+                        "S1" if d.month == 1 else "S2", d.strftime("%Y")))
+            d = naechster
+    else:  # jahr
+        d = datetime(start.year, 1, 1)
+        while d <= ende:
+            naechster = datetime(d.year + 1, 1, 1)
+            out.append((d, naechster - timedelta(days=1), d.strftime("%Y"), ""))
+            d = naechster
+    return einheit, out
+
+
+def build_excel(eintraege, projektname, einheit=None):
     """Projektplan als .xlsx (XlsxWriter, komplett im Speicher) –
-    Tabelle plus Gantt-Raster (schmale Zeiteinheiten-Spalten rechts)."""
+    Tabelle plus Gantt-Raster in der gewählten Zeiteinheit (Standard:
+    Vorschlag von HERMES PIA)."""
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True})
     ws = wb.add_worksheet("Projektplan")
@@ -174,8 +227,11 @@ def build_excel(eintraege, projektname):
     gantt_von = len(koepfe)
     start_min = min(e[1] for e in eintraege)
     ende_max = max(e[2] for e in eintraege)
-    einheit, spalten = _zeiteinheiten(start_min, ende_max)
-    # Obere Kopfzeile: Monats- bzw. Jahresblöcke über den Einheiten (verbunden).
+    einheit, spalten = _zeiteinheiten(start_min, ende_max, einheit)
+    ws.write(1, 0, f"Zeiteinheit: {ZEITEINHEITEN_NAMEN[einheit]}",
+             wb.add_format({"italic": True, "font_size": 9,
+                            "font_color": "#6B7280"}))
+    # Obere Kopfzeile: Gruppenblöcke über den Einheiten (verbunden).
     block_start = 0
     for i in range(len(spalten) + 1):
         wechsel = (i == len(spalten)
@@ -183,7 +239,10 @@ def build_excel(eintraege, projektname):
         if wechsel:
             c1, c2 = gantt_von + block_start, gantt_von + i - 1
             label = spalten[block_start][3]
-            if c1 == c2:
+            if not label:
+                for c in range(c1, c2 + 1):
+                    ws.write_blank(kopfzeile - 1, c, None, monat_fmt)
+            elif c1 == c2:
                 ws.write(kopfzeile - 1, c1, label, monat_fmt)
             else:
                 ws.merge_range(kopfzeile - 1, c1, kopfzeile - 1, c2, label, monat_fmt)
