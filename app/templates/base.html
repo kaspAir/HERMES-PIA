@@ -23,6 +23,9 @@
         {% endif %}
       {% endif %}
       <a href="{{ url_for('ui.password_change') }}" class="user-link">Passwort</a>
+      <span class="user-org" title="Angemeldet für diese Organisationseinheit">
+        {{- current_org.name if current_org else ('Betreiber' if current_user.is_super_admin else '') -}}
+      </span>
       <span class="user-email">{{ current_user.email }}</span>
       <form method="post" action="{{ url_for('ui.logout') }}" class="inline-form">
         <button type="submit" class="user-link user-logout">Abmelden</button>

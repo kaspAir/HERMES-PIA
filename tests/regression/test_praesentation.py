@@ -293,6 +293,28 @@ def test_risiken_volltext_notizen_und_keine_auslassungspunkte():
         assert notizen.strip() and "…" not in notizen and "Lieferergebnis" not in notizen
 
 
+def test_notizen_auch_ohne_notizen_platzhalter():
+    """Firmenvorlagen ohne Body-Platzhalter im Notizen-Master (notes_text_frame
+    = None) dürfen die Generierung nicht crashen – der Platzhalter wird als
+    XML nachgerüstet und die Notiz gesetzt."""
+    from pptx.enum.shapes import PP_PLACEHOLDER
+    from app.domains.praesentation.service import _Builder
+
+    prs = Presentation()
+    builder = _Builder(prs)
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    notes = slide.notes_slide
+    # Situation der Firmenvorlage simulieren: Body-Platzhalter entfernen.
+    for ph in list(notes.placeholders):
+        if ph.placeholder_format.type == PP_PLACEHOLDER.BODY:
+            ph._element.getparent().remove(ph._element)
+    assert notes.notes_text_frame is None
+
+    builder._notizen(slide, "Sprechnotiz für den Projektleiter.")
+    assert slide.notes_slide.notes_text_frame is not None
+    assert "Sprechnotiz" in slide.notes_slide.notes_text_frame.text
+
+
 def test_parser_risiken_mit_verschobenen_spalten():
     """Datenzeilen kuerzer als der Kopf (leere SDT-Zellen) -> Felder inhaltlich finden."""
     from app.domains.praesentation.parser import _parse_risiken

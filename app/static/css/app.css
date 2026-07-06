@@ -95,6 +95,15 @@ body {
 }
 .user-link:hover { text-decoration: underline; }
 .user-email { color: var(--color-muted); }
+.user-org {
+  color: var(--color-accent);
+  font-weight: 600;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+}
+.user-org:empty { display: none; }
 .user-logout { color: var(--color-primary); }
 .brand-logo {
   display: block;
