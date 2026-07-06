@@ -129,7 +129,9 @@ def create_app(config_class=None):
 
     @app.context_processor
     def inject_globals():
-        return {"app_version": app_version, "current_user": current_user()}
+        user = current_user()
+        org = app.auth_service.get_org(user.org_id) if user and user.org_id else None
+        return {"app_version": app_version, "current_user": user, "current_org": org}
 
     @app.teardown_appcontext
     def remove_session(exception=None):

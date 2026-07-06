@@ -432,6 +432,16 @@ def test_answer_followup_ergaenzung_wird_uebernommen_oder_abgelehnt(app):
         assert entry["followups"][0]["status"] == ("accepted" if accepted else "dismissed")
 
 
+def test_pia_version_startet_bei_0_0(app):
+    """Neue PIAs starten bei 0.0 – der erste generierte PIA ist damit 0.1."""
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    assert session.doc_version == "0.0"
+    assert svc.version_info(session)["current_version"] == "0.0"
+    neue, _ = svc.record_version_bump(session.id, "minor", "PL", "")
+    assert neue == "0.1"
+
+
 # --- Projekttyp: kein stilles Raten + Selbstheilung + Korrektur ------------ #
 
 class _TypeLLM:
