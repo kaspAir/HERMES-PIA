@@ -62,7 +62,7 @@ class PraesentationService:
             pia["projektname"] = fallback_name
 
         prs = Presentation(io.BytesIO(template_bytes)) if template_bytes else Presentation()
-        b = _Builder(prs)
+        b = _Builder(prs, fusszeile=_fusszeile(pia, datum))
 
         b.titel(pia, datum)
         b.ausgangslage(pia, self._ausgangslage_bullets(pia))
@@ -172,10 +172,20 @@ def _ist_summe(position):
     return "summe" in p or "total" in p
 
 
+def _fusszeile(pia, datum):
+    """Fusszeilentext «Verwaltungseinheit-Geschäftsbereich-jjjjmmtt» aus der
+    Titelseite des PIA; fehlende Teile werden ausgelassen."""
+    stamp_datum = _parse_datum(datum) or datetime.now()
+    teile = [pia.get("verwaltungseinheit"), pia.get("geschaeftsbereich"),
+             stamp_datum.strftime("%Y%m%d")]
+    return "-".join(t.strip() for t in teile if t and t.strip())
+
+
 class _Builder:
 
-    def __init__(self, prs):
+    def __init__(self, prs, fusszeile=""):
         self.prs = prs
+        self.fusszeile = fusszeile
         self.sw = prs.slide_width
         self.sh = prs.slide_height
         vorlage_layouts = [s.slide_layout for s in prs.slides]
@@ -226,6 +236,19 @@ class _Builder:
     def _add(self, layout):
         slide = self.prs.slides.add_slide(layout)
         self._clone_dekor(slide, layout)
+        # Fusszeile mit Projektangaben befüllen – NUR wenn die Vorlage sichtbar
+        # eine Fusszeile hat (Platzhalter MIT Text, z.B. «© Firma …»). Leere
+        # Platzhalter (etwa im Standard-Template) bleiben leer; Vorlagen ohne
+        # Fusszeilen-Platzhalter erhalten keine.
+        if self.fusszeile:
+            belegte = {ph.placeholder_format.idx
+                       for ph in layout.placeholders
+                       if ph.placeholder_format.type == PP_PLACEHOLDER.FOOTER
+                       and (ph.text_frame.text or "").strip()}
+            for ph in slide.placeholders:
+                if (ph.placeholder_format.type == PP_PLACEHOLDER.FOOTER
+                        and ph.placeholder_format.idx in belegte):
+                    ph.text = self.fusszeile
         return slide
 
     @staticmethod
