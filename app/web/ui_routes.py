@@ -403,6 +403,71 @@ def pmo():
     return render_template("pmo.html", vorlage=vorlage)
 
 
+@bp.post("/pmo/branding")
+@permission_required("write")
+def pmo_branding_farben():
+    """Speichert die UI-Farben der Organisationseinheit (Hex #RRGGBB)."""
+    user = current_user()
+    try:
+        current_app.auth_service.set_branding_farben(
+            user.org_id,
+            kopfleiste=request.form.get("kopfleiste_farbe"),
+            akzent=request.form.get("akzent_farbe"),
+            primaer=request.form.get("primaer_farbe"),
+        )
+    except ValueError:
+        abort(400)
+    return redirect(url_for("ui.pmo"))
+
+
+@bp.post("/pmo/branding/logo")
+@permission_required("write")
+def pmo_branding_logo():
+    """Lädt das Logo der Organisationseinheit hoch (PNG/JPG, Base64-JSON)."""
+    payload = request.get_json(silent=True) or {}
+    filename = (payload.get("filename") or "").strip()
+    if not filename.lower().endswith((".png", ".jpg", ".jpeg")):
+        return jsonify({"error": "Nur PNG- oder JPG-Dateien sind erlaubt."}), 400
+    try:
+        data = base64.b64decode(payload.get("data") or "")
+    except Exception:  # noqa: BLE001 – kaputtes Base64 wie "keine Daten" behandeln
+        data = b""
+    if not data:
+        return jsonify({"error": "Keine Dateidaten empfangen."}), 400
+    if len(data) > 2 * 1024 * 1024:
+        return jsonify({"error": "Logo zu gross (max. 2 MB)."}), 400
+    if data.startswith(b"\x89PNG"):
+        mimetype = "image/png"
+    elif data.startswith(b"\xff\xd8\xff"):
+        mimetype = "image/jpeg"
+    else:
+        return jsonify({"error": "Die Datei ist kein gültiges PNG-/JPG-Bild."}), 400
+    user = current_user()
+    current_app.auth_service.set_branding_logo(user.org_id, filename, data, mimetype)
+    return jsonify({"ok": True})
+
+
+@bp.post("/pmo/branding/reset")
+@permission_required("write")
+def pmo_branding_reset():
+    """Setzt Logo und Farben auf das Standard-Erscheinungsbild zurück."""
+    current_app.auth_service.reset_branding(current_user().org_id)
+    return redirect(url_for("ui.pmo"))
+
+
+@bp.get("/branding/logo")
+@login_required
+def branding_logo():
+    """Liefert das Logo der eigenen Organisationseinheit (mandantengetrennt)."""
+    user = current_user()
+    branding = (current_app.auth_service.get_branding(user.org_id)
+                if user.org_id else None)
+    if not branding or not branding.logo_filename:
+        abort(404)
+    return send_file(io.BytesIO(branding.logo_data),
+                     mimetype=branding.logo_mimetype or "image/png")
+
+
 @bp.post("/pmo/vorlage")
 @permission_required("write")
 def pmo_vorlage_upload():

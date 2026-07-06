@@ -927,3 +927,20 @@ input:focus { outline: none; border-color: var(--color-accent); }
 .vorlage-status { margin: 0 0 10px; font-size: .88rem; }
 .vorlage-actions { display: flex; flex-wrap: wrap; gap: 18px; }
 .upload-status { margin-top: 10px; min-height: 18px; font-size: .88rem; }
+
+/* Erscheinungsbild (Org-Branding) im PMO-Bereich */
+.branding-zeile {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  margin: 0 0 12px;
+}
+.branding-label { font-weight: 600; min-width: 56px; }
+.branding-logo-vorschau {
+  max-height: 32px; width: auto;
+  border: 1px solid var(--color-border); border-radius: 4px;
+  background: #fff; padding: 2px 6px;
+}
+.branding-zeile .chk { display: inline-flex; align-items: center; gap: 6px; }
+.branding-zeile input[type="color"] {
+  width: 44px; height: 26px; padding: 0; border: 1px solid var(--color-border);
+  border-radius: 4px; background: none; cursor: pointer;
+}
