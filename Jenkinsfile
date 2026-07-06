@@ -1,10 +1,14 @@
 // HERMES PIA CI/CD-Pipeline
 //
 // Stages pro Pipeline-Job:
-//   hermes-pia develop     → nur Regressionstests (kein Deploy)
+//   hermes-pia develop     → Tests + Deploy dev   (origin/develop     → Port 8003, dev.hermespia.ch)
 //   hermes-pia test        → Tests + Deploy test  (origin/test        → Port 8001, test.hermespia.ch)
 //   hermes-pia integration → Tests + Deploy int   (origin/integration → Port 8002, int.hermespia.ch)
 //   hermes-pia main        → Tests + Deploy prod  (origin/main        → Port 8000, hermespia.ch)
+//
+// ACHTUNG Promotion: test.hermespia.ch ist KUNDEN-Umgebung (LLV-Accounts).
+// Nach test wird nur noch auf ausdrueckliche Freigabe promotet; die laufende
+// Entwicklung landet ueber develop automatisch auf dev.hermespia.ch.
 //
 // Voraussetzungen Jenkins:
 //   - SSH-Credential 'hermespia-deploy' (privater Key für u7031y_kaspar@83.228.238.194)
@@ -179,6 +183,66 @@ pipeline {
                                 --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
                             echo \$! > \$HOME/tmp/gunicorn-test.pid
                             sleep 2 && curl -sf http://127.0.0.1:8001 > /dev/null && echo "OK: test laeuft"
+                        '
+                    """
+                }
+            }
+        }
+
+        stage('Deploy dev') {
+            when {
+                expression { env.JOB_NAME.contains('develop') }
+            }
+            steps {
+                sshagent(credentials: ['hermespia-deploy']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
+                            # Einmaliger Bootstrap: PHP-Proxy fuer dev.hermespia.ch aus
+                            # dem test-Proxy kopieren, Port 8001 -> 8003 tauschen.
+                            SITES=\$HOME/sites
+                            if [ -d "\$SITES/dev.hermespia.ch" ]; then
+                                if [ ! -f "\$SITES/dev.hermespia.ch/index.php" ] && [ -f "\$SITES/test.hermespia.ch/index.php" ]; then
+                                    cp -a "\$SITES/test.hermespia.ch/." "\$SITES/dev.hermespia.ch/"
+                                    grep -rIl 8001 "\$SITES/dev.hermespia.ch" | while read f; do
+                                        sed -i "s/8001/8003/g" "\$f"
+                                    done
+                                    echo "Proxy fuer dev.hermespia.ch aus test kopiert (8001 -> 8003)"
+                                fi
+                            else
+                                echo "WARNUNG: \$SITES/dev.hermespia.ch fehlt - Proxy manuell einrichten"
+                            fi
+                            if [ ! -d "\$HOME/methodos-dev/.git" ]; then
+                                git clone ${REPO_URL} \$HOME/methodos-dev
+                            fi
+                            cd \$HOME/methodos-dev
+                            git remote set-url origin ${REPO_URL}
+                            git fetch origin
+                            git reset --hard origin/develop
+                            source ${VENV}/bin/activate
+                            pip install -r requirements.txt -q
+                            PID_FILE=\$HOME/tmp/gunicorn-dev.pid
+                            if [ -f "\$PID_FILE" ]; then
+                                OLD_PID=\$(cat "\$PID_FILE")
+                                if grep -qa gunicorn "/proc/\$OLD_PID/cmdline" 2>/dev/null; then
+                                    kill "\$OLD_PID" 2>/dev/null || true
+                                    for i in \$(seq 1 20); do kill -0 "\$OLD_PID" 2>/dev/null || break; sleep 1; done
+                                fi
+                                rm -f "\$PID_FILE"
+                            fi
+                            fuser -k 8003/tcp 2>/dev/null || true
+                            sleep 2
+                            set -a
+                            source \$HOME/methodos/.env
+                            DATABASE_URL=sqlite:///\$HOME/methodos-dev/data/methodos-dev.db
+                            set +a
+                            mkdir -p \$HOME/methodos-dev/data \$HOME/methodos-dev/logs
+                            cd \$HOME/methodos-dev
+                            nohup gunicorn run:app \\
+                                --bind 127.0.0.1:8003 --workers 1 --timeout 120 \\
+                                --access-logfile logs/access.log \\
+                                --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
+                            echo \$! > \$HOME/tmp/gunicorn-dev.pid
+                            sleep 2 && curl -sf http://127.0.0.1:8003 > /dev/null && echo "OK: dev laeuft"
                         '
                     """
                 }

@@ -48,7 +48,9 @@
     </div>
     {% endif %}
   </div>
-  {% if ':8001' in request.host %}
+  {% if ':8003' in request.host %}
+  <div class="env-banner env-banner--dev">&#128295; Entwicklungssystem &mdash; dev.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>
+  {% elif ':8001' in request.host %}
   <div class="env-banner env-banner--test">&#9888; Testsystem &mdash; test.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>
   {% elif ':8002' in request.host %}
   <div class="env-banner env-banner--int">&#9432; Integrationssystem &mdash; int.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>
