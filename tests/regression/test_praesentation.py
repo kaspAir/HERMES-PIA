@@ -23,11 +23,15 @@ LANGES_RISIKO = ("Schlüsselpersonen aus dem IT-Betrieb sind wegen operativer Be
 def _beispiel_pia_bytes():
     d = docx.Document()
     # Kopftabelle (vor der ersten Überschrift) -> Metadaten
-    meta = d.add_table(rows=2, cols=2)
+    meta = d.add_table(rows=4, cols=2)
     meta.cell(0, 0).text = "Projektleiter/in"
     meta.cell(0, 1).text = "Petra Muster"
     meta.cell(1, 0).text = "Auftraggeber/in"
     meta.cell(1, 1).text = "Hans Beispiel"
+    meta.cell(2, 0).text = "Verwaltungseinheit"
+    meta.cell(2, 1).text = "Amt für Bau"
+    meta.cell(3, 0).text = "Geschäftsbereich"
+    meta.cell(3, 1).text = "Informatik"
 
     d.add_heading("Ausgangslage", level=1)
     d.add_paragraph("Das System X wird abgelöst. Die Betriebssicherheit muss steigen. "
@@ -102,6 +106,8 @@ def test_parser_liest_abschnitte_und_tabellen():
     pia = parse_pia(_beispiel_pia_bytes())
     assert pia["projektleiter"] == "Petra Muster"
     assert pia["auftraggeber"] == "Hans Beispiel"
+    assert pia["verwaltungseinheit"] == "Amt für Bau"
+    assert pia["geschaeftsbereich"] == "Informatik"
     assert "Betriebssicherheit" in pia["ausgangslage"]
     assert pia["ziele"][0]["beschreibung"].startswith("Die Studie")
     assert {p["rolle"]: p["aufwand"] for p in pia["personalaufwand"]} == {
@@ -267,6 +273,13 @@ def test_projektplan_routen(app):
     r = c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/msproject/20260706_P_Demo_Projektplan.xml")
     assert r.status_code == 200 and b"schemas.microsoft.com/project" in r.data
     assert c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/quatsch/x.xml").status_code == 404
+    # Zeiteinheit wählbar: ?einheit=quartal -> Q4-Spalte im Gantt-Raster
+    import zipfile
+    r = c.get(f"/projekt/{pid}/ergebnis/{eid}/projektplan/excel/x.xlsx?einheit=quartal")
+    assert r.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(r.data)) as z:
+        strings = z.read("xl/sharedStrings.xml").decode("utf-8")
+    assert "Q4" in strings and "Zeiteinheit: Quartale" in strings
 
 
 def test_risiken_volltext_notizen_und_keine_auslassungspunkte():
@@ -293,6 +306,74 @@ def test_risiken_volltext_notizen_und_keine_auslassungspunkte():
         assert notizen.strip() and "…" not in notizen and "Lieferergebnis" not in notizen
 
 
+_FUSSZEILEN_PH_XML = (
+    '<p:sp xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+    '<p:nvSpPr><p:cNvPr id="900" name="Fusszeile"/>'
+    '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>'
+    '<p:nvPr><p:ph type="ftr" sz="quarter" idx="10"/></p:nvPr></p:nvSpPr>'
+    '<p:spPr><a:xfrm><a:off x="0" y="6400000"/><a:ext cx="4000000" cy="300000"/>'
+    '</a:xfrm></p:spPr>'
+    '<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>ALTER-VORLAGENTEXT</a:t></a:r>'
+    '</a:p></p:txBody></p:sp>'
+)
+
+
+def test_fusszeile_wird_mit_projektangaben_befuellt():
+    """Hat die Vorlage Fusszeilen-Platzhalter, werden sie zu
+    «Verwaltungseinheit-Geschäftsbereich-jjjjmmtt»; ohne Fusszeile entsteht keine."""
+    from pptx.oxml import parse_xml
+
+    # Vorlage MIT Fusszeile in den Layouts bauen
+    prs = Presentation()
+    for lay in prs.slide_layouts:
+        lay.shapes._spTree.append(parse_xml(_FUSSZEILEN_PH_XML))
+    buf = io.BytesIO()
+    prs.save(buf)
+
+    svc = PraesentationService(llm=None)
+    out = svc.generate_from_docx(_beispiel_pia_bytes(), buf.getvalue(),
+                                 "X", "06.07.2026")
+    res = Presentation(out)
+    erwartet = "Amt für Bau-Informatik-20260706"
+    inhaltsfolien = [s for s in res.slides
+                    if "Ausgangslage" in _slide_text(s) or "Ziele" in _slide_text(s)]
+    assert inhaltsfolien
+    for folie in inhaltsfolien:
+        assert erwartet in _slide_text(folie)
+    assert "ALTER-VORLAGENTEXT" not in " ".join(_slide_text(s) for s in res.slides)
+
+    # Vorlage OHNE Fusszeile (Standard-Template): keine Fusszeile erzeugt
+    out2 = PraesentationService(llm=None).generate_from_docx(
+        _beispiel_pia_bytes(), None, "X", "06.07.2026")
+    res2 = Presentation(out2)
+    assert erwartet not in " ".join(_slide_text(s) for s in res2.slides)
+
+
+def test_zeiteinheiten_vorschlag_und_varianten():
+    from datetime import datetime
+    from app.domains.praesentation.projektplan import (
+        _zeiteinheiten, vorschlag_zeiteinheit)
+
+    d1 = datetime(2026, 10, 1)
+    assert vorschlag_zeiteinheit(d1, datetime(2026, 10, 20)) == "tag"
+    assert vorschlag_zeiteinheit(d1, datetime(2027, 2, 1)) == "woche"
+    assert vorschlag_zeiteinheit(d1, datetime(2028, 10, 1)) == "monat"
+    assert vorschlag_zeiteinheit(d1, datetime(2031, 10, 1)) == "quartal"
+    assert vorschlag_zeiteinheit(d1, datetime(2035, 10, 1)) == "semester"
+    assert vorschlag_zeiteinheit(d1, datetime(2045, 10, 1)) == "jahr"
+
+    einheit, spalten = _zeiteinheiten(d1, datetime(2026, 12, 14), "quartal")
+    assert einheit == "quartal" and [s[2] for s in spalten] == ["Q4"]
+    einheit, spalten = _zeiteinheiten(d1, datetime(2027, 8, 1), "semester")
+    assert [s[2] for s in spalten] == ["S2", "S1", "S2"]
+    einheit, spalten = _zeiteinheiten(d1, datetime(2026, 10, 5), "tag")
+    assert einheit == "tag" and len(spalten) == 5
+    # Ungültige Angabe -> Vorschlag
+    einheit, _ = _zeiteinheiten(d1, datetime(2026, 12, 14), "quatsch")
+    assert einheit == "woche"
+
+
 def test_notizen_auch_ohne_notizen_platzhalter():
     """Firmenvorlagen ohne Body-Platzhalter im Notizen-Master (notes_text_frame
     = None) dürfen die Generierung nicht crashen – der Platzhalter wird als
@@ -313,6 +394,27 @@ def test_notizen_auch_ohne_notizen_platzhalter():
     builder._notizen(slide, "Sprechnotiz für den Projektleiter.")
     assert slide.notes_slide.notes_text_frame is not None
     assert "Sprechnotiz" in slide.notes_slide.notes_text_frame.text
+
+
+def test_parser_meta_aus_tab_absaetzen():
+    """Die Titelseite der offiziellen Vorlage führt die Metadaten als
+    Tab-getrennte Absätze (keine Tabelle) – auch daraus müssen
+    Verwaltungseinheit/Geschäftsbereich/Projektleitung gelesen werden."""
+    d = docx.Document()
+    d.add_paragraph("Projektinitialisierungsauftrag")
+    d.add_paragraph("Demo 9 / 001")
+    d.add_paragraph("Projektleiter/in\tHeidi Muster")
+    d.add_paragraph("Verwaltungseinheit\tDemoamt")
+    d.add_paragraph("Geschäftsbereich\tInformatik")
+    d.add_heading("Ausgangslage", level=1)
+    d.add_paragraph("Die Lage.")
+    buf = io.BytesIO()
+    d.save(buf)
+    pia = parse_pia(buf.getvalue())
+    assert pia["projektleiter"] == "Heidi Muster"
+    assert pia["verwaltungseinheit"] == "Demoamt"
+    assert pia["geschaeftsbereich"] == "Informatik"
+    assert pia["projektname"] == "Demo 9 / 001"
 
 
 def test_parser_risiken_mit_verschobenen_spalten():

@@ -468,7 +468,10 @@ def ergebnis_projektplan(projekt_id, ergebnis_id, fmt, filename):
                 "bitte Kapitel «Ergebnisse und Termine» prüfen."), 400
     name = projekt.name or "Projekt"
     if fmt == "excel":
-        data = projektplan.build_excel(eintraege, name)
+        # Zeiteinheit wählbar (?einheit=tag|woche|monat|quartal|semester|jahr);
+        # ohne bzw. bei ungültiger Angabe gilt der Vorschlag von HERMES PIA.
+        einheit = request.args.get("einheit") or None
+        data = projektplan.build_excel(eintraege, name, einheit=einheit)
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
         data = projektplan.build_msproject_xml(eintraege, name)
