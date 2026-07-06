@@ -22,8 +22,8 @@ class InterviewSession(Base, GovernanceMixin):
     start_datum = Column(String(20), nullable=True)
     # Antworten je Abschnitt als JSON-Text (MVP - bewusst simpel).
     answers_json = Column(Text, default="{}")
-    # Versionsverwaltung
-    doc_version = Column(String(20), default="0.1")
+    # Versionsverwaltung: startet bei 0.0 – der erste generierte PIA ist 0.1.
+    doc_version = Column(String(20), default="0.0")
     changelog_json = Column(Text, default="[]")
     # Snapshot beim letzten Download – für Änderungserkennung
     last_snapshot_json = Column(Text, default="{}")

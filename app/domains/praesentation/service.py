@@ -304,8 +304,36 @@ class _Builder:
                     if kopfzeile and r_i == 0:
                         p.font.bold = True
 
+    # Minimaler Notizen-Body-Platzhalter: manche Firmenvorlagen haben einen
+    # Notizen-Master OHNE Text-Platzhalter (notes_text_frame ist dann None und
+    # python-pptx kann auf Notizenseiten keine Textbox anlegen) – wir fügen den
+    # Platzhalter dann selbst als XML ein.
+    _NOTIZEN_PH_XML = (
+        '<p:sp xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<p:nvSpPr><p:cNvPr id="9999" name="Notizenplatzhalter"/>'
+        '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>'
+        '<p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>'
+        '<p:spPr><a:xfrm><a:off x="685800" y="4400550"/>'
+        '<a:ext cx="5486400" cy="3600450"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>'
+        '<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>'
+    )
+
     def _notizen(self, slide, text):
-        slide.notes_slide.notes_text_frame.text = text
+        """Sprechnotizen defensiv setzen – Notizen dürfen die Generierung nie
+        verhindern."""
+        try:
+            notes = slide.notes_slide
+            tf = notes.notes_text_frame
+            if tf is None:
+                from pptx.oxml import parse_xml
+                notes.shapes._spTree.append(parse_xml(self._NOTIZEN_PH_XML))
+                tf = notes.notes_text_frame
+            if tf is not None:
+                tf.text = text
+        except Exception:  # noqa: BLE001 – nice-to-have, nie blockierend
+            pass
 
     # ---- Folien --------------------------------------------------------- #
 

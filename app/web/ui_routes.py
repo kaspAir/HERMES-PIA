@@ -583,7 +583,7 @@ def interview_download(session_id, filename):
         "innenauftragsnummer": session.innenauftragsnummer or "",
         "projektnummer":      session.projektnummer or "",
         "datum":              date.today().strftime("%d.%m.%Y"),
-        "version":            session.doc_version or "0.1",
+        "version":            session.doc_version or "0.0",
         "status":             "in Arbeit",
         "klassifizierung":    "Nicht klassifiziert",
     }

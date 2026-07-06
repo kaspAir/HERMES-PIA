@@ -1110,7 +1110,7 @@ class InterviewService:
                 if old_txt != new_txt or sid not in snapshot:
                     changed.append({"id": sid, "number": s["number"], "title": s["title"]})
         return {
-            "current_version": session.doc_version or "0.1",
+            "current_version": session.doc_version or "0.0",
             "changelog": changelog,
             "changed_sections": changed,
         }
@@ -1120,7 +1120,7 @@ class InterviewService:
         import json as _json
         from datetime import date as _date
         session = self.get_session(session_id)
-        old = session.doc_version or "0.1"
+        old = session.doc_version or "0.0"
         new = _bump_version(old, bump_type)
 
         entry = {
