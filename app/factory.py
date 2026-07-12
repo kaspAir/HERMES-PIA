@@ -101,11 +101,12 @@ def create_app(config_class=None):
         api_key=app.config.get("VOYAGE_API_KEY"),
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),
     ))
+    app.projekt_service = ProjektService()
     app.interview_service = InterviewService(
-        app.method_service, app.catalog_service, llm_client, rag=app.rag_service
+        app.method_service, app.catalog_service, llm_client, rag=app.rag_service,
+        projekt_service=app.projekt_service,
     )
     app.generation_service = GenerationService(app.method_service)
-    app.projekt_service = ProjektService()
     app.praesentation_service = PraesentationService(llm_client)
     app.auth_service = AuthService()
     app.transcriber = Transcriber(

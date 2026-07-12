@@ -132,7 +132,7 @@ def test_personalaufwand_keine_zusatzrollen_ohne_ergebnis():
 
 def test_postprocess_kosten_ueber_dispatch():
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "kosten")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"kosten")
     answers = {"personalaufwand": {"extracted": [
         {"rolle": "Projektleiter", "aufwand": "25"},          # 25*1200 = 30000 intern
         {"rolle": "Externe Fachexpertise", "aufwand": "20"},  # 20*1800 = 36000 extern
@@ -153,7 +153,7 @@ def test_postprocess_blankt_erfundene_fundstellen():
     wird in Referenzierte/Mitgeltende geleert, der Name bleibt."""
     svc = _svc()
     for sid in ("referenzierte_dokumente", "mitgeltende_unterlagen"):
-        section = svc._section_by_id("hermes_pia", sid)
+        section = svc._section_by_id(svc.methods.get("hermes_pia"),sid)
         sa = {"extracted": [
             {"name": "Kantonales Datenschutzgesetz Nidwalden (KDSG)", "link": "NG 236.1"},
             {"name": "Strafprozessordnung (StPO)", "link": "SR 312.0"},
@@ -166,7 +166,7 @@ def test_postprocess_blankt_erfundene_fundstellen():
 def test_postprocess_entfernt_max_dauer_rahmenbedingung():
     """Die selbst erfundene Vorgabe 'Initialisierung max. 4 Monate' muss verschwinden."""
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "rahmenbedingungen")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"rahmenbedingungen")
     sa = {"extracted": [
         {"nr": "01", "vorgaben": "Zeitlicher Rahmen der Initialisierung",
          "beschreibung": "Die Phase Initialisierung ist innerhalb von maximal 4 Monaten "
@@ -185,7 +185,7 @@ def test_projektorganisation_spalten_decken_vorlage_ab():
     """Vorlage hat 9 Monate + Bestätigung -> method.yaml muss 1:1 passen,
     sonst rutscht 'ausstehend' in eine Monatsspalte."""
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "projektorganisation")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"projektorganisation")
     cols = [c["id"] for c in section["columns"]]
     assert cols[0] == "rolle_person"
     assert cols[-1] == "bestaetigung"
