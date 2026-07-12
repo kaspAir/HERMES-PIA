@@ -932,6 +932,28 @@ input:focus { outline: none; border-color: var(--color-accent); }
 .vorlage-actions { display: flex; flex-wrap: wrap; gap: 18px; }
 .upload-status { margin-top: 10px; min-height: 18px; font-size: .88rem; }
 
+/* Erkennungs-Vorschau der Wortvorlage */
+.vorlage-erkennung {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 12px; margin: 6px 0 12px;
+}
+
+/* Drag-&-Drop-Zone für die Wortvorlage */
+.dropzone {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 70px; padding: 14px 18px; margin-top: 4px;
+  border: 2px dashed var(--color-border); border-radius: var(--radius);
+  color: var(--color-muted); text-align: center; cursor: pointer;
+  transition: border-color .12s, background .12s, color .12s;
+}
+.dropzone:hover { border-color: var(--color-accent); color: var(--color-text); }
+.dropzone--over {
+  border-color: var(--color-accent); border-style: solid;
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: var(--color-text);
+}
+.dropzone-text { pointer-events: none; font-size: .9rem; }
+
 /* Erscheinungsbild (Org-Branding) im PMO-Bereich */
 .branding-zeile {
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px;

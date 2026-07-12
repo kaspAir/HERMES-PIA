@@ -30,6 +30,7 @@ from app.domains.interview.extraction import (
 )
 from app.domains.interview.gap_check import build_followups, find_missing_risks
 from app.domains.interview.models import InterviewSession
+from app.domains.method.template_structure import build_derived_method
 from app.shared.database import SessionLocal
 
 _INTERVIEWABLE = {"free_text", "table"}
@@ -98,11 +99,46 @@ _AVAILABLE_PROJECT_TYPES = [
 
 
 class InterviewService:
-    def __init__(self, method_service, catalog_service, llm_client=None, rag=None):
+    def __init__(self, method_service, catalog_service, llm_client=None, rag=None,
+                 projekt_service=None):
         self.methods = method_service
         self.catalogs = catalog_service
         self.llm = llm_client
         self.rag = rag  # RAG-Wissenskorpus (optional); None/inaktiv -> kein Grounding
+        # Projekt-Service (optional): erlaubt, die Interviewstruktur aus einer
+        # hochgeladenen Kundenvorlage abzuleiten. Ohne ihn / ohne Vorlage bleibt
+        # alles exakt wie mit der kanonischen HERMES-Methode.
+        self.projekt = projekt_service
+        self._derived_cache = {}  # vorlage_id -> abgeleitete Methode
+
+    def _effective_method(self, session):
+        """Massgebliche Methode für diese Session: kanonische HERMES-Methode –
+        oder, wenn das Projekt eine Word-Vorlage hinterlegt hat, die daraus
+        abgeleitete Struktur (Kapitel der Vorlage treiben das Interview).
+
+        'Live': es zählt stets die aktuell aufgelöste Vorlage (Projekt > Org).
+        Erkannte Kapitel behalten ihre kanonische ID – bereits Beantwortetes
+        bleibt darum erhalten, auch wenn die Vorlage gewechselt wird.
+        """
+        canonical = self.methods.get(session.method_id)
+        ergebnis_id = getattr(session, "ergebnis_id", None)
+        if self.projekt is None or not ergebnis_id:
+            return canonical
+        projekt = self.projekt.projekt_for_ergebnis(ergebnis_id)
+        if projekt is None:
+            return canonical
+        vorlage = self.projekt.resolve_methoden_vorlage(projekt)
+        if vorlage is None:
+            return canonical
+        cached = self._derived_cache.get(vorlage.id)
+        if cached is not None:
+            return cached
+        try:
+            method, _ = build_derived_method(vorlage.data, canonical)
+        except Exception:  # noqa: BLE001 – bei jedem Zweifel die sichere Kanon-Struktur
+            return canonical
+        self._derived_cache[vorlage.id] = method
+        return method
 
     # ------------------------------------------------------------------ #
     # Session-Lifecycle                                                    #
@@ -186,7 +222,7 @@ class InterviewService:
         self._ensure_complexity_followups(session, answers)
         # Ebenso den Projekttyp nachholen, falls die Erkennung beim Submit scheiterte.
         self._ensure_project_type(session, answers)
-        sections = self._interviewable_sections(session.method_id)
+        sections = self._interviewable_sections(self._effective_method(session))
         progress = self._progress(answers, sections)
 
         for section in sections:
@@ -211,7 +247,7 @@ class InterviewService:
     def section_summary(self, session):
         """Gibt alle Abschnitte mit ihrem Status zurueck (fuer Fortschrittsanzeige)."""
         answers = self._answers(session)
-        sections = self._interviewable_sections(session.method_id)
+        sections = self._interviewable_sections(self._effective_method(session))
         state = self.current_state(session)
         current_id = state.get("section", {}).get("id")
 
@@ -246,7 +282,7 @@ class InterviewService:
             return state
 
         section = state["section"]
-        extracted = self._extract(section, raw_text, self._vocabularies(session.method_id))
+        extracted = self._extract(section, raw_text, self._vocabularies(self._effective_method(session)))
 
         # Ergebnisse/Termine: die kanonischen HERMES-Lieferergebnisse sind verbindlich.
         # Liefert der PL nichts, werden sie deterministisch aus dem Katalog gesetzt
@@ -318,7 +354,7 @@ class InterviewService:
                     if followup.get("type") == "complexity":
                         self._apply_complexity(answers, followup, raw_text, refuted=not accepted)
                     elif accepted:
-                        section = self._section_by_id(session.method_id, sid)
+                        section = self._section_by_id(self._effective_method(session), sid)
                         if section and followup.get("type") == "offer":
                             self._fill_from_suggestion(session, section, section_answer, answers)
                         elif section and followup.get("type") == "ergaenzung":
@@ -336,7 +372,7 @@ class InterviewService:
         """Erzeugt einen proaktiven Vorschlag (LLM, sonst Katalog) und übernimmt ihn."""
         context = self._suggestion_context(session, answers)
         context = self._with_corpus_context(context, session, section, answers)
-        vocabularies = self._vocabularies(session.method_id)
+        vocabularies = self._vocabularies(self._effective_method(session))
 
         # Für Abschnitte mit verbindlicher HERMES-Vorgabe (Ergebnisse/Termine)
         # ist der Katalog massgebend – das LLM darf hier nicht frei erfinden.
@@ -710,7 +746,7 @@ class InterviewService:
         Rueckgabe: [{"abschnitt", "herkunft", "begruendung"}].
         """
         entries = []
-        for s in self.methods.sections(session.method_id):
+        for s in self._effective_method(session).get("sections", []):
             if s.get("type") not in _INTERVIEWABLE:
                 continue
             ans = answers.get(s.get("id"))
@@ -791,8 +827,8 @@ class InterviewService:
                 "die Phase Initialisierung abgeleitet, da der Projektleiter dazu keine eigenen "
                 "Angaben machte.")
 
-    def _vocabularies(self, method_id):
-        return self.methods.get(method_id).get("vocabularies", {})
+    def _vocabularies(self, method):
+        return method.get("vocabularies", {})
 
     def _catalog_suggestion(self, project_type_id, section):
         """Liest einen Vorschlag aus dem Referenzkatalog (Fallback)."""
@@ -812,8 +848,8 @@ class InterviewService:
                 rows.append(row)
         return rows or None
 
-    def _section_by_id(self, method_id, sid):
-        for s in self.methods.sections(method_id):
+    def _section_by_id(self, method, sid):
+        for s in method.get("sections", []):
             if s.get("id") == sid:
                 return s
         return None
@@ -907,8 +943,8 @@ class InterviewService:
     # Interne Hilfsmethoden                                                #
     # ------------------------------------------------------------------ #
 
-    def _interviewable_sections(self, method_id):
-        return [s for s in self.methods.sections(method_id) if s.get("type") in _INTERVIEWABLE]
+    def _interviewable_sections(self, method):
+        return [s for s in method.get("sections", []) if s.get("type") in _INTERVIEWABLE]
 
     def _answers(self, session):
         return json.loads(session.answers_json or "{}")
@@ -1036,7 +1072,7 @@ class InterviewService:
     def update_free_text(self, session_id, section_id, raw_text):
         """Übernimmt den bearbeiteten Freitext und lässt ihn neu sauber formulieren."""
         session = self.get_session(session_id)
-        section = self._section_by_id(session.method_id, section_id)
+        section = self._section_by_id(self._effective_method(session), section_id)
         if not section or section.get("type") != "free_text":
             return False
         text = raw_text or ""
@@ -1065,7 +1101,7 @@ class InterviewService:
     def preview_data(self, session):
         """Gibt alle beantworteten Abschnitte mit ihrem Inhalt zurück."""
         answers = self._answers(session)
-        sections = self._interviewable_sections(session.method_id)
+        sections = self._interviewable_sections(self._effective_method(session))
         result = []
         for s in sections:
             sid = s["id"]
@@ -1099,7 +1135,7 @@ class InterviewService:
         answers   = self._answers(session)
         # Welche Abschnitte haben sich seit dem letzten Download verändert?
         changed = []
-        sections = self._interviewable_sections(session.method_id)
+        sections = self._interviewable_sections(self._effective_method(session))
         for s in sections:
             sid = s["id"]
             if sid in answers:
@@ -1188,7 +1224,7 @@ class InterviewService:
                 and not self._is_empty(extracted)):
             context = self._suggestion_context(session, answers)
             missing = suggest_missing_items(self.llm, section, context, extracted,
-                                            self._vocabularies(session.method_id))
+                                            self._vocabularies(self._effective_method(session)))
             if missing:
                 namen = ", ".join(f"«{item_label(r)}»" for r in missing if item_label(r))
                 followups.append({

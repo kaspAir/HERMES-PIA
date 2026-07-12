@@ -29,7 +29,7 @@ def test_complexity_factor_steigt_mit_stufe():
 
 def test_hoehere_komplexitaet_streckt_termine():
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "termine")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"termine")
     base = svc._catalog_suggestion("fachanwendung_einfuehrung", section)
     from app.domains.interview.service import _assign_termine_dates
 
@@ -183,7 +183,7 @@ def test_nachweis_ausgangslage_herkunft_kombiniert_bei_komplexitaet():
     svc = _svc()  # ohne LLM -> Fallback-Begründung, Herkunft deterministisch
     sess = type("S", (), {"method_id": "hermes_pia", "project_name": "P",
                           "project_type_id": "x", "auftraggeber": "A"})()
-    title = svc._section_by_id("hermes_pia", "ausgangslage").get("title")
+    title = svc._section_by_id(svc.methods.get("hermes_pia"),"ausgangslage").get("title")
     answers = {"ausgangslage": {"raw_text": "Diktat", "extracted": {"text": "Basis."},
                                 "komplexitaet": {"Technologie": {"stufe": "hoch",
                                                                  "einschaetzung": "X."}}}}
@@ -269,7 +269,7 @@ def test_pruefmethode_meilenstein_vs_inhalt():
 
 def test_postprocess_risiken_setzt_verantwortung_und_termin():
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sa = {"extracted": [{"beschreibung": "Risiko", "ew": "Mittel", "ag": "Hoch"}]}
     svc._postprocess_section(section, sa, {})
     r = sa["extracted"][0]
@@ -284,7 +284,7 @@ class _RiskLLM:
 
 def test_postprocess_risiken_schaetzt_fehlende_ew_ag():
     svc = _svc(_RiskLLM())
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sa = {"extracted": [{"beschreibung": "Stakeholder nicht verfügbar"}]}
     svc._postprocess_section(section, sa, {})
     r = sa["extracted"][0]
@@ -294,7 +294,7 @@ def test_postprocess_risiken_schaetzt_fehlende_ew_ag():
 
 def test_risiken_gapcheck_nur_bei_eingegebenen_risiken():
     svc = _svc()  # ohne LLM -> Gap-Check isoliert (keine AI-/Komplexitäts-Followups)
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sess = type("S", (), {"project_type_id": "betriebsabloesung",
                           "start_datum": None, "method_id": "hermes_pia"})()
     # Leere Risiken -> KEIN Gap-Check, damit das normale Vorschlags-Angebot greift
