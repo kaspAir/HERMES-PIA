@@ -738,7 +738,22 @@ def interview_download(session_id, filename):
             extracted["text"] = svc.composed_ausgangslage(answers)
 
     nachweis = svc.build_nachweis(session, answers)
-    buf = gen.generate(session.method_id, answers, metadata, changelog=changelog, nachweis=nachweis)
+
+    # Hat das Projekt eine eigene Word-Vorlage? Dann im Format DIESER Vorlage
+    # erzeugen (gleiche abgeleitete Struktur wie das Interview), sonst kanonisch.
+    methoden_vorlage = None
+    projekt = (current_app.projekt_service.projekt_for_ergebnis(session.ergebnis_id)
+               if session.ergebnis_id else None)
+    if projekt is not None:
+        methoden_vorlage = current_app.projekt_service.resolve_methoden_vorlage(projekt)
+    if methoden_vorlage is not None:
+        method = svc._effective_method(session)
+        buf = gen.generate_into_template(
+            methoden_vorlage.data, method, answers, metadata,
+            changelog=changelog, nachweis=nachweis)
+    else:
+        buf = gen.generate(session.method_id, answers, metadata,
+                           changelog=changelog, nachweis=nachweis)
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
