@@ -137,3 +137,50 @@ def test_ohne_vorlage_kein_erkennungsblock(ctx):
     html = ctx["admin"].get("/pmo").get_data(as_text=True)
     assert "als HERMES-Kapitel erkannt" not in html
     assert "das Interview folgt der HERMES-Standardstruktur" in html
+
+
+# ---- Zuordnungs-Editor (Mapping) --------------------------------------- #
+
+def test_mapping_speichern_und_editor_anzeigen(ctx):
+    data = _docx([(1, "Ausgangssituation"), (1, "Spezialkapitel")])
+    ctx["admin"].post("/pmo/methoden-vorlage",
+                      json={"filename": "k.docx", "data": _b64(data)})
+    # Editor erscheint als Vorschlag
+    html = ctx["admin"].get("/pmo").get_data(as_text=True)
+    assert "Kapitel der Vorlage" in html and "Vorschlag" in html
+    # Zuordnung speichern: Spezialkapitel -> unveraendert
+    r = ctx["admin"].post("/pmo/methoden-vorlage/zuordnung", data={
+        "heading[]": ["Ausgangssituation", "Spezialkapitel"],
+        "ziel[]": ["ausgangslage", "__unchanged__"],
+        "bemerkung[]": ["", "fix"],
+    })
+    assert r.status_code == 302
+    html2 = ctx["admin"].get("/pmo").get_data(as_text=True)
+    assert "bestätigt" in html2
+
+
+def test_bestaetigte_zuordnung_treibt_interview(ctx):
+    app = ctx["app"]
+    org_id = ctx["org_id"]
+    # Org-Vorlage + Session in einem Projekt der Org
+    data = _docx([(1, "Ausgangssituation"), (1, "Zielsetzung"), (1, "Sonderkapitel")])
+    vorlage_id = app.projekt_service.add_methoden_vorlage(
+        "k.docx", data, org_id=org_id, projekt_id=None).id
+    c = ctx["admin"]
+    loc = c.post("/interview/start",
+                 data={"project_name": "P2", "projektleiter": "X"}).headers["Location"]
+    sid = int(loc.rstrip("/").split("/")[-1])
+    isvc = app.interview_service
+
+    # Ohne Bestaetigung: Auto-Erkennung (Sonderkapitel generisch)
+    ids = [s["id"] for s in isvc.section_summary(isvc.get_session(sid))]
+    assert "custom_sonderkapitel" in ids
+
+    # Bestaetigte Zuordnung: Sonderkapitel -> unveraendert (faellt raus)
+    app.projekt_service.set_methoden_mapping(vorlage_id, [
+        {"heading": "Ausgangssituation", "ziel": "ausgangslage"},
+        {"heading": "Zielsetzung", "ziel": "ziele"},
+        {"heading": "Sonderkapitel", "ziel": "__unchanged__"},
+    ])
+    ids2 = [s["id"] for s in isvc.section_summary(isvc.get_session(sid))]
+    assert ids2 == ["ausgangslage", "ziele"]

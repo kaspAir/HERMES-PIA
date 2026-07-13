@@ -9,9 +9,13 @@ from docx import Document
 
 from app.config import Config
 from app.domains.method.template_structure import (
+    ZIEL_GENERISCH,
+    ZIEL_UNVERAENDERT,
     build_derived_method,
+    build_method_from_mapping,
     extract_headings,
     match_canonical,
+    propose_mapping,
 )
 from app.shared.config_loader import load_method
 
@@ -192,3 +196,38 @@ def test_build_derived_nutzt_question_gen_mit_fallback():
     method2, _ = build_derived_method(
         data, _canonical(), question_gen=lambda t: (_ for _ in ()).throw(RuntimeError()))
     assert len(method2["sections"][0]["interview"]["questions"]) >= 1
+
+
+def test_propose_mapping_seedet_vorschlag():
+    data = _docx([
+        (1, "Hinweise zur Anwendung des Dokumentes"),
+        (1, "Ausgangssituation"),
+        (1, "Zielsetzung"),
+        (1, "Datenschutzkonzept"),
+    ])
+    vorschlag, missing = propose_mapping(data, _canonical())
+    ziel = {v["heading"]: v["ziel"] for v in vorschlag}
+    assert ziel["Hinweise zur Anwendung des Dokumentes"] == ZIEL_UNVERAENDERT
+    assert ziel["Ausgangssituation"] == "ausgangslage"
+    assert ziel["Zielsetzung"] == "ziele"
+    assert ziel["Datenschutzkonzept"] == ZIEL_GENERISCH
+    assert "risiken" in missing
+
+
+def test_build_method_from_mapping_respektiert_bestaetigung():
+    mapping = [
+        {"heading": "Kontextkapitel", "ziel": "ausgangslage"},
+        {"heading": "Unser Glossar", "ziel": "definitionen"},
+        {"heading": "Spezielles", "ziel": ZIEL_GENERISCH},
+        {"heading": "Fixe Einleitung", "ziel": ZIEL_UNVERAENDERT},
+    ]
+    method = build_method_from_mapping(_canonical(), mapping)
+    ids = [s["id"] for s in method["sections"]]
+    # Ausgangslage zuerst; unveraendertes Kapitel fehlt; generisches als custom_
+    assert ids[0] == "ausgangslage"
+    assert "definitionen" in ids
+    assert "custom_spezielles" in ids
+    assert not any("einleitung" in i for i in ids)
+    # Die kanonische Section traegt die Original-Ueberschrift der Kundenvorlage
+    ausg = next(s for s in method["sections"] if s["id"] == "ausgangslage")
+    assert ausg["template_heading"] == "Kontextkapitel"

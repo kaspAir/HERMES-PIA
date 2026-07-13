@@ -61,6 +61,9 @@
       <span class="dropzone-text">Word-Vorlage hierher ziehen oder klicken (.docx/.dotx)</span>
     </label>
     {% endif %}
+    {% with editor=methoden_editor, save_url=methoden_mapping_url %}
+      {% include "partials/methoden_zuordnung.html" %}
+    {% endwith %}
   </section>
 
   <section class="vorlage-block">

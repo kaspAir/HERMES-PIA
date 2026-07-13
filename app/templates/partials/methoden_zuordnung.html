@@ -1,0 +1,59 @@
+{# Kapitel-Zuordnungs-Editor. Erwartet: editor (dict), save_url (str). #}
+{% if editor %}
+<div class="zuordnung">
+  <p class="muted zuordnung-status">
+    {% if editor.bestaetigt %}
+      Zuordnung bestätigt – sie bestimmt Interview und Ausgabe. Sie können sie jederzeit anpassen.
+    {% else %}
+      <strong>Vorschlag</strong> – bitte die Zuordnung prüfen und bestätigen. Bis dahin gilt die automatische Erkennung.
+    {% endif %}
+    {% if editor.missing %}
+      <br>Im Template nicht enthaltene HERMES-Kapitel: {{ editor.missing | join(', ') }}.
+    {% endif %}
+  </p>
+  {% if current_user.can_write %}
+  <form method="post" action="{{ save_url }}">
+    <div class="zuordnung-scroll">
+      <table class="zuordnung-tabelle">
+        <thead>
+          <tr><th>Kapitel der Vorlage</th><th>Zuordnung</th><th>Bemerkung</th></tr>
+        </thead>
+        <tbody>
+        {% for row in editor.rows %}
+          <tr>
+            <td class="zt-kapitel" style="padding-left: {{ (row.level - 1) * 16 }}px;">
+              {{ row.heading }}
+              <input type="hidden" name="heading[]" value="{{ row.heading }}">
+            </td>
+            <td>
+              <select name="ziel[]" class="zt-ziel">
+                <option value="{{ editor.ziel_unveraendert }}"
+                        {% if row.ziel == editor.ziel_unveraendert %}selected{% endif %}>
+                  Unverändert lassen (Hilfstext)
+                </option>
+                <option value="{{ editor.ziel_generisch }}"
+                        {% if row.ziel == editor.ziel_generisch %}selected{% endif %}>
+                  Als Freitext erfragen
+                </option>
+                {% for opt in editor.optionen %}
+                  <option value="{{ opt.id }}"
+                          {% if row.ziel == opt.id %}selected{% endif %}>
+                    HERMES: {{ opt.label }}
+                  </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <input type="text" name="bemerkung[]" value="{{ row.bemerkung }}"
+                     class="zt-bemerkung" placeholder="optional">
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="btn-link">Zuordnung speichern</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}

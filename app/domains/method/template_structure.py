@@ -351,3 +351,84 @@ def build_derived_method(docx_bytes, canonical_method, question_gen=None):
     report = {"matched": matched, "generic": generic,
               "skipped": skipped, "missing_canonical": missing}
     return method, report
+
+
+# Sonderziele der Kapitel-Zuordnung (statt einer kanonischen Section-ID).
+ZIEL_GENERISCH = "__generic__"      # als Freitext erfragen
+ZIEL_UNVERAENDERT = "__unchanged__"  # fixer Text – nicht erfragen, nie füllen
+
+
+def propose_mapping(docx_bytes, canonical_method):
+    """Baut den Zuordnungs-VORSCHLAG für den Editor: je Kapitel der Kundenvorlage
+    das vorgeschlagene Ziel (kanonische Section-ID / generisch / unverändert).
+
+    Rückgabe: ``(vorschlag, fehlende_ids)`` mit
+    ``vorschlag = [{"heading", "level", "ziel"}]`` in Dokumentreihenfolge
+    (Container-Überschriften ausgelassen).
+    """
+    _, report = build_derived_method(docx_bytes, canonical_method)
+    klasse = {}
+    for m in report["matched"]:
+        klasse[m["heading"]] = m["section_id"]
+    for g in report["generic"]:
+        klasse[g["heading"]] = ZIEL_GENERISCH
+    for s in report["skipped"]:
+        if s["grund"] in ("vorspann", "struktur"):
+            klasse[s["heading"]] = ZIEL_UNVERAENDERT
+    container = {s["heading"] for s in report["skipped"] if s["grund"] == "container"}
+
+    vorschlag, gesehen = [], set()
+    for h in extract_headings(docx_bytes):
+        ht = h["text"]
+        if ht in container or ht in gesehen:
+            continue
+        gesehen.add(ht)
+        vorschlag.append({
+            "heading": ht,
+            "level": h["level"],
+            "ziel": klasse.get(ht, ZIEL_GENERISCH),
+        })
+    return vorschlag, report["missing_canonical"]
+
+
+def build_method_from_mapping(canonical_method, mapping, question_gen=None):
+    """Baut die abgeleitete Methode aus einer vom Benutzer BESTÄTIGTEN Zuordnung.
+
+    ``mapping = [{"heading", "ziel", ...}]``. ``ziel`` ist eine kanonische
+    Section-ID, ``ZIEL_GENERISCH`` oder ``ZIEL_UNVERAENDERT`` (Letzteres wird
+    weder erfragt noch gefüllt). Reihenfolge = Vorlagenreihenfolge; Ausgangslage
+    wird fürs Interview nach vorn gezogen (Dokument bleibt unberührt).
+    """
+    by_id = {s["id"]: s for s in canonical_method.get("sections", [])}
+    derived, used_slugs, verwendet = [], set(), set()
+
+    for entry in mapping or []:
+        ziel = entry.get("ziel")
+        heading = entry.get("heading", "")
+        if ziel in (ZIEL_UNVERAENDERT, None, ""):
+            continue
+        if ziel == ZIEL_GENERISCH:
+            try:
+                questions = question_gen(heading) if question_gen else None
+            except Exception:
+                questions = None
+            if not questions:
+                questions = _fallback_questions(heading)
+            slug = _slug(heading, used_slugs)
+            derived.append({
+                "id": slug, "number": "", "title": heading,
+                "template_heading": heading, "type": "free_text",
+                "required": False, "generic": True,
+                "interview": {"intent": f"Den Inhalt des Kapitels «{heading}» erarbeiten.",
+                              "questions": list(questions), "completeness": []},
+            })
+        elif ziel in by_id and ziel not in verwendet:
+            verwendet.add(ziel)
+            sec = dict(by_id[ziel])
+            sec["template_heading"] = heading
+            derived.append(sec)
+
+    derived.sort(key=lambda s: 0 if s.get("id") == "ausgangslage" else 1)
+    method = dict(canonical_method)
+    method["sections"] = derived
+    return method

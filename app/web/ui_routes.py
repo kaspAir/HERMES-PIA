@@ -9,7 +9,12 @@ from flask import (
 )
 
 from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
-from app.domains.method.template_structure import build_derived_method
+from app.domains.method.template_structure import (
+    ZIEL_GENERISCH,
+    ZIEL_UNVERAENDERT,
+    build_derived_method,
+    propose_mapping,
+)
 from app.web.auth import (
     current_user, login_required, login_user, logout_user, permission_required,
     roles_required,
@@ -302,6 +307,9 @@ def projekt_detail(projekt_id):
                            org_methoden_vorlage=org_methoden_vorlage,
                            aktive_methoden_vorlage=aktive_methoden_vorlage,
                            methoden_report=methoden_report,
+                           methoden_editor=_methoden_editor(methoden_vorlage),
+                           methoden_mapping_url=url_for(
+                               "ui.methoden_mapping", projekt_id=projekt.id),
                            downloads=downloads)
 
 
@@ -348,6 +356,61 @@ def _methoden_vorlage_report(vorlage):
     report["erkannt"] = len(report.get("matched", []))
     report["gesamt"] = report["erkannt"] + len(report.get("generic", []))
     return report
+
+
+def _methoden_editor(vorlage):
+    """Baut die Daten für den Kapitel-Zuordnungs-Editor: je Vorlagenkapitel das
+    (bestätigte oder vorgeschlagene) Ziel + Bemerkung, die Dropdown-Optionen und
+    die im Template fehlenden HERMES-Kapitel."""
+    if vorlage is None:
+        return None
+    try:
+        method = current_app.method_service.get("hermes_pia")
+        vorschlag, missing_ids = propose_mapping(vorlage.data, method)
+    except Exception:  # noqa: BLE001 – Editor darf die Seite nie sprengen
+        return None
+    sections = method.get("sections", [])
+    optionen = [{"id": s["id"], "label": f"{s.get('number', '')} {s['title']}".strip()}
+                for s in sections if s.get("type") in ("free_text", "table")]
+    titel = {s["id"]: s.get("title", s["id"]) for s in sections}
+
+    saved = {}
+    if vorlage.mapping_json:
+        try:
+            for e in json.loads(vorlage.mapping_json):
+                saved[e.get("heading")] = e
+        except (ValueError, TypeError):
+            saved = {}
+
+    rows = []
+    for v in vorschlag:
+        s = saved.get(v["heading"], {})
+        rows.append({"heading": v["heading"], "level": v["level"],
+                     "ziel": s.get("ziel", v["ziel"]),
+                     "bemerkung": s.get("bemerkung", "")})
+    return {
+        "vorlage_id": vorlage.id,
+        "rows": rows,
+        "optionen": optionen,
+        "missing": [titel.get(i, i) for i in missing_ids],
+        "bestaetigt": bool(vorlage.mapping_json),
+        "ziel_generisch": ZIEL_GENERISCH,
+        "ziel_unveraendert": ZIEL_UNVERAENDERT,
+    }
+
+
+def _save_mapping_from_form(vorlage_id):
+    headings = request.form.getlist("heading[]")
+    ziele = request.form.getlist("ziel[]")
+    bemerkungen = request.form.getlist("bemerkung[]")
+    mapping = []
+    for i, h in enumerate(headings):
+        mapping.append({
+            "heading": h,
+            "ziel": ziele[i] if i < len(ziele) else ZIEL_UNVERAENDERT,
+            "bemerkung": (bemerkungen[i] if i < len(bemerkungen) else "").strip(),
+        })
+    current_app.projekt_service.set_methoden_mapping(vorlage_id, mapping)
 
 
 def _load_ergebnis(projekt_id, ergebnis_id):
@@ -439,6 +502,18 @@ def methoden_vorlage_upload(projekt_id):
     return jsonify({"ok": True})
 
 
+@bp.post("/projekt/<int:projekt_id>/methoden-vorlage/zuordnung")
+@permission_required("write")
+def methoden_mapping(projekt_id):
+    """Speichert die bestätigte Kapitel-Zuordnung der Projekt-Wortvorlage."""
+    projekt = _load_projekt(projekt_id)
+    vorlage = current_app.projekt_service.projekt_methoden_vorlage(projekt.id)
+    if vorlage is None:
+        abort(404)
+    _save_mapping_from_form(vorlage.id)
+    return redirect(url_for("ui.projekt_detail", projekt_id=projekt.id))
+
+
 # ---- PMO: organisationsweite Vorgaben ---------------------------------- #
 
 @bp.get("/pmo")
@@ -454,7 +529,9 @@ def pmo():
     methoden_report = _methoden_vorlage_report(methoden_vorlage)
     return render_template("pmo.html", vorlage=vorlage,
                            methoden_vorlage=methoden_vorlage,
-                           methoden_report=methoden_report)
+                           methoden_report=methoden_report,
+                           methoden_editor=_methoden_editor(methoden_vorlage),
+                           methoden_mapping_url=url_for("ui.pmo_methoden_mapping"))
 
 
 @bp.post("/pmo/branding")
@@ -557,6 +634,17 @@ def pmo_methoden_vorlage_upload():
         uploaded_by=getattr(user, "email", None),
     )
     return jsonify({"ok": True})
+
+
+@bp.post("/pmo/methoden-vorlage/zuordnung")
+@permission_required("write")
+def pmo_methoden_mapping():
+    """Speichert die bestätigte Kapitel-Zuordnung der organisationsweiten Wortvorlage."""
+    vorlage = current_app.projekt_service.org_methoden_vorlage(current_user().org_id)
+    if vorlage is None:
+        abort(404)
+    _save_mapping_from_form(vorlage.id)
+    return redirect(url_for("ui.pmo"))
 
 
 @bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/praesentation/<path:filename>")
