@@ -14,7 +14,9 @@ Das eigentliche PIA-Artefakt bleibt die `InterviewSession`; sie verweist über
 """
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, LargeBinary, String
+from sqlalchemy import (
+    Column, DateTime, ForeignKey, Integer, LargeBinary, String, Text,
+)
 
 from app.shared.database import Base
 from app.shared.model_mixins import GovernanceMixin
@@ -141,6 +143,9 @@ class MethodenVorlage(Base):
     data = Column(LargeBinary, nullable=False)
     uploaded_by = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Vom Benutzer bestätigte Kapitel-Zuordnung (JSON-Liste). NULL = noch nicht
+    # bestätigt → es gilt die automatische Erkennung.
+    mapping_json = Column(Text, nullable=True)
 
 
 class MigrationFlag(Base):

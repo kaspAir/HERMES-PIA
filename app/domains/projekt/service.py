@@ -288,6 +288,20 @@ class ProjektService:
         return (self.projekt_methoden_vorlage(projekt.id)
                 or self.org_methoden_vorlage(projekt.org_id))
 
+    def get_methoden_vorlage(self, vorlage_id):
+        return SessionLocal().get(MethodenVorlage, int(vorlage_id))
+
+    def set_methoden_mapping(self, vorlage_id, mapping):
+        """Speichert die bestätigte Kapitel-Zuordnung (Liste) als JSON."""
+        import json
+        db = SessionLocal()
+        v = db.get(MethodenVorlage, int(vorlage_id))
+        if v is None:
+            return None
+        v.mapping_json = json.dumps(mapping, ensure_ascii=False)
+        db.commit()
+        return v
+
     def structure(self, projekt):
         """Verschachtelte Sicht für die UI: Phase -> Module(+Ergebnisse) + Meilensteine."""
         phase = self.phase_initialisierung(projekt.id)

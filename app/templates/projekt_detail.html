@@ -165,6 +165,11 @@
       <span class="dropzone-text">Word-Vorlage hierher ziehen oder klicken (.docx/.dotx)</span>
     </label>
     {% endif %}
+    {% if methoden_vorlage %}
+      {% with editor=methoden_editor, save_url=methoden_mapping_url %}
+        {% include "partials/methoden_zuordnung.html" %}
+      {% endwith %}
+    {% endif %}
   </section>
 
   <div id="upload-status" class="muted upload-status"></div>

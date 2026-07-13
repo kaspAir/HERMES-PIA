@@ -30,7 +30,10 @@ from app.domains.interview.extraction import (
 )
 from app.domains.interview.gap_check import build_followups, find_missing_risks
 from app.domains.interview.models import InterviewSession
-from app.domains.method.template_structure import build_derived_method
+from app.domains.method.template_structure import (
+    build_derived_method,
+    build_method_from_mapping,
+)
 from app.shared.database import SessionLocal
 
 _INTERVIEWABLE = {"free_text", "table"}
@@ -130,14 +133,22 @@ class InterviewService:
         vorlage = self.projekt.resolve_methoden_vorlage(projekt)
         if vorlage is None:
             return canonical
-        cached = self._derived_cache.get(vorlage.id)
+        # Cache-Schlüssel enthält die Zuordnung – wird sie bearbeitet, greift
+        # sofort die neue Struktur.
+        mapping_json = getattr(vorlage, "mapping_json", None)
+        cache_key = (vorlage.id, mapping_json or "")
+        cached = self._derived_cache.get(cache_key)
         if cached is not None:
             return cached
         try:
-            method, _ = build_derived_method(vorlage.data, canonical)
+            if mapping_json:
+                mapping = json.loads(mapping_json)
+                method = build_method_from_mapping(canonical, mapping)
+            else:
+                method, _ = build_derived_method(vorlage.data, canonical)
         except Exception:  # noqa: BLE001 – bei jedem Zweifel die sichere Kanon-Struktur
             return canonical
-        self._derived_cache[vorlage.id] = method
+        self._derived_cache[cache_key] = method
         return method
 
     # ------------------------------------------------------------------ #

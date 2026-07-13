@@ -51,6 +51,14 @@ def _migrate_db(engine):
                 conn.execute(text(f"ALTER TABLE interview_session ADD COLUMN {col} {dtype}"))
         conn.commit()
 
+    # methoden_vorlage: bestätigte Kapitel-Zuordnung (nachträglich ergänzt).
+    if "methoden_vorlage" in inspector.get_table_names():
+        mv_cols = {c["name"] for c in inspector.get_columns("methoden_vorlage")}
+        if "mapping_json" not in mv_cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE methoden_vorlage ADD COLUMN mapping_json TEXT"))
+                conn.commit()
+
 
 def _backfill_projekte(app):
     """Wickelt bestehende PIAs einmalig in die Projektstruktur ein.
