@@ -79,7 +79,7 @@
              alt="Logo" class="branding-logo-vorschau">
         <span class="muted">{{ current_branding.logo_filename }}</span>
       {% else %}
-        <span class="muted">Standard (BKI)</span>
+        <span class="muted">Standard (HERMES PIA)</span>
       {% endif %}
       {% if current_user.can_write %}
       <label class="btn-link upload-label">Logo hochladen (.png/.jpg, max. 2 MB)
@@ -103,7 +103,7 @@
       </label>
       <label class="chk">Buttons
         <input type="color" name="primaer_farbe"
-               value="{{ current_branding.primaer_farbe if current_branding and current_branding.primaer_farbe else '#e94560' }}">
+               value="{{ current_branding.primaer_farbe if current_branding and current_branding.primaer_farbe else '#439458' }}">
       </label>
       <button type="submit" class="btn-link">Speichern</button>
     </form>

@@ -22,9 +22,8 @@
          alt="{{ current_org.name if current_org else 'Logo' }}"
          class="brand-logo">
     {% else %}
-    <img src="{{ url_for('static', filename='img/bki-logo.png') }}"
-         alt="BKI &ndash; Project Management Consulting &amp; Training"
-         class="brand-logo">
+    <img src="{{ url_for('static', filename='img/hermes-pia-logo.svg') }}"
+         alt="HERMES PIA" class="brand-logo brand-logo--mark">
     {% endif %}
     {% if current_user %}
     <div class="user-menu">
