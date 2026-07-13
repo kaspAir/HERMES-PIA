@@ -105,7 +105,7 @@ def test_logo_upload_und_auslieferung(clients):
     # Kopfleiste referenziert das eigene Logo statt des Standard-Logos
     html = clients["a"].get("/pmo").get_data(as_text=True)
     assert "/branding/logo" in html
-    assert "bki-logo.png" not in html
+    assert "hermes-pia-logo.svg" not in html
 
 
 def test_jpg_logo_bekommt_jpeg_mimetype(clients):
@@ -130,7 +130,7 @@ def test_mandantentrennung_logo(clients):
     # Org B hat kein Logo -> 404, nie das Logo einer fremden Organisation
     assert clients["b"].get("/branding/logo").status_code == 404
     # Org B sieht weiterhin das Standard-Logo
-    assert "bki-logo.png" in clients["b"].get("/pmo").get_data(as_text=True)
+    assert "hermes-pia-logo.svg" in clients["b"].get("/pmo").get_data(as_text=True)
 
 
 # ---- Reset ------------------------------------------------------------- #
@@ -142,5 +142,5 @@ def test_reset_entfernt_farben_und_logo(clients):
     assert r.status_code == 302
     html = clients["a"].get("/pmo").get_data(as_text=True)
     assert "--color-primary:" not in html
-    assert "bki-logo.png" in html
+    assert "hermes-pia-logo.svg" in html
     assert clients["a"].get("/branding/logo").status_code == 404
