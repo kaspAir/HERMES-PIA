@@ -235,6 +235,12 @@ def interview_transcribe(session_id):
     Für Behördendaten einen CH/EU- oder self-hosted-Endpoint (STT_API_URL) verwenden.
     """
     _load_session(session_id)
+    return _transcribe_request()
+
+
+def _transcribe_request():
+    """Gemeinsame Diktat-Logik: Audio (Base64-JSON bevorzugt, Roh-Body als
+    Fallback) an den STT-Dienst geben und den Text zurückgeben."""
     tr = current_app.transcriber
     if not getattr(tr, "available", False):
         return jsonify({"text": "", "error": "Transkription ist nicht konfiguriert."}), 200
@@ -258,6 +264,13 @@ def interview_transcribe(session_id):
     except Exception as exc:  # noqa: BLE001 – Fehler an den Client melden, nicht crashen
         return jsonify({"text": "", "error": f"Transkription fehlgeschlagen: {exc}"}), 502
     return jsonify({"text": text})
+
+
+@bp.post("/transcribe")
+@permission_required("write")
+def transcribe():
+    """Session-unabhängiges Diktat (z.B. Bemerkungsfelder im Zuordnungs-Editor)."""
+    return _transcribe_request()
 
 
 @bp.post("/interview/<int:session_id>/delete")

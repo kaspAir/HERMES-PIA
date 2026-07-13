@@ -142,7 +142,8 @@ def create_app(config_class=None):
         org = app.auth_service.get_org(user.org_id) if user and user.org_id else None
         branding = app.auth_service.get_branding(user.org_id) if user and user.org_id else None
         return {"app_version": app_version, "current_user": user,
-                "current_org": org, "current_branding": branding}
+                "current_org": org, "current_branding": branding,
+                "stt_available": getattr(app.transcriber, "available", False)}
 
     @app.teardown_appcontext
     def remove_session(exception=None):
