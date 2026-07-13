@@ -117,7 +117,9 @@ _SYNONYME = {
     "definitionen": "definitionen",
     "definitionen und abkuerzungen": "definitionen",
     "abkuerzungen": "definitionen",
+    "abkuerzungen und glossar": "definitionen",
     "glossar": "definitionen",
+    "abkuerzungsverzeichnis": "definitionen",
 }
 
 
@@ -246,6 +248,18 @@ def build_derived_method(docx_bytes, canonical_method, question_gen=None):
                                 meta.get("framework")) if v
     }
 
+    # Vorspann/Hilfstexte erkennen: Kapitel VOR dem ersten echten HERMES-Kapitel
+    # (z.B. «Hinweise zum HERMES-Dokument», «Beschreibung», Änderungsverzeichnis)
+    # sind fixe Anleitungstexte – sie werden weder erfragt noch je überschrieben.
+    # Default 0: ohne kanonischen Anker gibt es keinen Vorspann (sonst würde bei
+    # einer Vorlage ohne erkannte Kapitel fälschlich ALLES übersprungen).
+    first_canon = 0
+    for i, h in enumerate(headings):
+        sid = match_canonical(h["text"], canonical_sections)
+        if sid and sid in by_id:
+            first_canon = i
+            break
+
     for idx, h in enumerate(headings):
         title = h["text"]
         norm = _normalize(title)
@@ -270,6 +284,11 @@ def build_derived_method(docx_bytes, canonical_method, question_gen=None):
             continue
         if sid and sid in seen_canonical:
             # Kapitel doppelt (z.B. Unterüberschrift) – nicht erneut aufnehmen.
+            continue
+        # Vorspann: ein nicht-kanonisches Kapitel VOR dem ersten HERMES-Kapitel
+        # ist fixer Hilfstext (Hinweise/Beschreibung/Anleitung) → nie erfragen.
+        if idx < first_canon:
+            skipped.append({"heading": title, "grund": "vorspann"})
             continue
         # Generisches Kapitel: Fragen aus dem Titel ableiten.
         try:
@@ -297,6 +316,13 @@ def build_derived_method(docx_bytes, canonical_method, question_gen=None):
     missing = [s["id"] for s in canonical_sections
                if s.get("type") in ("free_text", "table")
                and s["id"] not in seen_canonical]
+
+    # Ausgangslage zuerst erfragen: Komplexitäts- und Projekttyp-Einschätzung
+    # leiten sich aus ihr ab und dienen allen nachgelagerten Vorschlägen als
+    # Kontext. Betrifft nur die INTERVIEW-Reihenfolge – das erzeugte Dokument
+    # folgt der Vorlage (die Erzeugung matcht Kapitel über den Titel, nicht die
+    # Reihenfolge). Stabil: alle übrigen Kapitel behalten die Vorlagenreihenfolge.
+    derived.sort(key=lambda s: 0 if s.get("id") == "ausgangslage" else 1)
 
     method = dict(canonical_method)
     method["sections"] = derived

@@ -123,8 +123,10 @@ def test_container_und_strukturueberschriften_werden_uebersprungen():
     method, report = build_derived_method(data, _canonical())
     ids = [s["id"] for s in method["sections"]]
 
+    # Ausgangslage steht im Interview immer zuerst; die übrigen Kapitel behalten
+    # die Vorlagenreihenfolge.
     assert ids == [
-        "referenzierte_dokumente", "ausgangslage",
+        "ausgangslage", "referenzierte_dokumente",
         "personalaufwand", "kosten", "risiken",
     ]
     # Weder Titel/Verzeichnis/Protokoll noch Container werden zu Kapiteln
@@ -132,6 +134,37 @@ def test_container_und_strukturueberschriften_werden_uebersprungen():
     uebersprungen = {s["heading"] for s in report["skipped"]}
     assert {"Projektinitialisierungsauftrag", "Inhaltsverzeichnis",
             "Einleitung", "Ressourcenbedarf", "Dokument-Protokoll"} <= uebersprungen
+
+
+def test_vorspann_hilfstexte_werden_nicht_erfragt():
+    # KTZH-artig: fixe Hilfstexte VOR der Ausgangslage dürfen nicht zu Fragen werden.
+    data = _docx([
+        (1, "Änderungsverzeichnis"),
+        (1, "Hinweise zum HERMES-Dokument"),
+        (1, "Beschreibung"),
+        (1, "Hinweise zur Anwendung des Dokumentes"),
+        (1, "Ausgangslage"),
+        (1, "Ziele"),
+        (1, "Datenschutzkonzept"),   # NACH Ausgangslage -> echtes Zusatzkapitel
+    ])
+    method, report = build_derived_method(data, _canonical())
+    ids = [s["id"] for s in method["sections"]]
+
+    assert ids == ["ausgangslage", "ziele", "custom_datenschutzkonzept"]
+    # Die Hilfstexte sind als Vorspann übersprungen, nicht generisch erfragt
+    assert report["generic"] == [{"heading": "Datenschutzkonzept",
+                                  "section_id": "custom_datenschutzkonzept"}]
+    vorspann = {s["heading"] for s in report["skipped"] if s["grund"] == "vorspann"}
+    assert {"Hinweise zum HERMES-Dokument", "Beschreibung",
+            "Hinweise zur Anwendung des Dokumentes"} <= vorspann
+
+
+def test_ausgangslage_wird_zuerst_erfragt():
+    # Auch wenn die Vorlage Ausgangslage NICHT zuerst führt -> im Interview zuerst.
+    data = _docx([(1, "Ziele"), (1, "Risiken"), (1, "Ausgangslage")])
+    method, _ = build_derived_method(data, _canonical())
+    assert method["sections"][0]["id"] == "ausgangslage"
+    assert [s["id"] for s in method["sections"]] == ["ausgangslage", "ziele", "risiken"]
 
 
 def test_build_derived_nutzt_question_gen_mit_fallback():
