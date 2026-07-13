@@ -222,6 +222,7 @@ class GenerationService:
                 if ntag == 'p' and _p_text(nxt).strip():
                     if not first_done:
                         _set_p_text(nxt, text)
+                        _clear_info_style(nxt)   # graue Hilfetext-Formatierung entfernen
                         first_done = True
                     else:
                         body.remove(nxt)
@@ -847,6 +848,25 @@ def _is_heading_p(p_el):
 
 def _tc_text(tc_el):
     return ''.join(t.text or '' for t in tc_el.iter(f'{{{W}}}t')).strip()
+
+
+# Absatz-Stile, die Hilfs-/Infotext markieren (kunden-/HERMES-spezifisch benannt).
+_INFO_STYLE_MUSTER = ('infotext', 'hilfetext', 'hilfstext', 'beispiel',
+                      'muster', 'platzhalter', 'help', 'instruction', 'kommentar')
+
+
+def _clear_info_style(p_el):
+    """Entfernt einen Hilfs-/Infotext-Absatzstil, damit gefüllter Inhalt als
+    normaler Fliesstext (Standard) erscheint statt grau/kursiv wie ein Platzhalter."""
+    pPr = p_el.find(f'{{{W}}}pPr')
+    if pPr is None:
+        return
+    ps = pPr.find(f'{{{W}}}pStyle')
+    if ps is None:
+        return
+    name = (ps.get(f'{{{W}}}val', '') or '').lower()
+    if any(k in name for k in _INFO_STYLE_MUSTER):
+        pPr.remove(ps)
 
 
 def _row_cells(row_el):
