@@ -51,6 +51,21 @@ _STRUKTUR_STOPWORTE = {
     "abbildungsverzeichnis", "tabellenverzeichnis",
 }
 
+# Muster für fixe Hilfs-/Anleitungstexte im Vorspann (Kapitel, die ERKLÄREN, wie
+# das Dokument zu verwenden ist – nicht auszufüllen). Bewusst konservativ: greift
+# NUR vor dem ersten erkannten HERMES-Kapitel, damit ein bloss umbenanntes echtes
+# Inhaltskapitel niemals verworfen wird (im Zweifel lieber fragen als verschlucken).
+_HILFETEXT_TEILMUSTER = ("hinweis", "anwendung des dokument", "erlaeuterung",
+                         "anleitung", "gebrauch des dokument")
+_HILFETEXT_EXAKT = {"beschreibung", "vorwort", "einleitende hinweise"}
+
+
+def _ist_hilfetext(norm):
+    """Erkennt fixe Hilfs-/Anleitungstitel (nur im Vorspann anzuwenden)."""
+    if norm in _HILFETEXT_EXAKT:
+        return True
+    return any(m in norm for m in _HILFETEXT_TEILMUSTER)
+
 
 # Synonyme (normalisiert) → kanonische Section-ID. HERMES-Varianten benennen
 # Kapitel häufig um; diese Tabelle fängt die geläufigen Abweichungen ab, ohne
@@ -285,9 +300,11 @@ def build_derived_method(docx_bytes, canonical_method, question_gen=None):
         if sid and sid in seen_canonical:
             # Kapitel doppelt (z.B. Unterüberschrift) – nicht erneut aufnehmen.
             continue
-        # Vorspann: ein nicht-kanonisches Kapitel VOR dem ersten HERMES-Kapitel
-        # ist fixer Hilfstext (Hinweise/Beschreibung/Anleitung) → nie erfragen.
-        if idx < first_canon:
+        # Vorspann: ein Kapitel VOR dem ersten HERMES-Kapitel wird NUR übersprungen,
+        # wenn es klar nach Hilfs-/Anleitungstext benannt ist. Ein bloss umbenanntes
+        # echtes Inhaltskapitel (das wir nicht erkennen) wird NIE verworfen, sondern
+        # als generisches Kapitel erfragt – im Zweifel fragen statt verschlucken.
+        if idx < first_canon and _ist_hilfetext(norm):
             skipped.append({"heading": title, "grund": "vorspann"})
             continue
         # Generisches Kapitel: Fragen aus dem Titel ableiten.

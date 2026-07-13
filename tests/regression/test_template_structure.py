@@ -159,6 +159,18 @@ def test_vorspann_hilfstexte_werden_nicht_erfragt():
             "Hinweise zur Anwendung des Dokumentes"} <= vorspann
 
 
+def test_umbenanntes_inhaltskapitel_wird_nicht_verschluckt():
+    # Ein echtes Kapitel, das wir nicht erkennen (umbenannt) und das VOR dem
+    # ersten erkannten HERMES-Kapitel steht, darf NIE als Vorspann verworfen
+    # werden – lieber als generisches Kapitel erfragen.
+    data = _docx([(1, "Projektkontext"), (1, "Ziele"), (1, "Risiken")])
+    method, report = build_derived_method(data, _canonical())
+    ids = [s["id"] for s in method["sections"]]
+    assert "custom_projektkontext" in ids
+    assert not any(s["heading"] == "Projektkontext"
+                   for s in report["skipped"] if s["grund"] == "vorspann")
+
+
 def test_ausgangslage_wird_zuerst_erfragt():
     # Auch wenn die Vorlage Ausgangslage NICHT zuerst führt -> im Interview zuerst.
     data = _docx([(1, "Ziele"), (1, "Risiken"), (1, "Ausgangslage")])
