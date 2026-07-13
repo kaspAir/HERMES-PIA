@@ -294,7 +294,11 @@ def build_derived_method(docx_bytes, canonical_method, question_gen=None):
         sid = match_canonical(title, canonical_sections)
         if sid and sid in by_id and sid not in seen_canonical:
             seen_canonical.add(sid)
-            derived.append(by_id[sid])
+            # Kopie (nicht Referenz!) + Original-Überschrift der Kundenvorlage,
+            # damit die Erzeugung das Kapitel im Kundendokument wiederfindet.
+            sec = dict(by_id[sid])
+            sec["template_heading"] = title
+            derived.append(sec)
             matched.append({"heading": title, "section_id": sid})
             continue
         if sid and sid in seen_canonical:
@@ -319,6 +323,7 @@ def build_derived_method(docx_bytes, canonical_method, question_gen=None):
             "id": slug,
             "number": "",
             "title": title,
+            "template_heading": title,
             "type": "free_text",
             "required": False,
             "generic": True,
