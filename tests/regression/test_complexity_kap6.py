@@ -518,3 +518,59 @@ def test_assess_complexity_garantiert_alle_dimensionen():
     assert "Politik & Stakeholder" in namen          # fehlte im LLM-Output -> ergänzt
     assert next(o for o in out if o["dimension"] == "Technologie")["stufe"] == "hoch"
     assert all(o.get("einschaetzung") for o in out)  # keine leere Einschätzung
+
+
+# --- Aktive Nachfrage: externe Fachexpertise (beratender Anspruch) --------- #
+
+def _pa_section(svc):
+    return svc._section_by_id(svc.methods.get("hermes_pia"), "personalaufwand")
+
+
+def _stub_session():
+    return type("S", (), {"project_type_id": None, "start_datum": None,
+                          "method_id": "hermes_pia"})()
+
+
+def test_externe_fachexpertise_wird_aktiv_erfragt():
+    # Signalisiert der PL externen Bedarf beim Personalschritt, fragt HERMES PIA
+    # aktiv nach dem Thema (statt es 'offen' zu lassen).
+    svc = _svc()  # ohne LLM -> nur die deterministische Nachfrage
+    raw = "Möglichst viel intern, aber wir brauchen externe Fachexpertise."
+    fus = svc._build_followups(_pa_section(svc), [{"rolle": "Projektleiter"}],
+                               raw, _stub_session(), {})
+    assert any(f.get("type") == "expertise" for f in fus)
+
+
+def test_keine_expertise_nachfrage_ohne_signal():
+    svc = _svc()
+    fus = svc._build_followups(_pa_section(svc), [{"rolle": "Projektleiter"}],
+                               "Wir machen alles intern.", _stub_session(), {})
+    assert not any(f.get("type") == "expertise" for f in fus)
+
+
+def test_expertise_thema_wird_in_rolle_geschrieben():
+    svc = _svc()
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "name": "", "aufwand": "12"},
+        {"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}]}}
+    svc._apply_expertise_thema(answers, "Sicherheitsarchitektur.")
+    rollen = [r["rolle"] for r in answers["personalaufwand"]["extracted"]]
+    assert "Externe Fachexpertise (Sicherheitsarchitektur)" in rollen
+
+
+def test_expertise_ohne_thema_laesst_rolle_bestehen():
+    # Abgelehnt / kein Thema -> die Rolle wird NIE stillschweigend entfernt.
+    svc = _svc()
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}]}}
+    svc._apply_expertise_thema(answers, None)
+    rollen = [r["rolle"] for r in answers["personalaufwand"]["extracted"]]
+    assert "Externe Fachexpertise" in rollen
+
+
+def test_expertise_signal_auch_beim_personalschritt():
+    # Das Signal greift auch, wenn es NICHT in der Ausgangslage, sondern erst
+    # beim Personalschritt fällt.
+    svc = _svc()
+    assert svc._externe_expertise_signal({}, "wir brauchen externe Beratung")
+    assert not svc._externe_expertise_signal({}, "alles wird intern erledigt")

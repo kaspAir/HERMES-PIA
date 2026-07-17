@@ -364,6 +364,9 @@ class InterviewService:
                     # auch ein 'Widerlegen' (nicht accepted) wird verarbeitet.
                     if followup.get("type") == "complexity":
                         self._apply_complexity(answers, followup, raw_text, refuted=not accepted)
+                    elif followup.get("type") == "expertise":
+                        # Thema der externen Fachexpertise bei der Rolle festhalten.
+                        self._apply_expertise_thema(answers, raw_text if accepted else None)
                     elif accepted:
                         section = self._section_by_id(self._effective_method(session), sid)
                         if section and followup.get("type") == "offer":
@@ -489,7 +492,8 @@ class InterviewService:
             section_answer["extracted"] = self._kosten_breakdown(rows, answers)
         elif sid == "personalaufwand":
             self._ensure_deliverable_roles(rows, answers)
-            self._ensure_external_experts(rows, answers)
+            self._ensure_external_experts(rows, answers,
+                                          section_answer.get("raw_text", ""))
         elif sid == "risiken":
             for r in rows:
                 if not isinstance(r, dict):
@@ -640,18 +644,48 @@ class InterviewService:
             if not has_role("entwickler"):
                 rows.append({"rolle": "Entwickler", "name": "", "aufwand": ""})
 
-    def _ensure_external_experts(self, rows, answers):
-        """Erzwingt eine Rolle für externe Fachexpertise, wenn Ausgangslage/Komplexität
-        fehlendes internes Know-how bzw. den Einkauf externer Expertise signalisieren."""
-        txt = (self.composed_ausgangslage(answers) or "").lower()
-        signal = "extern" in txt and any(w in txt for w in (
-            "know-how", "knowhow", "fachexpert", "einkauf", "kompensier", "beratung", "engpass",
+    def _externe_expertise_signal(self, answers, extra_text=""):
+        """True, wenn Ausgangslage/Komplexität ODER der Personalschritt selbst den
+        Bedarf an externer Fachexpertise signalisieren."""
+        txt = ((self.composed_ausgangslage(answers) or "") + " " + (extra_text or "")).lower()
+        return "extern" in txt and any(w in txt for w in (
+            "know-how", "knowhow", "fachexpert", "expertise", "einkauf", "kompensier",
+            "beratung", "berater", "engpass", "spezialist",
         ))
-        if not signal:
+
+    def _externe_rolle(self, rows):
+        for r in rows:
+            if isinstance(r, dict) and "extern" in str(r.get("rolle", "")).lower():
+                return r
+        return None
+
+    def _ensure_external_experts(self, rows, answers, section_text=""):
+        """Erzwingt eine Rolle für externe Fachexpertise, wenn Ausgangslage/Komplexität
+        oder der Personalschritt fehlendes internes Know-how bzw. den Einkauf externer
+        Expertise signalisieren."""
+        if not self._externe_expertise_signal(answers, section_text):
             return
-        if any("extern" in str(r.get("rolle", "")).lower() for r in rows if isinstance(r, dict)):
+        if self._externe_rolle(rows) is not None:
             return
         rows.append({"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""})
+
+    def _apply_expertise_thema(self, answers, thema):
+        """Hält das erfragte Thema bei der Rolle 'Externe Fachexpertise' fest
+        (z.B. 'Externe Fachexpertise (Sicherheit)'). Ohne Thema bleibt die Rolle
+        bestehen – sie wird nie stillschweigend entfernt."""
+        thema = (thema or "").strip().rstrip(".")
+        pa = answers.get("personalaufwand") or {}
+        rows = pa.get("extracted")
+        if not isinstance(rows, list):
+            return
+        rolle = self._externe_rolle(rows)
+        if rolle is None:
+            rolle = {"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}
+            rows.append(rolle)
+        if thema:
+            rolle["rolle"] = f"Externe Fachexpertise ({thema})"
+        pa["extracted"] = rows
+        answers["personalaufwand"] = pa
 
     def _build_projektorganisation(self, answers, start_datum):
         """Leitet Kap. 6 deterministisch aus Personalaufwand (3.1) und Dauer ab:
@@ -1245,6 +1279,25 @@ class InterviewService:
                     "type": "ergaenzung",
                     "status": "pending",
                     "rows": missing,
+                })
+
+        # Externe Fachexpertise: signalisiert der PL Bedarf, aber ohne Thema, fragt
+        # HERMES PIA aktiv nach – statt die Rolle mit «Thema offen» stehen zu lassen.
+        if section["id"] == "personalaufwand" and \
+                self._externe_expertise_signal(answers, raw_text):
+            rolle = self._externe_rolle(extracted or [])
+            offen = rolle is None or not str(rolle.get("name", "")).strip()
+            # kein Thema in Klammern hinter der Rollenbezeichnung erfasst?
+            if rolle is not None and "(" in str(rolle.get("rolle", "")):
+                offen = False
+            if offen:
+                followups.append({
+                    "risk_id": "expertise_personalaufwand",
+                    "frage": "Sie brauchen externe Fachexpertise – wofür genau? "
+                             "(z.B. Architektur, Sicherheit, Beschaffung). "
+                             "Ich halte das Thema bei der Rolle fest.",
+                    "type": "expertise",
+                    "status": "pending",
                 })
 
         # Ausgangslage: Komplexität aus verschiedenen Blickwinkeln einschätzen lassen,
