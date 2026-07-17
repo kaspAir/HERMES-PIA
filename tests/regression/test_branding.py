@@ -102,10 +102,12 @@ def test_logo_upload_und_auslieferung(clients):
     assert r.status_code == 200
     assert r.mimetype == "image/png"
     assert r.data == _PNG
-    # Kopfleiste referenziert das eigene Logo statt des Standard-Logos
+    # Kopfleiste referenziert das eigene Logo statt der Standard-Bildmarke
+    # (das Favicon nutzt die Bildmarke weiterhin – daher gezielt auf die
+    #  Kopfleisten-Marke `brand-logo--mark` prüfen, nicht die ganze Seite).
     html = clients["a"].get("/pmo").get_data(as_text=True)
     assert "/branding/logo" in html
-    assert "hermes-pia-logo.svg" not in html
+    assert "brand-logo--mark" not in html
 
 
 def test_jpg_logo_bekommt_jpeg_mimetype(clients):
