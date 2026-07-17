@@ -1,0 +1,247 @@
+# =====================================================================
+# HERMES PIA – Fachliche Testfälle (User-/End-to-End-Szenarien)
+# =====================================================================
+# Quelle der Wahrheit gemäss Testkonzept §11/§14: Testfälle als YAML je Produkt
+# in Git. Diese Fälle werden bei JEDEM Build auf `test` manuell/explorativ
+# durch BKI-interne Mitarbeitende durchgeführt (fachliche Testfälle gegen Mock).
+#
+# Schema (angelehnt an §11):
+#   id            eindeutig, stabil (pia-fachlich-NNNN)
+#   titel         kurze Bezeichnung
+#   stufe         unit | kontrakt | system | abnahme   (hier: system = fachlich E2E)
+#   umgebungen    wo der Fall gültig ist
+#   schnittstellen mock | real   (auf test: LLM/STT je nach Konfiguration; hier als
+#                                  Feld dokumentiert, damit Scheinsicherheit ausscheidet)
+#   smoke         true = Teil des schnellen Kern-Sets (Muss-bestehen bei jedem Build)
+#   ziel          fachliches Ziel des Falls
+#   vorbedingung  Ausgangszustand
+#   schritte      konkrete Handlungen der testenden Person
+#   erwartet      beobachtbares Soll-Ergebnis (Testorakel)
+#
+# Leitmotiv (Konzept §1): getestet wird für einen NACHVOLLZIEHBAREN NACHWEIS.
+# Das ausgefüllte Protokoll (Datum, Version/SHA, Umgebung, Pass/Fail, Bemerkung)
+# ist das eigentliche Ergebnis – siehe Artefakt-Testprotokoll.
+
+produkt: HERMES PIA
+umgebung_referenz: test           # test.hermespia.ch (BKI-intern, exploratives Testen)
+version_schema: "0.1"
+
+testfaelle:
+
+  - id: pia-fachlich-0001
+    titel: Anmeldung & Mandantentrennung
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: true
+    ziel: Nur berechtigter Zugriff; keine fremden Mandantendaten; Rechte greifen.
+    vorbedingung: Zwei Organisationen mit je einem Org-Admin und einem Nur-Leser.
+    schritte:
+      - Mit Org-Admin A anmelden.
+      - Organisation im Kopf (Badge) prüfen.
+      - Versuchen, ein Projekt/PIA einer fremden Organisation über die URL zu öffnen.
+      - Als Nur-Leser A anmelden und ein Projekt anlegen wollen sowie löschen wollen.
+    erwartet:
+      - Anmeldung gelingt; die eigene Organisation wird angezeigt.
+      - Fremdzugriff wird mit «kein Zugriff» (403) abgewiesen.
+      - Nur-Leser kann ansehen, aber NICHT anlegen/löschen (Aktion gesperrt).
+
+  - id: pia-fachlich-0002
+    titel: Projekt anlegen (HERMES-Projektstruktur)
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: true
+    ziel: Neues Projekt erzeugt korrekte Phase-/Modul-/Ergebnis-Struktur.
+    vorbedingung: Angemeldet als Org-Admin mit Schreibrecht.
+    schritte:
+      - «Neues Projekt» mit Projektname und Projektleiter/in ausfüllen, Startdatum setzen.
+      - Projekt anlegen.
+      - Projektansicht öffnen.
+    erwartet:
+      - Phase Initialisierung mit drei Modulen (Projektsteuerung/-führung/-grundlagen).
+      - Der PIA liegt als Ergebnis im Modul Projektsteuerung.
+      - Meilenstein «Projektinitialisierungsfreigabe» = geplanter Start.
+
+  - id: pia-fachlich-0003
+    titel: Interview – Ausgangslage zuerst und Komplexität
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: true
+    ziel: Das Interview beginnt mit der Ausgangslage und erhebt die Komplexität.
+    vorbedingung: Projekt angelegt, Interview gestartet.
+    schritte:
+      - Ausgangslage im Gespräch/Text erfassen.
+      - Weiter, bis die Komplexitäts-Rückfragen erscheinen; beantworten.
+    erwartet:
+      - Erstes Kapitel ist die Ausgangslage (unabhängig von einer Vorlage).
+      - Komplexitäts-Rückfragen erscheinen und lassen sich bestätigen/widerlegen.
+      - Der Projekttyp wird erkannt (oder offen gelassen) – NIE geraten/falsch gesetzt.
+
+  - id: pia-fachlich-0004
+    titel: Interview – Diktat mit wählbarem Mikrofon
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: real   # STT-Dienst; nur wenn STT_API_KEY gesetzt
+    smoke: false
+    ziel: Diktat erfasst ausschliesslich das gewählte Mikrofon und schreibt Text.
+    vorbedingung: STT konfiguriert; ein Mikrofon verfügbar.
+    schritte:
+      - Im Voice-Block ein Mikrofon aus dem Dropdown wählen.
+      - Aufnahme starten, einen Satz sprechen, sauber stoppen.
+    erwartet:
+      - Nur das gewählte Mikrofon wird erfasst (kein Meeting-/Systemton).
+      - Der transkribierte Text erscheint im Antwortfeld; die Gerätewahl bleibt gemerkt.
+
+  - id: pia-fachlich-0005
+    titel: Interview – Ergänzungsangebot «Haben Sie auch an … gedacht?»
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: false
+    ziel: Eigener Input wird gegen typische Positionen ergänzt (nicht still verworfen).
+    vorbedingung: Interview an einem Tabellen-Kapitel (z.B. Sachmittel/Referenzen).
+    schritte:
+      - Eigene Angaben zum Kapitel machen und «Vorschlag/Weiter» auslösen.
+      - Angebotene Ergänzung einmal annehmen, einmal ablehnen.
+    erwartet:
+      - HERMES PIA bietet fehlende typische Positionen zur Ergänzung an.
+      - Annehmen übernimmt sie in die Tabelle; Ablehnen lässt den Input unverändert.
+
+  - id: pia-fachlich-0006
+    titel: PIA erzeugen (Word) und Versionierung
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: true
+    ziel: Aus dem Interview entsteht ein HERMES-2022-konformer PIA als .docx.
+    vorbedingung: Interview vollständig erfasst.
+    schritte:
+      - PIA herunterladen und im Word öffnen.
+      - Erneut herunterladen und die Version prüfen.
+    erwartet:
+      - Dokument HERMES-2022-konform (u.a. Durchführungsauftrag statt «Projektauftrag»).
+      - Dateiname im Format yyyymmdd_Projektname.docx.
+      - Version steht ab 0.0 und wird nach dem ersten Download 0.1.
+
+  - id: pia-fachlich-0007
+    titel: Freigegebenen PIA hochladen
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: false
+    ziel: Die freigegebene Fassung wird dem Ergebnis wieder zur Verfügung gestellt.
+    vorbedingung: Ein PIA wurde erzeugt.
+    schritte:
+      - Am PIA-Ergebnis «Freigabeversion hochladen (.docx)» auslösen und Datei wählen.
+    erwartet:
+      - Die freigegebene Fassung wird am Ergebnis als Freigabe-Dokument angezeigt und ist erneut ladbar.
+
+  - id: pia-fachlich-0008
+    titel: PA-Präsentation erzeugen
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: false
+    ziel: Aus dem freigegebenen PIA entsteht eine Präsentation im Vorlagen-Design.
+    vorbedingung: Präsentationsvorlage vorhanden (PMO oder Projekt) und PIA freigegeben.
+    schritte:
+      - Präsentation herunterladen und in PowerPoint öffnen.
+    erwartet:
+      - Titel-/Schlussfolie im Vorlagen-Design; Logo nicht überdeckt; Fusszeilen erhalten.
+      - Gantt mit echten Daten und Rauten für Meilensteine; Sprechnotizen vorhanden.
+      - Dateiname yyyymmdd_Projektname.pptx; keine «…»-Kürzungen.
+
+  - id: pia-fachlich-0009
+    titel: Projektplan – MS-Project-XML und Excel-Gantt
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: false
+    ziel: Downloadbarer Projektplan in beiden Formaten mit wählbarer Zeiteinheit.
+    vorbedingung: PIA mit Terminen erfasst.
+    schritte:
+      - MS-Project-XML herunterladen (später in MS Project öffnen).
+      - Excel mit einer gewählten Zeiteinheit (z.B. Wochen) herunterladen und öffnen.
+    erwartet:
+      - XML öffnet in MS Project ohne Schemafehler.
+      - Excel zeigt ein Gantt-Raster in der gewählten Zeiteinheit; Meilensteine als Rauten.
+
+  - id: pia-fachlich-0010
+    titel: Kundenvorlage hochladen + Zuordnungs-Editor
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: true
+    ziel: Eigene Word-Vorlage wird sauber auf HERMES-Kapitel zugeordnet.
+    vorbedingung: Eine Kunden-.docx/.dotx (z.B. KTZH) liegt bereit.
+    schritte:
+      - Im PMO (org-weit) oder Projekt die Vorlage per Drag & Drop hochladen.
+      - Erkennungs-Vorschau lesen (X von Y erkannt, fehlende HERMES-Kapitel).
+      - Zuordnung prüfen; ein Kapitel umstellen; eine Bemerkung tippen ODER diktieren.
+      - Zuordnung speichern.
+    erwartet:
+      - Fixe Hilfstexte/Vorspann sind auf «unverändert lassen» vorbelegt.
+      - Umbenannte Inhaltskapitel sind erkannt oder als «Freitext» wählbar (nie verschluckt).
+      - Nach dem Speichern erscheint der Status «Zuordnung bestätigt»; Bemerkung bleibt erhalten.
+
+  - id: pia-fachlich-0011
+    titel: Interview folgt Vorlage + Ausgabe im Vorlagenformat
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: true
+    ziel: Struktur der Kundenvorlage treibt Interview und Dokument; Hilfstext bleibt.
+    vorbedingung: Kundenvorlage mit bestätigter Zuordnung (0010).
+    schritte:
+      - Neues Interview im betroffenen Bereich starten und die Kapitel durchsehen.
+      - PIA erzeugen und im Word gegen die Kundenvorlage vergleichen.
+    erwartet:
+      - Das Interview zeigt die Kapitel der Vorlage (Ausgangslage zuerst), Hilfstexte werden nicht erfragt.
+      - Das erzeugte Dokument ist im Kundenlayout; erkannte Kapitel/Tabellen sind gefüllt.
+      - Fixe Hilfstexte bleiben unverändert; gefüllter Freitext steht im Standard-Stil (nicht grau).
+
+  - id: pia-fachlich-0012
+    titel: PMO – Vorlagen, Logo und Farben (Branding)
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: false
+    ziel: Organisationsweite Vorgaben (Vorlagen + Erscheinungsbild) wirken für alle.
+    vorbedingung: Angemeldet als Org-Admin.
+    schritte:
+      - Im PMO ein Logo (.png/.jpg) hochladen und drei Farben setzen, speichern.
+      - Eine beliebige Seite neu laden; danach «Zurücksetzen auf Standard».
+    erwartet:
+      - Logo und Farben gelten sofort für alle Benutzer der Organisation.
+      - Projekt-Vorlage übersteuert die PMO-Vorlage; Reset stellt den Standard (HERMES PIA) her.
+
+  - id: pia-fachlich-0013
+    titel: Erscheinungsbild gemäss Styleguide
+    stufe: system
+    umgebungen: [dev, test, int]
+    schnittstellen: mock
+    smoke: false
+    ziel: Die Oberfläche folgt dem Styleguide «Navy trägt, Grün handelt».
+    vorbedingung: Keine Org-Branding-Farben gesetzt (Standard).
+    schritte:
+      - Startseite und eine Formularseite ansehen.
+    erwartet:
+      - Primär-Buttons/Links/aktive Zustände in Grün; Banner navy; Pflicht-Sternchen amber.
+      - Systemschrift aktiv; HERMES-PIA-Bildmarke oben links.
+
+  - id: pia-fachlich-0014
+    titel: Verfügbarkeit / Selbstheilung (Smoke)
+    stufe: system
+    umgebungen: [test, int, prod]
+    schnittstellen: mock
+    smoke: true
+    ziel: Die Anwendung ist erreichbar und heilt einen Prozessausfall selbst.
+    vorbedingung: Zugriff auf den Server (für den optionalen Neustart-Teil).
+    schritte:
+      - Die Startseite über die Umgebungs-URL aufrufen.
+      - Optional: den Prozess der Umgebung beenden und bis zu ~2 Minuten warten (Watchdog).
+    erwartet:
+      - Die Anwendung antwortet (Anmeldeseite lädt); /health liefert ok.
+      - Nach einem Ausfall kommt die Umgebung ohne manuellen Rebuild selbst zurück (Eintrag in ~/logs/watchdog.log).
