@@ -32,7 +32,11 @@ bash ~/bin/hermes/hermes_ctl.sh watchdog       # alle Umgebungen prüfen/heilen 
   `*/2 * * * * /bin/bash ~/bin/hermes/hermes_ctl.sh watchdog`.
 - Prüft je ausgerollte Umgebung `http://127.0.0.1:<port>/health`. Fällt sie aus
   (mit einem Bestätigungs-Retry gegen transiente Aussetzer), wird sie neu
-  gestartet. `flock` verhindert Überschneidungen mit einem laufenden Deploy.
+  gestartet. Ein **Deploy-Marker** (`~/tmp/hermes-deploying-<env>`) hält den
+  Watchdog während eines laufenden Deploys von der Umgebung fern (stale nach
+  15 Min). Bewusst KEINE `flock`-Sperre um den Start: ein per `nohup` gestarteter
+  Gunicorn würde ein geerbtes Lock-FD dauerhaft halten und den nächsten Deploy
+  blockieren – Lock-FDs werden beim Daemon-Start daher geschlossen (`8>&- 9>&-`).
 - **Log:** `~/logs/watchdog.log` – hier steht, wann/warum neu gestartet wurde.
   Das ist zugleich die beste Spur, um die eigentliche Absturzursache zu finden.
 

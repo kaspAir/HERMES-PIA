@@ -82,13 +82,16 @@ hp_launch() {
     cd "$HP_DIR" || exit 1
     # shellcheck disable=SC1091
     . "$VENV/bin/activate"
+    # WICHTIG: 8>&- 9>&- schliesst etwaige Lock-FDs fuer den Daemon. Ein per
+    # nohup gestarteter Gunicorn wuerde ein geerbtes flock-FD sonst DAUERHAFT
+    # halten und den naechsten Deploy/Watchdog blockieren.
     nohup gunicorn run:app \
       --bind "127.0.0.1:$HP_PORT" --workers "$HP_WORKERS" \
       --timeout 120 --graceful-timeout 30 \
       --max-requests 800 --max-requests-jitter 200 \
       --access-logfile "$HP_DIR/logs/access.log" \
       --error-logfile "$HP_DIR/logs/error.log" --capture-output \
-      >/dev/null 2>&1 &
+      >/dev/null 2>&1 8>&- 9>&- &
     echo $! > "$HP_PID"
   )
   # Start + evtl. DB-Migration brauchen einen Moment.
@@ -101,37 +104,37 @@ hp_launch() {
   return 1
 }
 
-# (Neu-)Start EINER Umgebung, gegen parallele Starts (Deploy vs. Watchdog) gesperrt.
+# Marker signalisiert dem Watchdog «Deploy läuft» – bewusst KEINE flock-Sperre um
+# den Start (der nohup-Daemon würde ein Lock-FD erben und dauerhaft halten).
+hp_marker() { echo "$TMP/hermes-deploying-$1"; }
+
+# (Neu-)Start EINER Umgebung. Deploy-Pfad: autoritativ. Rückgabe = Gesundheit;
+# scheitert NUR an echter Ungesundheit, nie an Contention.
 hp_start() {
   hp_config "${1:-}" || return 2
-  (
-    exec 8>"$TMP/hermes-start-$1.lock"
-    if command -v flock >/dev/null 2>&1; then
-      flock -w 90 8 || { hp_log WARN "$1: Start-Lock belegt – uebersprungen"; exit 3; }
-    fi
-    hp_launch "$1"
-  )
+  local mk; mk=$(hp_marker "$1")
+  : > "$mk" 2>/dev/null || true       # Watchdog während des Deploys fernhalten
+  hp_launch "$1"; local rc=$?
+  rm -f "$mk" 2>/dev/null || true
+  return "$rc"
 }
 
 hp_watchdog() {
-  # Nur eine Watchdog-Instanz gleichzeitig.
+  # Nur eine Watchdog-Instanz gleichzeitig (globaler Lock; NICHT um einen Start).
   exec 9>"$TMP/hermes-watchdog.lock"
   if command -v flock >/dev/null 2>&1; then flock -n 9 || exit 0; fi
-  local e
+  local e mk
   for e in prod test int dev; do
     hp_config "$e" || continue
     [ -d "$HP_DIR" ] || continue         # Umgebung nicht ausgerollt -> ignorieren
+    mk=$(hp_marker "$e")
+    # Läuft gerade ein Deploy (frischer Marker < 15 Min)? Dann auslassen.
+    if [ -f "$mk" ] && [ -z "$(find "$mk" -mmin +15 2>/dev/null)" ]; then continue; fi
     hp_health "$e" && continue
     sleep 3
     hp_health "$e" && continue           # transienten Aussetzer nicht ueberreagieren
-    (
-      exec 8>"$TMP/hermes-start-$e.lock"
-      # Laeuft gerade ein Deploy? Dann diesen Zyklus auslassen.
-      if command -v flock >/dev/null 2>&1; then flock -n 8 || exit 0; fi
-      hp_health "$e" && exit 0           # inzwischen wieder gesund
-      hp_log WARN "$e: /health nicht erreichbar -> Neustart durch Watchdog"
-      hp_launch "$e"
-    )
+    hp_log WARN "$e: /health nicht erreichbar -> Neustart durch Watchdog"
+    hp_launch "$e"
   done
 }
 
