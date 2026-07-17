@@ -10,13 +10,22 @@
 // Nach test wird nur noch auf ausdrueckliche Freigabe promotet; die laufende
 // Entwicklung landet ueber develop automatisch auf dev.hermespia.ch.
 //
+// Betrieb & Stabilitaet:
+//   Deploy und (Neu-)Start laufen ueber EIN Skript: deploy/hermes_ctl.sh
+//   (per SSH-stdin ausgefuehrt). Es installiert sich beim Deploy nach
+//   ~/bin/hermes/ und richtet einen CRON-WATCHDOG ein, der alle 2 Minuten
+//   /health prueft und eine abgestuerzte Umgebung automatisch neu startet –
+//   damit ist kein manueller Rebuild mehr noetig, wenn ein Prozess stirbt.
+//   Prozess-Kill bleibt PID-verifiziert (nie blind, nie `pkill -f`).
+//
 // Voraussetzungen Jenkins:
 //   - SSH-Credential 'hermespia-deploy' (privater Key für u7031y_kaspar@83.228.238.194)
 //   - Docker + Docker-Pipeline-Plugin (für Testcontainer)
 //
 // Voraussetzungen Server hermespia.ch:
-//   - Python-venv unter ~/venv, Methodos-Repo unter ~/methodos
-//   - .env mit ANTHROPIC_API_KEY und FLASK_SECRET_KEY
+//   - Python-venv unter ~/venv, Prod-Repo unter ~/methodos
+//   - ~/methodos/.env mit ANTHROPIC_API_KEY, FLASK_SECRET_KEY (geteilt)
+//   - cron verfuegbar (Watchdog); curl + fuser vorhanden
 
 pipeline {
     agent any
@@ -30,7 +39,6 @@ pipeline {
 
     environment {
         DEPLOY_HOST = 'u7031y_kaspar@83.228.238.194'
-        APP_DIR     = '/home/clients/2a1849703150229016af3666c2f46b09/methodos'
         VENV        = '/home/clients/2a1849703150229016af3666c2f46b09/venv'
         REPO_URL    = 'https://github.com/kaspAir/HERMES-PIA'
     }
@@ -56,195 +64,42 @@ pipeline {
             }
         }
 
+        // Deploy: das Steuerskript wird per stdin auf den Server gepiped und dort
+        // ausgefuehrt (env, Repo, venv als Argumente). Es macht git-Reset, pip,
+        // installiert den Cron-Watchdog und startet die Umgebung PID-sicher.
+
         stage('Deploy prod') {
-            when {
-                expression { env.JOB_NAME.contains('main') }
-            }
+            when { expression { env.JOB_NAME.contains('main') } }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
-                            cd ${APP_DIR}
-                            git remote set-url origin ${REPO_URL}
-                            git fetch origin
-                            git reset --hard origin/main
-                            source ${VENV}/bin/activate
-                            pip install -r requirements.txt -q
-                            PID_FILE=\$HOME/tmp/gunicorn.pid
-                            # Nur killen, wenn die PID wirklich noch ein Gunicorn ist:
-                            # eine wiederverwendete PID wuerde sonst einen fremden Prozess
-                            # treffen - schlimmstenfalls die eigene SSH-Deploy-Sitzung.
-                            if [ -f "\$PID_FILE" ]; then
-                                OLD_PID=\$(cat "\$PID_FILE")
-                                if grep -qa gunicorn "/proc/\$OLD_PID/cmdline" 2>/dev/null; then
-                                    kill "\$OLD_PID" 2>/dev/null || true
-                                    for i in \$(seq 1 20); do kill -0 "\$OLD_PID" 2>/dev/null || break; sleep 1; done
-                                fi
-                                rm -f "\$PID_FILE"
-                            fi
-                            fuser -k 8000/tcp 2>/dev/null || true
-                            sleep 2
-                            set -a; source .env; set +a
-                            nohup gunicorn run:app \\
-                                --bind 127.0.0.1:8000 --workers 2 --timeout 120 \\
-                                --access-logfile logs/access.log \\
-                                --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
-                            echo \$! > \$HOME/tmp/gunicorn.pid
-                            sleep 2 && curl -sf http://127.0.0.1:8000 > /dev/null && echo "OK: prod laeuft"
-                        '
-                    """
+                    sh "ssh -T -o StrictHostKeyChecking=no ${DEPLOY_HOST} bash -s deploy prod ${REPO_URL} ${VENV} < deploy/hermes_ctl.sh"
                 }
             }
         }
 
         stage('Deploy int') {
-            when {
-                expression { env.JOB_NAME.contains('integration') }
-            }
+            when { expression { env.JOB_NAME.contains('integration') } }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
-                            if [ ! -d "\$HOME/methodos-int/.git" ]; then
-                                git clone ${REPO_URL} \$HOME/methodos-int
-                            fi
-                            cd \$HOME/methodos-int
-                            git remote set-url origin ${REPO_URL}
-                            git fetch origin
-                            git reset --hard origin/integration
-                            source ${VENV}/bin/activate
-                            pip install -r requirements.txt -q
-                            PID_FILE=\$HOME/tmp/gunicorn-int.pid
-                            if [ -f "\$PID_FILE" ]; then
-                                OLD_PID=\$(cat "\$PID_FILE")
-                                if grep -qa gunicorn "/proc/\$OLD_PID/cmdline" 2>/dev/null; then
-                                    kill "\$OLD_PID" 2>/dev/null || true
-                                    for i in \$(seq 1 20); do kill -0 "\$OLD_PID" 2>/dev/null || break; sleep 1; done
-                                fi
-                                rm -f "\$PID_FILE"
-                            fi
-                            fuser -k 8002/tcp 2>/dev/null || true
-                            sleep 2
-                            set -a
-                            source \$HOME/methodos/.env
-                            DATABASE_URL=sqlite:///\$HOME/methodos-int/data/methodos-int.db
-                            set +a
-                            mkdir -p \$HOME/methodos-int/data \$HOME/methodos-int/logs
-                            cd \$HOME/methodos-int
-                            nohup gunicorn run:app \\
-                                --bind 127.0.0.1:8002 --workers 1 --timeout 120 \\
-                                --access-logfile logs/access.log \\
-                                --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
-                            echo \$! > \$HOME/tmp/gunicorn-int.pid
-                            sleep 2 && curl -sf http://127.0.0.1:8002 > /dev/null && echo "OK: int laeuft"
-                        '
-                    """
+                    sh "ssh -T -o StrictHostKeyChecking=no ${DEPLOY_HOST} bash -s deploy int ${REPO_URL} ${VENV} < deploy/hermes_ctl.sh"
                 }
             }
         }
 
         stage('Deploy test') {
-            when {
-                expression { env.JOB_NAME.contains('test') }
-            }
+            when { expression { env.JOB_NAME.contains('test') } }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
-                            if [ ! -d "\$HOME/methodos-test/.git" ]; then
-                                git clone ${REPO_URL} \$HOME/methodos-test
-                            fi
-                            cd \$HOME/methodos-test
-                            git remote set-url origin ${REPO_URL}
-                            git fetch origin
-                            git reset --hard origin/test
-                            source ${VENV}/bin/activate
-                            pip install -r requirements.txt -q
-                            PID_FILE=\$HOME/tmp/gunicorn-test.pid
-                            if [ -f "\$PID_FILE" ]; then
-                                OLD_PID=\$(cat "\$PID_FILE")
-                                if grep -qa gunicorn "/proc/\$OLD_PID/cmdline" 2>/dev/null; then
-                                    kill "\$OLD_PID" 2>/dev/null || true
-                                    for i in \$(seq 1 20); do kill -0 "\$OLD_PID" 2>/dev/null || break; sleep 1; done
-                                fi
-                                rm -f "\$PID_FILE"
-                            fi
-                            fuser -k 8001/tcp 2>/dev/null || true
-                            sleep 2
-                            set -a
-                            source \$HOME/methodos/.env
-                            DATABASE_URL=sqlite:///\$HOME/methodos-test/data/methodos-test.db
-                            set +a
-                            mkdir -p \$HOME/methodos-test/data \$HOME/methodos-test/logs
-                            cd \$HOME/methodos-test
-                            nohup gunicorn run:app \\
-                                --bind 127.0.0.1:8001 --workers 3 --timeout 120 \\
-                                --access-logfile logs/access.log \\
-                                --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
-                            echo \$! > \$HOME/tmp/gunicorn-test.pid
-                            sleep 2 && curl -sf http://127.0.0.1:8001 > /dev/null && echo "OK: test laeuft"
-                        '
-                    """
+                    sh "ssh -T -o StrictHostKeyChecking=no ${DEPLOY_HOST} bash -s deploy test ${REPO_URL} ${VENV} < deploy/hermes_ctl.sh"
                 }
             }
         }
 
         stage('Deploy dev') {
-            when {
-                expression { env.JOB_NAME.contains('develop') }
-            }
+            when { expression { env.JOB_NAME.contains('develop') } }
             steps {
                 sshagent(credentials: ['hermespia-deploy']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_HOST} '
-                            # Einmaliger Bootstrap: PHP-Proxy fuer dev.hermespia.ch aus
-                            # dem test-Proxy kopieren, Port 8001 -> 8003 tauschen.
-                            SITES=\$HOME/sites
-                            if [ -d "\$SITES/dev.hermespia.ch" ]; then
-                                if [ ! -f "\$SITES/dev.hermespia.ch/index.php" ] && [ -f "\$SITES/test.hermespia.ch/index.php" ]; then
-                                    cp -a "\$SITES/test.hermespia.ch/." "\$SITES/dev.hermespia.ch/"
-                                    grep -rIl 8001 "\$SITES/dev.hermespia.ch" | while read f; do
-                                        sed -i "s/8001/8003/g" "\$f"
-                                    done
-                                    echo "Proxy fuer dev.hermespia.ch aus test kopiert (8001 -> 8003)"
-                                fi
-                            else
-                                echo "WARNUNG: \$SITES/dev.hermespia.ch fehlt - Proxy manuell einrichten"
-                            fi
-                            if [ ! -d "\$HOME/methodos-dev/.git" ]; then
-                                git clone ${REPO_URL} \$HOME/methodos-dev
-                            fi
-                            cd \$HOME/methodos-dev
-                            git remote set-url origin ${REPO_URL}
-                            git fetch origin
-                            git reset --hard origin/develop
-                            source ${VENV}/bin/activate
-                            pip install -r requirements.txt -q
-                            PID_FILE=\$HOME/tmp/gunicorn-dev.pid
-                            if [ -f "\$PID_FILE" ]; then
-                                OLD_PID=\$(cat "\$PID_FILE")
-                                if grep -qa gunicorn "/proc/\$OLD_PID/cmdline" 2>/dev/null; then
-                                    kill "\$OLD_PID" 2>/dev/null || true
-                                    for i in \$(seq 1 20); do kill -0 "\$OLD_PID" 2>/dev/null || break; sleep 1; done
-                                fi
-                                rm -f "\$PID_FILE"
-                            fi
-                            fuser -k 8003/tcp 2>/dev/null || true
-                            sleep 2
-                            set -a
-                            source \$HOME/methodos/.env
-                            DATABASE_URL=sqlite:///\$HOME/methodos-dev/data/methodos-dev.db
-                            set +a
-                            mkdir -p \$HOME/methodos-dev/data \$HOME/methodos-dev/logs
-                            cd \$HOME/methodos-dev
-                            nohup gunicorn run:app \\
-                                --bind 127.0.0.1:8003 --workers 1 --timeout 120 \\
-                                --access-logfile logs/access.log \\
-                                --error-logfile logs/error.log --capture-output > /dev/null 2>&1 &
-                            echo \$! > \$HOME/tmp/gunicorn-dev.pid
-                            sleep 2 && curl -sf http://127.0.0.1:8003 > /dev/null && echo "OK: dev laeuft"
-                        '
-                    """
+                    sh "ssh -T -o StrictHostKeyChecking=no ${DEPLOY_HOST} bash -s deploy dev ${REPO_URL} ${VENV} < deploy/hermes_ctl.sh"
                 }
             }
         }
