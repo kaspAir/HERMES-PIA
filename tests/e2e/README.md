@@ -17,16 +17,20 @@ Selbsttests laufend geprüft.
 
 ## Eine Aufnahme als Testdaten hinterlegen
 
+> ⚠️ **Das GitHub-Repo ist ÖFFENTLICH.** Sprachaufnahmen (Stimme!) gehören NIE
+> ins Repo. `tests/e2e/fixtures/*.{m4a,wav,mp3,webm,ogg,flac}` sind daher
+> gitignoriert. Committet wird höchstens ein **Transkript** (Text), und auch das
+> nur bei unbedenklichem Inhalt.
+
 1. Sprich einen realistischen **Ausgangslage**-Abschnitt für ein Beispielprojekt
    (~30–90 Sekunden), wie im Interview.
-2. Speichere die Datei unter:
-
-   ```
-   tests/e2e/fixtures/<fall-id>_<beschreibung>.<endung>
-   ```
-
-   z.B. `tests/e2e/fixtures/pia-fachlich-0003_ausgangslage.webm`
-   Unterstützte Endungen: `.webm .wav .mp3 .m4a .ogg .flac`.
+2. Ablage der Aufnahme (Dateiname `<fall-id>_<beschreibung>.<endung>`, z.B.
+   `pia-fachlich-0003_ausgangslage.m4a`; Endungen `.webm .wav .mp3 .m4a .ogg .flac`):
+   - **Lokal:** in `tests/e2e/fixtures/` (gitignoriert – wird nicht gepusht).
+   - **Build-Agent (Promotion):** an einem geschützten Ort ablegen und den Ordner
+     über die Umgebungsvariable **`E2E_FIXTURES_DIR`** angeben (z.B. per
+     Jenkins-Secret-File-Credential, das die Datei vor dem Testlauf dorthin
+     schreibt). Der Test sucht zuerst dort, dann im Repo-Ordner.
 
 3. Damit der Lauf gegen echte Dienste möglich ist, müssen im Ausführungskontext
    gesetzt sein: `STT_API_KEY` (+ ggf. `STT_API_URL`, `STT_MODEL`) und
@@ -46,6 +50,8 @@ Ergebnis erhalten (§14).
 
 ## Datenschutz
 
-Aufnahmen und Transkripte können sensible Inhalte enthalten. Nur unbedenkliche
-Beispielprojekte aufnehmen; keine echten, schützenswerten Personendaten in die
-Fixtures legen (die Fixtures liegen im Git-Repo).
+Aufnahmen enthalten die **Stimme** (biometrisch) und ggf. sensible Inhalte. Das
+Repo ist öffentlich → Audio bleibt **draussen** (gitignoriert, nur auf dem
+geschützten Build-Agent via `E2E_FIXTURES_DIR`). Nur unbedenkliche
+Beispielprojekte aufnehmen; keine echten, schützenswerten Personendaten.
+Transkripte gehen an den externen STT/LLM-Dienst – Datenresidenz beachten.
