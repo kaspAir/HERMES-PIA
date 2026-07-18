@@ -26,15 +26,29 @@ from tests.e2e.invarianten import (
     projekttyp_ist_gueltig,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures"
 _MIME = {".webm": "audio/webm", ".wav": "audio/wav", ".mp3": "audio/mpeg",
          ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".flac": "audio/flac"}
 
 
+def _fixture_dirs():
+    """Suchreihenfolge für Audio-Fixtures. E2E_FIXTURES_DIR zeigt auf einen
+    GESCHÜTZTEN Ort auf dem Build-Agent (Aufnahmen liegen NIE im öffentlichen
+    Repo); lokal dient der gitignorierte Repo-Ordner als Fallback."""
+    dirs = []
+    env = os.environ.get("E2E_FIXTURES_DIR")
+    if env:
+        dirs.append(Path(env))
+    dirs.append(Path(__file__).parent / "fixtures")
+    return dirs
+
+
 def _audio_fixture(fall_id):
-    treffer = sorted(glob.glob(str(FIXTURES / f"{fall_id}_*")))
-    treffer = [t for t in treffer if Path(t).suffix.lower() in _MIME]
-    return Path(treffer[0]) if treffer else None
+    for d in _fixture_dirs():
+        treffer = sorted(glob.glob(str(d / f"{fall_id}_*")))
+        treffer = [t for t in treffer if Path(t).suffix.lower() in _MIME]
+        if treffer:
+            return Path(treffer[0])
+    return None
 
 
 def _app_mit_echten_diensten():
