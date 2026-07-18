@@ -104,6 +104,40 @@ pipeline {
             }
         }
 
+        // Schwere fachliche E2E-Faelle gegen ECHTE Dienste (STT+LLM) – nur auf
+        // Promotion (test/int/main), NICHT auf dev (Testkonzept §9). Bewusst
+        // NICHT-BLOCKIEREND (catchError -> UNSTABLE): darf die Kunden-Promotion
+        // nie rot faerben. Skip-sicher: ohne Aufnahme/Keys ueberspringt pytest.
+        // Die Aufnahme liegt PRIVAT auf dem Agent (nie im oeffentlichen Repo),
+        // Pfad via E2E_FIXTURES_DIR; Keys (ANTHROPIC_API_KEY, STT_API_KEY) aus der
+        // Jenkins-Umgebung. Aktiviert sich, sobald beides vorhanden ist.
+        stage('E2E fachlich (Promotion)') {
+            when {
+                expression {
+                    env.JOB_NAME.contains('test') || env.JOB_NAME.contains('integration') ||
+                    env.JOB_NAME.contains('main')
+                }
+            }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    script {
+                        docker.image('python:3.12-slim').inside('-u root') {
+                            sh '''
+                                pip install --no-cache-dir -r tests/requirements.txt
+                                export E2E_FIXTURES_DIR="${E2E_FIXTURES_DIR:-/var/jenkins_home/e2e-fixtures}"
+                                pytest tests/e2e -m promotion -v --junitxml=reports/e2e-junit.xml
+                            '''
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'reports/e2e-junit.xml'
+                }
+            }
+        }
+
     }
 
     post {
