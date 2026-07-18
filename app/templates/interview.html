@@ -122,6 +122,7 @@
           {% elif state.followup.type == 'ergaenzung' %}HERMES PIA denkt mit &ndash; Vollständigkeit
           {% elif state.followup.type == 'decision' %}HERMES PIA empfiehlt &ndash; Sie entscheiden
           {% elif state.followup.type == 'complexity' %}Komplexität &ndash; bestätigen, ergänzen oder widerlegen
+          {% elif state.followup.type == 'expertise' %}HERMES PIA fragt nach &ndash; Thema der externen Expertise
           {% else %}HERMES PIA hat eine Rückfrage{% endif %}
         </div>
         <p class="followup-question">{{ state.followup.frage }}</p>

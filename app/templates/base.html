@@ -4,13 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}HERMES PIA{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml"
+        href="{{ url_for('static', filename='img/hermes-pia-logo.svg') }}">
+  <link rel="apple-touch-icon"
+        href="{{ url_for('static', filename='img/hermes-pia-logo.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {%- if current_branding %}
+  <style>
+    :root {
+      {% if current_branding.kopfleiste_farbe %}--color-brand: {{ current_branding.kopfleiste_farbe }};{% endif %}
+      {% if current_branding.akzent_farbe %}--color-accent: {{ current_branding.akzent_farbe }};{% endif %}
+      {% if current_branding.primaer_farbe %}--color-primary: {{ current_branding.primaer_farbe }};{% endif %}
+    }
+  </style>
+  {%- endif %}
 </head>
 <body>
   <div class="brand-bar">
-    <img src="{{ url_for('static', filename='img/bki-logo.png') }}"
-         alt="BKI &ndash; Project Management Consulting &amp; Training"
+    {% if current_branding and current_branding.logo_filename %}
+    <img src="{{ url_for('ui.branding_logo', v=(current_branding.updated_at.timestamp() | int) if current_branding.updated_at else 0) }}"
+         alt="{{ current_org.name if current_org else 'Logo' }}"
          class="brand-logo">
+    {% else %}
+    <img src="{{ url_for('static', filename='img/hermes-pia-logo.svg') }}"
+         alt="HERMES PIA" class="brand-logo brand-logo--mark">
+    {% endif %}
     {% if current_user %}
     <div class="user-menu">
       {% if current_user.is_super_admin %}
@@ -33,7 +51,9 @@
     </div>
     {% endif %}
   </div>
-  {% if ':8001' in request.host %}
+  {% if ':8003' in request.host %}
+  <div class="env-banner env-banner--dev">&#128295; Entwicklungssystem &mdash; dev.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>
+  {% elif ':8001' in request.host %}
   <div class="env-banner env-banner--test">&#9888; Testsystem &mdash; test.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>
   {% elif ':8002' in request.host %}
   <div class="env-banner env-banner--int">&#9432; Integrationssystem &mdash; int.hermespia.ch &middot; Version {{ app_version.sha }}{% if app_version.date %} ({{ app_version.date }}){% endif %}</div>

@@ -14,7 +14,9 @@ Das eigentliche PIA-Artefakt bleibt die `InterviewSession`; sie verweist über
 """
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, LargeBinary, String
+from sqlalchemy import (
+    Column, DateTime, ForeignKey, Integer, LargeBinary, String, Text,
+)
 
 from app.shared.database import Base
 from app.shared.model_mixins import GovernanceMixin
@@ -121,6 +123,29 @@ class PraesentationsVorlage(Base):
     data = Column(LargeBinary, nullable=False)
     uploaded_by = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MethodenVorlage(Base):
+    """Word-Vorlage (.docx/.dotx), aus deren Kapitelstruktur HERMES PIA das
+    Interview ableitet.
+
+    Gilt pro Organisationseinheit (projekt_id NULL) oder pro Projekt; die
+    Projekt-Vorlage hat Vorrang. Neuester Upload je Geltungsbereich zählt –
+    gleiche Mechanik wie die Präsentationsvorlage.
+    """
+    __tablename__ = "methoden_vorlage"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, nullable=True, index=True)
+    projekt_id = Column(Integer, ForeignKey("projekt.id"), nullable=True, index=True)
+    filename = Column(String(255), nullable=False)
+    size = Column(Integer, default=0)
+    data = Column(LargeBinary, nullable=False)
+    uploaded_by = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    # Vom Benutzer bestätigte Kapitel-Zuordnung (JSON-Liste). NULL = noch nicht
+    # bestätigt → es gilt die automatische Erkennung.
+    mapping_json = Column(Text, nullable=True)
 
 
 class MigrationFlag(Base):

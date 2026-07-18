@@ -30,6 +30,90 @@
     {% endif %}
   </section>
 
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Word-Vorlage (Interviewstruktur, organisationsweit)</h3>
+    <p class="muted vorlage-status">
+      {% if methoden_vorlage %}
+        Aktiv: «{{ methoden_vorlage.filename }}»
+        {% if methoden_vorlage.created_at %}(hochgeladen {{ methoden_vorlage.created_at.strftime('%d.%m.%Y %H:%M') }}{% if methoden_vorlage.uploaded_by %} von {{ methoden_vorlage.uploaded_by }}{% endif %}){% endif %}.
+      {% else %}
+        Noch keine Wortvorlage – das Interview folgt der HERMES-Standardstruktur.
+      {% endif %}
+      HERMES PIA liest die Kapitel aus der Vorlage und strukturiert das Interview danach.
+      Einzelne Projekte können sie mit einer eigenen Vorlage übersteuern.
+    </p>
+    {% if methoden_report %}
+    <p class="muted vorlage-status vorlage-erkennung">
+      <strong>{{ methoden_report.erkannt }}</strong> von {{ methoden_report.gesamt }}
+      Kapiteln als HERMES-Kapitel erkannt.
+      {% if methoden_report.generic %}
+        Als Freitext erfragt: {{ methoden_report.generic | map(attribute='heading') | join(', ') }}.
+      {% endif %}
+      {% if methoden_report.missing_titles %}
+        Nicht in der Vorlage enthalten: {{ methoden_report.missing_titles | join(', ') }}.
+      {% endif %}
+    </p>
+    {% endif %}
+    {% if current_user.can_write %}
+    <label class="dropzone" data-scope="org">
+      <input type="file" accept=".docx,.dotx" class="upload-input" hidden
+             data-url="{{ url_for('ui.pmo_methoden_vorlage_upload') }}">
+      <span class="dropzone-text">Word-Vorlage hierher ziehen oder klicken (.docx/.dotx)</span>
+    </label>
+    {% endif %}
+    {% with editor=methoden_editor, save_url=methoden_mapping_url %}
+      {% include "partials/methoden_zuordnung.html" %}
+    {% endwith %}
+  </section>
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Erscheinungsbild (CI/CD)</h3>
+    <p class="muted vorlage-status">Eigenes Logo und Farben Ihrer Organisationseinheit –
+      sie gelten für alle Benutzer sofort nach dem Speichern. «Zurücksetzen» stellt das
+      Standard-Erscheinungsbild wieder her.</p>
+
+    <div class="branding-zeile">
+      <span class="branding-label">Logo:</span>
+      {% if current_branding and current_branding.logo_filename %}
+        <img src="{{ url_for('ui.branding_logo', v=(current_branding.updated_at.timestamp() | int) if current_branding.updated_at else 0) }}"
+             alt="Logo" class="branding-logo-vorschau">
+        <span class="muted">{{ current_branding.logo_filename }}</span>
+      {% else %}
+        <span class="muted">Standard (HERMES PIA)</span>
+      {% endif %}
+      {% if current_user.can_write %}
+      <label class="btn-link upload-label">Logo hochladen (.png/.jpg, max. 2 MB)
+        <input type="file" accept=".png,.jpg,.jpeg" class="upload-input"
+               data-url="{{ url_for('ui.pmo_branding_logo') }}">
+      </label>
+      {% endif %}
+    </div>
+
+    {% if current_user.can_write %}
+    <form method="post" action="{{ url_for('ui.pmo_branding_farben') }}"
+          class="branding-zeile">
+      <span class="branding-label">Farben:</span>
+      <label class="chk">Kopfleiste
+        <input type="color" name="kopfleiste_farbe"
+               value="{{ current_branding.kopfleiste_farbe if current_branding and current_branding.kopfleiste_farbe else '#16213e' }}">
+      </label>
+      <label class="chk">Titel/Links
+        <input type="color" name="akzent_farbe"
+               value="{{ current_branding.akzent_farbe if current_branding and current_branding.akzent_farbe else '#0f3460' }}">
+      </label>
+      <label class="chk">Buttons
+        <input type="color" name="primaer_farbe"
+               value="{{ current_branding.primaer_farbe if current_branding and current_branding.primaer_farbe else '#439458' }}">
+      </label>
+      <button type="submit" class="btn-link">Speichern</button>
+    </form>
+    <form method="post" action="{{ url_for('ui.pmo_branding_reset') }}" class="inline-form"
+          onsubmit="return confirm('Logo und Farben auf den Standard zurücksetzen?');">
+      <button type="submit" class="btn-link btn-danger">Zurücksetzen auf Standard</button>
+    </form>
+    {% endif %}
+  </section>
+
   <div id="upload-status" class="muted upload-status"></div>
 </div>
 
@@ -38,31 +122,56 @@
   var statusEl = document.getElementById('upload-status');
   function setStatus(t) { if (statusEl) statusEl.textContent = t; }
 
+  function upload(url, file) {
+    if (!file) return;
+    setStatus('Lade «' + file.name + '» hoch …');
+    var fr = new FileReader();
+    fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
+    fr.onload = function () {
+      var b64 = String(fr.result).split(',')[1] || '';
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data: b64 })
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; })
+                .then(function (d) { return { ok: r.ok, d: d }; });
+      })
+      .then(function (res) {
+        if (res.ok) { location.reload(); }
+        else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); }
+      })
+      .catch(function () { setStatus('Netzwerkfehler beim Upload.'); });
+    };
+    fr.readAsDataURL(file);
+  }
+
   document.querySelectorAll('.upload-input').forEach(function (input) {
     input.addEventListener('change', function () {
-      var file = input.files && input.files[0];
-      if (!file) return;
-      setStatus('Lade «' + file.name + '» hoch …');
-      var fr = new FileReader();
-      fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
-      fr.onload = function () {
-        var b64 = String(fr.result).split(',')[1] || '';
-        fetch(input.dataset.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: file.name, data: b64 })
-        })
-        .then(function (r) {
-          return r.json().catch(function () { return {}; })
-                  .then(function (d) { return { ok: r.ok, d: d }; });
-        })
-        .then(function (res) {
-          if (res.ok) { location.reload(); }
-          else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); input.value = ''; }
-        })
-        .catch(function () { setStatus('Netzwerkfehler beim Upload.'); input.value = ''; });
-      };
-      fr.readAsDataURL(file);
+      upload(input.dataset.url, input.files && input.files[0]);
+      input.value = '';
+    });
+  });
+
+  document.querySelectorAll('.dropzone').forEach(function (zone) {
+    var input = zone.querySelector('.upload-input');
+    var url = input ? input.dataset.url : zone.dataset.url;
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.add('dropzone--over');
+      });
+    });
+    ['dragleave', 'dragend', 'drop'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.remove('dropzone--over');
+      });
+    });
+    zone.addEventListener('drop', function (e) {
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      upload(url, file);
     });
   });
 }());

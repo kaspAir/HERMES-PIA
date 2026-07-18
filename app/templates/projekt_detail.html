@@ -131,6 +131,47 @@
     {% endif %}
   </section>
 
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Word-Vorlage (Interviewstruktur)</h3>
+    <p class="muted vorlage-status">
+      {% if methoden_vorlage %}
+        Aktiv: Projekt-Vorlage «{{ methoden_vorlage.filename }}» – sie übersteuert die
+        <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO-Wortvorlage</a> für dieses Projekt.
+      {% elif org_methoden_vorlage %}
+        Aktiv: PMO-Wortvorlage «{{ org_methoden_vorlage.filename }}» (organisationsweit, siehe
+        <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO</a>).
+      {% else %}
+        Keine Wortvorlage – das Interview folgt der HERMES-Standardstruktur.
+        Organisationsweite Vorlagen pflegt der <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO-Bereich</a>.
+      {% endif %}
+      HERMES PIA liest die Kapitel aus der Vorlage und strukturiert das Interview danach.
+    </p>
+    {% if methoden_report %}
+    <p class="muted vorlage-status vorlage-erkennung">
+      <strong>{{ methoden_report.erkannt }}</strong> von {{ methoden_report.gesamt }}
+      Kapiteln als HERMES-Kapitel erkannt.
+      {% if methoden_report.generic %}
+        Als Freitext erfragt: {{ methoden_report.generic | map(attribute='heading') | join(', ') }}.
+      {% endif %}
+      {% if methoden_report.missing_titles %}
+        Nicht in der Vorlage enthalten: {{ methoden_report.missing_titles | join(', ') }}.
+      {% endif %}
+    </p>
+    {% endif %}
+    {% if current_user.can_write %}
+    <label class="dropzone" data-scope="projekt">
+      <input type="file" accept=".docx,.dotx" class="upload-input" hidden
+             data-url="{{ url_for('ui.methoden_vorlage_upload', projekt_id=projekt.id) }}">
+      <span class="dropzone-text">Word-Vorlage hierher ziehen oder klicken (.docx/.dotx)</span>
+    </label>
+    {% endif %}
+    {% if methoden_vorlage %}
+      {% with editor=methoden_editor, save_url=methoden_mapping_url %}
+        {% include "partials/methoden_zuordnung.html" %}
+      {% endwith %}
+    {% endif %}
+  </section>
+
   <div id="upload-status" class="muted upload-status"></div>
 
 </div>
@@ -142,32 +183,58 @@
   var statusEl = document.getElementById('upload-status');
   function setStatus(t) { if (statusEl) statusEl.textContent = t; }
 
+  function upload(url, file, scope) {
+    if (!file) return;
+    setStatus('Lade «' + file.name + '» hoch …');
+    var fr = new FileReader();
+    fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
+    fr.onload = function () {
+      var b64 = String(fr.result).split(',')[1] || '';
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data: b64, scope: scope || 'projekt' })
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; })
+                .then(function (d) { return { ok: r.ok, d: d }; });
+      })
+      .then(function (res) {
+        if (res.ok) { location.reload(); }
+        else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); }
+      })
+      .catch(function () { setStatus('Netzwerkfehler beim Upload.'); });
+    };
+    fr.readAsDataURL(file);
+  }
+
+  // Klick-/Auswahl-Upload (Dateidialog)
   document.querySelectorAll('.upload-input').forEach(function (input) {
     input.addEventListener('change', function () {
-      var file = input.files && input.files[0];
-      if (!file) return;
-      setStatus('Lade «' + file.name + '» hoch …');
-      var fr = new FileReader();
-      fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
-      fr.onload = function () {
-        var b64 = String(fr.result).split(',')[1] || '';
-        fetch(input.dataset.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: file.name, data: b64,
-                                 scope: input.dataset.scope || 'projekt' })
-        })
-        .then(function (r) {
-          return r.json().catch(function () { return {}; })
-                  .then(function (d) { return { ok: r.ok, d: d }; });
-        })
-        .then(function (res) {
-          if (res.ok) { location.reload(); }
-          else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); input.value = ''; }
-        })
-        .catch(function () { setStatus('Netzwerkfehler beim Upload.'); input.value = ''; });
-      };
-      fr.readAsDataURL(file);
+      upload(input.dataset.url, input.files && input.files[0], input.dataset.scope);
+      input.value = '';
+    });
+  });
+
+  // Drag-&-Drop-Upload
+  document.querySelectorAll('.dropzone').forEach(function (zone) {
+    var input = zone.querySelector('.upload-input');
+    var url = input ? input.dataset.url : zone.dataset.url;
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.add('dropzone--over');
+      });
+    });
+    ['dragleave', 'dragend', 'drop'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.remove('dropzone--over');
+      });
+    });
+    zone.addEventListener('drop', function (e) {
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      upload(url, file, zone.dataset.scope);
     });
   });
 }());

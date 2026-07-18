@@ -1,7 +1,9 @@
-"""Benutzerverwaltung: Organisationen, Benutzer, Authentifizierung.
+"""Benutzerverwaltung: Organisationen, Benutzer, Authentifizierung, Branding.
 
 Passwörter werden ausschliesslich gehasht gespeichert (werkzeug).
 """
+import re
+
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.domains.auth.models import (
@@ -9,9 +11,12 @@ from app.domains.auth.models import (
     ROLE_ORG_ADMIN,
     ROLE_SUPER_ADMIN,
     Organisation,
+    OrgBranding,
     User,
 )
 from app.shared.database import SessionLocal
+
+_HEX_FARBE = re.compile(r"#[0-9a-fA-F]{6}$")
 
 
 class AuthService:
@@ -36,6 +41,61 @@ class AuthService:
         db.commit()
         db.refresh(org)
         return org
+
+    # ---- Erscheinungsbild (Branding) je Organisationseinheit ----------- #
+
+    def get_branding(self, org_id):
+        if not org_id:
+            return None
+        return SessionLocal().query(OrgBranding).filter(
+            OrgBranding.org_id == int(org_id)
+        ).first()
+
+    def _branding_or_new(self, db, org_id):
+        branding = db.query(OrgBranding).filter(
+            OrgBranding.org_id == int(org_id)
+        ).first()
+        if branding is None:
+            branding = OrgBranding(org_id=int(org_id))
+            db.add(branding)
+        return branding
+
+    def set_branding_farben(self, org_id, kopfleiste=None, akzent=None, primaer=None):
+        """Setzt die UI-Farben der Organisationseinheit (Hex #RRGGBB)."""
+        werte = {}
+        for feld, wert in (("kopfleiste_farbe", kopfleiste),
+                           ("akzent_farbe", akzent),
+                           ("primaer_farbe", primaer)):
+            wert = (wert or "").strip()
+            if wert and not _HEX_FARBE.match(wert):
+                raise ValueError(f"Ungültige Farbe für {feld}: {wert}")
+            werte[feld] = wert or None
+        db = SessionLocal()
+        branding = self._branding_or_new(db, org_id)
+        for feld, wert in werte.items():
+            setattr(branding, feld, wert)
+        db.commit()
+        return branding
+
+    def set_branding_logo(self, org_id, filename, data, mimetype):
+        db = SessionLocal()
+        branding = self._branding_or_new(db, org_id)
+        branding.logo_filename = filename
+        branding.logo_data = data
+        branding.logo_mimetype = mimetype
+        db.commit()
+        return branding
+
+    def reset_branding(self, org_id):
+        """Setzt das Erscheinungsbild auf den Standard zurück."""
+        db = SessionLocal()
+        branding = db.query(OrgBranding).filter(
+            OrgBranding.org_id == int(org_id)
+        ).first()
+        if branding is not None:
+            db.delete(branding)
+            db.commit()
+        return True
 
     # ---- Benutzer ------------------------------------------------------ #
 

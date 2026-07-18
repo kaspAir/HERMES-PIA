@@ -56,6 +56,26 @@ AG_ROLLEN = {'auftraggeber', 'auftraggeberin', 'auftraggeber/in', 'ag'}
 RISK_LEVELS = {'tief': 1, 'niedrig': 1, 'gering': 1, 'klein': 1,
                'mittel': 2, 'hoch': 3, 'gross': 3, 'sehr hoch': 3}
 
+# Spalten-Aliase (normalisierte Kundentabellen-Überschrift → kanonische Spalten-ID).
+# Fängt Abkürzungen/abweichende Formulierungen ab, die der Titelvergleich nicht
+# trifft. Wird nur angewandt, wenn der Abschnitt die Ziel-Spalte auch besitzt –
+# so bleibt z.B. "ag" (Auswirkungsgrad) auf die Risiken-Tabelle beschränkt.
+_SPALTEN_ALIAS = {
+    'ew': 'ew', 'eintrittswahrscheinlichkeit': 'ew', 'wahrscheinlichkeit': 'ew',
+    'ag': 'ag', 'auswirkungsgrad': 'ag', 'auswirkung': 'ag',
+    'rz': 'risikozahl', 'risikozahl': 'risikozahl',
+    'verantw': 'verantwortung', 'verantwortlich': 'verantwortung',
+    'geplant in chf': 'betrag', 'betrag': 'betrag', 'kosten': 'betrag',
+    'geplant in arbeitstagen': 'aufwand', 'aufwand in pt': 'aufwand',
+    'aufwand': 'aufwand', 'pt': 'aufwand', 'personentage': 'aufwand',
+    'rolle / person': 'rolle_person',
+    'adressat der information': 'empfaenger', 'adressat': 'empfaenger',
+    'empfaenger': 'empfaenger',
+    'kommunikationsverantw': 'verantwortlich', 'mittel / medium': 'medium',
+    'abkuerzung / fachwort': 'abkuerzung', 'fachwort': 'abkuerzung',
+    'erlaeuterung': 'bedeutung',
+}
+
 
 def _risk_num(value):
     """Wandelt eine Risikostufe (Tief/Mittel/Hoch oder Zahl) in eine Zahl."""
@@ -112,7 +132,9 @@ class GenerationService:
     # ------------------------------------------------------------------ #
 
     def _open_template(self, path):
-        raw = Path(path).read_bytes()
+        return self._open_template_bytes(Path(path).read_bytes())
+
+    def _open_template_bytes(self, raw):
         buf_in = BytesIO(raw)
         buf_out = BytesIO()
         with zipfile.ZipFile(buf_in, 'r') as zin, \
@@ -127,6 +149,158 @@ class GenerationService:
                 zout.writestr(item, data)
         buf_out.seek(0)
         return Document(buf_out)
+
+    # ------------------------------------------------------------------ #
+    # Erzeugung in eine KUNDENVORLAGE (abweichende Kapitel/Struktur)       #
+    # ------------------------------------------------------------------ #
+
+    def generate_into_template(self, template_bytes, method, session_answers,
+                               metadata, changelog=None, nachweis=None):
+        """Füllt die hochgeladene Kundenvorlage mit den Interview-Inhalten.
+
+        Kernprinzip: Es werden AUSSCHLIESSLICH Kapitel befüllt, für die es
+        Antworten gibt (Zuordnung über die Original-Überschrift der Vorlage,
+        ``template_heading`` aus der abgeleiteten Methode). Alles andere – fixe
+        Hilfstexte, Anleitungen, unbekannte Kapitel – bleibt unangetastet.
+        Tabellen werden über ihre SPALTENÜBERSCHRIFTEN zugeordnet (nicht über
+        Position/Stil), damit fremde Spaltenanordnungen korrekt getroffen werden.
+        """
+        doc = self._open_template_bytes(template_bytes)
+        self._fill_cover(doc, metadata)        # best effort – no-op bei fremden Labels
+        self._fill_headers(doc, metadata)
+        self._fill_body_foreign(doc, method, session_answers, metadata)
+        if nachweis:
+            self._append_nachweis(doc, nachweis)
+        buf = BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+        return buf
+
+    def _fill_body_foreign(self, doc, method, session_answers, metadata=None):
+        by_heading = {}
+        for s in method.get('sections', []):
+            th = s.get('template_heading') or s.get('title')
+            if th:
+                by_heading[_normalize(th)] = s
+        body = doc.element.body
+
+        # 1) Tabellen: Kapitel-Überschrift merken, folgende Tabelle über die
+        #    Spaltenüberschriften befüllen (eine Tabelle je Kapitel).
+        current = None
+        for el in list(body):
+            tag = _tag(el)
+            if tag == 'p' and _is_heading_p(el):
+                current = by_heading.get(_normalize(_p_text(el).strip()))
+            elif tag == 'tbl' and current is not None:
+                if current.get('type') == 'table':
+                    rows = (session_answers.get(current['id']) or {}).get('extracted') or []
+                    if rows:
+                        self._fill_table_foreign(el, current, rows, metadata)
+                    current = None
+
+        # 2) Freitext: unter der Überschrift den ersten Inhaltsabsatz durch die
+        #    Antwort ersetzen und weitere Instruktionsabsätze bis zum nächsten
+        #    Kapitel/Tabelle entfernen.
+        children = list(body)
+        for idx, el in enumerate(children):
+            if _tag(el) != 'p' or not _is_heading_p(el):
+                continue
+            sec = by_heading.get(_normalize(_p_text(el).strip()))
+            if not sec or sec.get('type') != 'free_text':
+                continue
+            entry = session_answers.get(sec['id'])
+            if not entry:
+                continue
+            text = (entry.get('extracted') or {}).get('text') or entry.get('raw_text', '')
+            if not text:
+                continue
+            first_done = False
+            for nxt in children[idx + 1:]:
+                ntag = _tag(nxt)
+                if ntag == 'tbl' or (ntag == 'p' and _is_heading_p(nxt)):
+                    break
+                if ntag == 'p' and _p_text(nxt).strip():
+                    if not first_done:
+                        _set_p_text(nxt, text)
+                        _clear_info_style(nxt)   # graue Hilfetext-Formatierung entfernen
+                        first_done = True
+                    else:
+                        body.remove(nxt)
+            if not first_done:
+                new_p = etree.SubElement(body, f'{{{W}}}p')
+                _set_p_text(new_p, text)
+                el.addnext(new_p)
+
+    def _fill_table_foreign(self, tbl_el, section, data_rows, metadata=None):
+        """Füllt eine Tabelle der Kundenvorlage. Spaltenzuordnung über die
+        Überschriftentexte; erste Zeile = Kopf, zweite = Zeilen-Muster. Schlägt
+        die Erkennung fehl, bleibt die Tabelle unangetastet (nie korrumpieren)."""
+        W_TR = f'{{{W}}}tr'
+        rows = [r for r in tbl_el if r.tag == W_TR]
+        if len(rows) < 2:
+            return
+
+        header_texts = [_normalize(_tc_text(c)) for c in _row_cells(rows[0])]
+        cols = section.get('columns', [])
+        col_ids = {c.get('id') for c in cols}
+        pos_to_col, nr_pos = {}, None
+        for pos, htext in enumerate(header_texts):
+            if not htext:
+                continue
+            if htext == 'nr' or htext.startswith('nr'):
+                if 'nr' in col_ids:
+                    nr_pos = pos
+                    continue
+            # 1) Alias (Abkürzungen/abw. Formulierungen), nur wenn Spalte existiert
+            alias = _SPALTEN_ALIAS.get(htext)
+            if alias and alias in col_ids and alias not in pos_to_col.values():
+                pos_to_col[pos] = alias
+                continue
+            # 2) Titelvergleich gegen die Spaltenbeschriftung
+            for col in cols:
+                cid = col.get('id')
+                if cid == 'nr' or cid in pos_to_col.values():
+                    continue
+                clabel = _normalize(col.get('label', ''))
+                if clabel and (htext == clabel or clabel in htext or htext in clabel):
+                    pos_to_col[pos] = cid
+                    break
+        if not pos_to_col:
+            return
+
+        name_by_role, gendered_label = _name_role_maps(metadata)
+        template_row = rows[1]
+        insert_pos = list(tbl_el).index(template_row)
+
+        for i, raw in enumerate(data_rows):
+            data = dict(raw) if isinstance(raw, dict) else {}
+            for col in cols:
+                cid, expr = col.get('id', ''), col.get('computed', '')
+                if expr and not data.get(cid):
+                    res = 1
+                    for p in expr.split('*'):
+                        res *= _risk_num(data.get(p.strip()))
+                    data[cid] = str(res) if res else ''
+            if name_by_role:
+                nr = _normalize(str(data.get('rolle', '')))
+                nm = name_by_role.get(nr)
+                if nm:
+                    if not str(data.get('name', '')).strip():
+                        data['name'] = nm
+                    if nr in gendered_label:
+                        data['rolle'] = gendered_label[nr]
+            new_row = copy.deepcopy(template_row)
+            cells = _row_cells(new_row)
+            if nr_pos is not None and nr_pos < len(cells):
+                _set_tc_text(cells[nr_pos], f'{i + 1:02d}')
+            for pos, cid in pos_to_col.items():
+                if pos < len(cells):
+                    val = data.get(cid, '')
+                    _set_tc_text(cells[pos], str(val) if val else '')
+            tbl_el.insert(insert_pos + i, new_row)
+
+        for r in rows[1:]:
+            tbl_el.remove(r)
 
     # ------------------------------------------------------------------ #
     # Deckblatt                                                            #
@@ -654,3 +828,76 @@ def _set_tc_text(tc_el, text):
     if p is None:
         return
     _set_p_text(p, text)
+
+
+def _is_heading_p(p_el):
+    """Überschrift erkennen – vorlagenunabhängig (Style-Name ODER outlineLvl)."""
+    norm = _p_style(p_el).lower()
+    if 'heading' in norm or 'berschrift' in norm or 'titel' in norm:
+        return True
+    pPr = p_el.find(f'{{{W}}}pPr')
+    if pPr is not None:
+        outl = pPr.find(f'{{{W}}}outlineLvl')
+        if outl is not None:
+            try:
+                return int(outl.get(f'{{{W}}}val', '9')) <= 4
+            except (TypeError, ValueError):
+                return False
+    return False
+
+
+def _tc_text(tc_el):
+    return ''.join(t.text or '' for t in tc_el.iter(f'{{{W}}}t')).strip()
+
+
+# Absatz-Stile, die Hilfs-/Infotext markieren (kunden-/HERMES-spezifisch benannt).
+_INFO_STYLE_MUSTER = ('infotext', 'hilfetext', 'hilfstext', 'beispiel',
+                      'muster', 'platzhalter', 'help', 'instruction', 'kommentar')
+
+
+def _clear_info_style(p_el):
+    """Entfernt einen Hilfs-/Infotext-Absatzstil, damit gefüllter Inhalt als
+    normaler Fliesstext (Standard) erscheint statt grau/kursiv wie ein Platzhalter."""
+    pPr = p_el.find(f'{{{W}}}pPr')
+    if pPr is None:
+        return
+    ps = pPr.find(f'{{{W}}}pStyle')
+    if ps is None:
+        return
+    name = (ps.get(f'{{{W}}}val', '') or '').lower()
+    if any(k in name for k in _INFO_STYLE_MUSTER):
+        pPr.remove(ps)
+
+
+def _row_cells(row_el):
+    """Zellen einer Zeile in Reihenfolge – inkl. SDT-umhüllter Zellen."""
+    W_TC = f'{{{W}}}tc'
+    W_SDT = f'{{{W}}}sdt'
+    W_SDT_CONTENT = f'{{{W}}}sdtContent'
+    cells = []
+    for child in row_el:
+        if child.tag == W_TC:
+            cells.append(child)
+        elif child.tag == W_SDT:
+            sc = child.find(W_SDT_CONTENT)
+            if sc is not None:
+                tc = sc.find(W_TC)
+                if tc is not None:
+                    cells.append(tc)
+    return cells
+
+
+def _name_role_maps(metadata):
+    """Rolle→Personenname und Rolle→geschlechtsgerechte Bezeichnung (aus Metadaten)."""
+    md = metadata or {}
+    name_by_role, gendered = {}, {}
+    pl, ag = md.get('projektleiter', ''), md.get('auftraggeber', '')
+    if pl:
+        name_by_role.update({r: pl for r in PL_ROLLEN})
+        lbl = 'Projektleiterin' if md.get('projektleiter_weiblich') else 'Projektleiter'
+        gendered.update({r: lbl for r in PL_ROLLEN})
+    if ag:
+        name_by_role.update({r: ag for r in AG_ROLLEN})
+        lbl = 'Auftraggeberin' if md.get('auftraggeber_weiblich') else 'Auftraggeber'
+        gendered.update({r: lbl for r in AG_ROLLEN})
+    return name_by_role, gendered

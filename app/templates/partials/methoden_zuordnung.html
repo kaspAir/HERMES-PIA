@@ -1,0 +1,151 @@
+{# Kapitel-Zuordnungs-Editor. Erwartet: editor (dict), save_url (str). #}
+{% if editor %}
+<div class="zuordnung">
+  <p class="muted zuordnung-status">
+    {% if editor.bestaetigt %}
+      Zuordnung bestätigt – sie bestimmt Interview und Ausgabe. Sie können sie jederzeit anpassen.
+    {% else %}
+      <strong>Vorschlag</strong> – bitte die Zuordnung prüfen und bestätigen. Bis dahin gilt die automatische Erkennung.
+    {% endif %}
+    {% if editor.missing %}
+      <br>Im Template nicht enthaltene HERMES-Kapitel: {{ editor.missing | join(', ') }}.
+    {% endif %}
+  </p>
+  {% if current_user.can_write %}
+  <form method="post" action="{{ save_url }}">
+    <div class="zuordnung-scroll">
+      <table class="zuordnung-tabelle">
+        <thead>
+          <tr><th>Kapitel der Vorlage</th><th>Zuordnung</th><th>Bemerkung</th></tr>
+        </thead>
+        <tbody>
+        {% for row in editor.rows %}
+          <tr>
+            <td class="zt-kapitel" style="padding-left: {{ (row.level - 1) * 16 }}px;">
+              {{ row.heading }}
+              <input type="hidden" name="heading[]" value="{{ row.heading }}">
+            </td>
+            <td>
+              <select name="ziel[]" class="zt-ziel">
+                <option value="{{ editor.ziel_unveraendert }}"
+                        {% if row.ziel == editor.ziel_unveraendert %}selected{% endif %}>
+                  Unverändert lassen (Hilfstext)
+                </option>
+                <option value="{{ editor.ziel_generisch }}"
+                        {% if row.ziel == editor.ziel_generisch %}selected{% endif %}>
+                  Als Freitext erfragen
+                </option>
+                {% for opt in editor.optionen %}
+                  <option value="{{ opt.id }}"
+                          {% if row.ziel == opt.id %}selected{% endif %}>
+                    HERMES: {{ opt.label }}
+                  </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <div class="zt-bemerkung-wrap">
+                <input type="text" name="bemerkung[]" value="{{ row.bemerkung }}"
+                       class="zt-bemerkung" placeholder="optional">
+                {% if stt_available %}
+                <button type="button" class="diktat-btn" title="Bemerkung diktieren"
+                        aria-label="Bemerkung diktieren">🎤</button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="btn-link">Zuordnung speichern</button>
+  </form>
+  {% endif %}
+  <div class="diktat-status muted"></div>
+</div>
+
+{% if current_user.can_write and stt_available %}
+<script>
+// Diktat fuer Bemerkungsfelder: nur das gewaehlte/Standard-Mikrofon (getUserMedia),
+// Base64-in-JSON an /transcribe (proxy-tauglich wie die Formular-POSTs). Ein
+// Klick startet, der naechste stoppt und haengt den erkannten Text ans Feld.
+(function () {
+  var endpoint = "{{ url_for('ui.transcribe') }}";
+  var statusEl = document.querySelector('.zuordnung .diktat-status');
+  function setStatus(t) { if (statusEl) statusEl.textContent = t || ''; }
+  var canRecord = navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
+                  typeof MediaRecorder !== 'undefined';
+
+  var active = null;  // { btn, input, stream, recorder, chunks }
+
+  function savedMicId() {
+    try { return localStorage.getItem('hp-mic-id') || ''; } catch (e) { return ''; }
+  }
+
+  function stop() {
+    if (!active) return;
+    var a = active;
+    a.btn.classList.remove('recording');
+    if (a.recorder && a.recorder.state !== 'inactive') a.recorder.stop();
+  }
+
+  function start(btn, input) {
+    var id = savedMicId();
+    var constraints = { audio: id ? { deviceId: { exact: id } } : true };
+    setStatus('Mikrofon wird angefragt …');
+    navigator.mediaDevices.getUserMedia(constraints)
+      .catch(function () { return navigator.mediaDevices.getUserMedia({ audio: true }); })
+      .then(function (stream) {
+        var chunks = [];
+        var recorder;
+        try { recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' }); }
+        catch (e) { recorder = new MediaRecorder(stream); }
+        active = { btn: btn, input: input, stream: stream, recorder: recorder, chunks: chunks };
+        recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+        recorder.onstop = function () {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          var blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+          active = null;
+          if (!blob.size) { setStatus(''); return; }
+          setStatus('Wird transkribiert …');
+          var fr = new FileReader();
+          fr.onload = function () {
+            var b64 = String(fr.result).split(',')[1] || '';
+            fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ audio: b64, mime: blob.type || 'audio/webm' })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d.text) {
+                input.value = (input.value ? input.value.trim() + ' ' : '') + d.text;
+                setStatus('Text übernommen.');
+              } else { setStatus(d.error || 'Keine Sprache erkannt.'); }
+            })
+            .catch(function () { setStatus('Transkription fehlgeschlagen.'); });
+          };
+          fr.readAsDataURL(blob);
+        };
+        btn.classList.add('recording');
+        recorder.start();
+        setStatus('Aufnahme läuft – nochmals klicken zum Stoppen.');
+      })
+      .catch(function () {
+        setStatus('Mikrofonzugriff nicht möglich – bitte Berechtigung erteilen.');
+      });
+  }
+
+  document.querySelectorAll('.zuordnung .diktat-btn').forEach(function (btn) {
+    var input = btn.parentNode.querySelector('input[name="bemerkung[]"]');
+    if (!canRecord) { btn.disabled = true; btn.title = 'Diktat wird vom Browser nicht unterstützt'; return; }
+    btn.addEventListener('click', function () {
+      if (active && active.btn === btn) { stop(); return; }
+      if (active) { stop(); }
+      start(btn, input);
+    });
+  });
+}());
+</script>
+{% endif %}
+{% endif %}

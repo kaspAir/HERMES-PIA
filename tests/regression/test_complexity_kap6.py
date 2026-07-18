@@ -29,7 +29,7 @@ def test_complexity_factor_steigt_mit_stufe():
 
 def test_hoehere_komplexitaet_streckt_termine():
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "termine")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"termine")
     base = svc._catalog_suggestion("fachanwendung_einfuehrung", section)
     from app.domains.interview.service import _assign_termine_dates
 
@@ -183,7 +183,7 @@ def test_nachweis_ausgangslage_herkunft_kombiniert_bei_komplexitaet():
     svc = _svc()  # ohne LLM -> Fallback-Begründung, Herkunft deterministisch
     sess = type("S", (), {"method_id": "hermes_pia", "project_name": "P",
                           "project_type_id": "x", "auftraggeber": "A"})()
-    title = svc._section_by_id("hermes_pia", "ausgangslage").get("title")
+    title = svc._section_by_id(svc.methods.get("hermes_pia"),"ausgangslage").get("title")
     answers = {"ausgangslage": {"raw_text": "Diktat", "extracted": {"text": "Basis."},
                                 "komplexitaet": {"Technologie": {"stufe": "hoch",
                                                                  "einschaetzung": "X."}}}}
@@ -269,7 +269,7 @@ def test_pruefmethode_meilenstein_vs_inhalt():
 
 def test_postprocess_risiken_setzt_verantwortung_und_termin():
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sa = {"extracted": [{"beschreibung": "Risiko", "ew": "Mittel", "ag": "Hoch"}]}
     svc._postprocess_section(section, sa, {})
     r = sa["extracted"][0]
@@ -284,7 +284,7 @@ class _RiskLLM:
 
 def test_postprocess_risiken_schaetzt_fehlende_ew_ag():
     svc = _svc(_RiskLLM())
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sa = {"extracted": [{"beschreibung": "Stakeholder nicht verfügbar"}]}
     svc._postprocess_section(section, sa, {})
     r = sa["extracted"][0]
@@ -294,7 +294,7 @@ def test_postprocess_risiken_schaetzt_fehlende_ew_ag():
 
 def test_risiken_gapcheck_nur_bei_eingegebenen_risiken():
     svc = _svc()  # ohne LLM -> Gap-Check isoliert (keine AI-/Komplexitäts-Followups)
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sess = type("S", (), {"project_type_id": "betriebsabloesung",
                           "start_datum": None, "method_id": "hermes_pia"})()
     # Leere Risiken -> KEIN Gap-Check, damit das normale Vorschlags-Angebot greift
@@ -518,3 +518,59 @@ def test_assess_complexity_garantiert_alle_dimensionen():
     assert "Politik & Stakeholder" in namen          # fehlte im LLM-Output -> ergänzt
     assert next(o for o in out if o["dimension"] == "Technologie")["stufe"] == "hoch"
     assert all(o.get("einschaetzung") for o in out)  # keine leere Einschätzung
+
+
+# --- Aktive Nachfrage: externe Fachexpertise (beratender Anspruch) --------- #
+
+def _pa_section(svc):
+    return svc._section_by_id(svc.methods.get("hermes_pia"), "personalaufwand")
+
+
+def _stub_session():
+    return type("S", (), {"project_type_id": None, "start_datum": None,
+                          "method_id": "hermes_pia"})()
+
+
+def test_externe_fachexpertise_wird_aktiv_erfragt():
+    # Signalisiert der PL externen Bedarf beim Personalschritt, fragt HERMES PIA
+    # aktiv nach dem Thema (statt es 'offen' zu lassen).
+    svc = _svc()  # ohne LLM -> nur die deterministische Nachfrage
+    raw = "Möglichst viel intern, aber wir brauchen externe Fachexpertise."
+    fus = svc._build_followups(_pa_section(svc), [{"rolle": "Projektleiter"}],
+                               raw, _stub_session(), {})
+    assert any(f.get("type") == "expertise" for f in fus)
+
+
+def test_keine_expertise_nachfrage_ohne_signal():
+    svc = _svc()
+    fus = svc._build_followups(_pa_section(svc), [{"rolle": "Projektleiter"}],
+                               "Wir machen alles intern.", _stub_session(), {})
+    assert not any(f.get("type") == "expertise" for f in fus)
+
+
+def test_expertise_thema_wird_in_rolle_geschrieben():
+    svc = _svc()
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "name": "", "aufwand": "12"},
+        {"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}]}}
+    svc._apply_expertise_thema(answers, "Sicherheitsarchitektur.")
+    rollen = [r["rolle"] for r in answers["personalaufwand"]["extracted"]]
+    assert "Externe Fachexpertise (Sicherheitsarchitektur)" in rollen
+
+
+def test_expertise_ohne_thema_laesst_rolle_bestehen():
+    # Abgelehnt / kein Thema -> die Rolle wird NIE stillschweigend entfernt.
+    svc = _svc()
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}]}}
+    svc._apply_expertise_thema(answers, None)
+    rollen = [r["rolle"] for r in answers["personalaufwand"]["extracted"]]
+    assert "Externe Fachexpertise" in rollen
+
+
+def test_expertise_signal_auch_beim_personalschritt():
+    # Das Signal greift auch, wenn es NICHT in der Ausgangslage, sondern erst
+    # beim Personalschritt fällt.
+    svc = _svc()
+    assert svc._externe_expertise_signal({}, "wir brauchen externe Beratung")
+    assert not svc._externe_expertise_signal({}, "alles wird intern erledigt")

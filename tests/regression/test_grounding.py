@@ -48,7 +48,7 @@ def _svc(llm, rag):
 def test_grounding_reicht_korpus_in_den_prompt():
     llm, rag = _CaptureLLM(), _FakeRag()
     svc = _svc(llm, rag)
-    section = svc._section_by_id("hermes_pia", "rahmenbedingungen")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"rahmenbedingungen")
     answers = {"ausgangslage": {"extracted": {"text": "Wir digitalisieren die Gesuchsbearbeitung."}}}
     svc._fill_from_suggestion(_session(org_id=7), section, {"extracted": []}, answers)
     assert "KORPUSBEISPIEL" in (llm.last_user or "")
@@ -60,7 +60,7 @@ def test_grounding_reicht_korpus_in_den_prompt():
 def test_ohne_rag_kein_grounding_block():
     llm = _CaptureLLM()
     svc = _svc(llm, rag=None)
-    section = svc._section_by_id("hermes_pia", "rahmenbedingungen")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"rahmenbedingungen")
     answers = {"ausgangslage": {"extracted": {"text": "Etwas Ausgangslage."}}}
     svc._fill_from_suggestion(_session(), section, {"extracted": []}, answers)
     assert "Vergleichbare frühere PIAs" not in (llm.last_user or "")
@@ -73,7 +73,7 @@ def test_inaktives_rag_kein_grounding():
             raise AssertionError("darf nicht aufgerufen werden")
     llm = _CaptureLLM()
     svc = _svc(llm, rag=_Inactive())
-    section = svc._section_by_id("hermes_pia", "rahmenbedingungen")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"rahmenbedingungen")
     answers = {"ausgangslage": {"extracted": {"text": "Etwas Ausgangslage."}}}
     svc._fill_from_suggestion(_session(), section, {"extracted": []}, answers)
     assert "Vergleichbare frühere PIAs" not in (llm.last_user or "")

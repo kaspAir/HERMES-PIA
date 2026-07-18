@@ -129,3 +129,31 @@ def test_transcribe_route_json_ohne_audio(app):
     assert r.status_code == 400
     r = c.post(f"/interview/{sid}/transcribe", json={"audio": "%%%nicht-base64%%%"})
     assert r.status_code == 400
+
+
+def test_generische_transcribe_route(app):
+    """Session-unabhaengiges Diktat (z.B. Bemerkungsfelder) fuer schreibberechtigte
+    Nutzer; Nur-Leser sind gesperrt."""
+    import base64
+
+    class _Fake:
+        available = True
+        def transcribe(self, audio, filename="s", mimetype="m"):
+            return "bemerkung diktiert"
+
+    app.transcriber = _Fake()
+    auth = app.auth_service
+    org = auth.create_org("Org2")
+    auth.create_user("w@o.ch", "pw", role="org_admin", org_id=org.id,
+                     can_read=True, can_write=True, can_delete=True)
+    auth.create_user("r@o.ch", "pw", org_id=org.id, can_read=True, can_write=False)
+
+    cw = app.test_client()
+    cw.post("/login", data={"email": "w@o.ch", "password": "pw"})
+    r = cw.post("/transcribe",
+                json={"audio": base64.b64encode(b"aud").decode(), "mime": "audio/webm"})
+    assert r.status_code == 200 and r.get_json()["text"] == "bemerkung diktiert"
+
+    cr = app.test_client()
+    cr.post("/login", data={"email": "r@o.ch", "password": "pw"})
+    assert cr.post("/transcribe", json={"audio": "x"}).status_code == 403

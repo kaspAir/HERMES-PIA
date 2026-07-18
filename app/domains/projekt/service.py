@@ -9,6 +9,7 @@ from app.domains.projekt.models import (
     Ergebnis,
     ErgebnisDokument,
     Meilenstein,
+    MethodenVorlage,
     Modul,
     Phase,
     PraesentationsVorlage,
@@ -74,6 +75,9 @@ class ProjektService:
                 synchronize_session=False)
         db.query(PraesentationsVorlage).filter(
             PraesentationsVorlage.projekt_id == projekt.id).delete(
+            synchronize_session=False)
+        db.query(MethodenVorlage).filter(
+            MethodenVorlage.projekt_id == projekt.id).delete(
             synchronize_session=False)
         db.delete(projekt)
         db.commit()
@@ -246,6 +250,57 @@ class ProjektService:
         """Massgebliche Vorlage: Projekt-Vorlage übersteuert die PMO-Vorlage der
         Organisationseinheit; sonst None (dann leere Standard-Präsentation)."""
         return self.projekt_vorlage(projekt.id) or self.org_vorlage(projekt.org_id)
+
+    # ------------------------------------------------------------------ #
+    # Methoden-/Word-Vorlagen (Projekt-Vorlage schlägt Org-Vorlage)        #
+    # ------------------------------------------------------------------ #
+
+    def add_methoden_vorlage(self, filename, data, org_id=None, projekt_id=None,
+                             uploaded_by=None):
+        db = SessionLocal()
+        v = MethodenVorlage(
+            org_id=org_id, projekt_id=projekt_id, filename=filename,
+            size=len(data or b""), data=data, uploaded_by=uploaded_by,
+        )
+        db.add(v)
+        db.commit()
+        db.refresh(v)
+        return v
+
+    def org_methoden_vorlage(self, org_id):
+        """Neueste PMO-Wortvorlage der Organisationseinheit (projektunabhängig)."""
+        if not org_id:
+            return None
+        return SessionLocal().query(MethodenVorlage).filter(
+            MethodenVorlage.org_id == org_id,
+            MethodenVorlage.projekt_id.is_(None),
+        ).order_by(MethodenVorlage.created_at.desc()).first()
+
+    def projekt_methoden_vorlage(self, projekt_id):
+        """Neueste projektspezifische Wortvorlage (übersteuert die PMO-Vorlage)."""
+        return SessionLocal().query(MethodenVorlage).filter(
+            MethodenVorlage.projekt_id == int(projekt_id)
+        ).order_by(MethodenVorlage.created_at.desc()).first()
+
+    def resolve_methoden_vorlage(self, projekt):
+        """Massgebliche Wortvorlage: Projekt übersteuert Org; sonst None
+        (dann treibt die kanonische HERMES-Struktur das Interview)."""
+        return (self.projekt_methoden_vorlage(projekt.id)
+                or self.org_methoden_vorlage(projekt.org_id))
+
+    def get_methoden_vorlage(self, vorlage_id):
+        return SessionLocal().get(MethodenVorlage, int(vorlage_id))
+
+    def set_methoden_mapping(self, vorlage_id, mapping):
+        """Speichert die bestätigte Kapitel-Zuordnung (Liste) als JSON."""
+        import json
+        db = SessionLocal()
+        v = db.get(MethodenVorlage, int(vorlage_id))
+        if v is None:
+            return None
+        v.mapping_json = json.dumps(mapping, ensure_ascii=False)
+        db.commit()
+        return v
 
     def structure(self, projekt):
         """Verschachtelte Sicht für die UI: Phase -> Module(+Ergebnisse) + Meilensteine."""

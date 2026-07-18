@@ -51,6 +51,14 @@ def _migrate_db(engine):
                 conn.execute(text(f"ALTER TABLE interview_session ADD COLUMN {col} {dtype}"))
         conn.commit()
 
+    # methoden_vorlage: bestätigte Kapitel-Zuordnung (nachträglich ergänzt).
+    if "methoden_vorlage" in inspector.get_table_names():
+        mv_cols = {c["name"] for c in inspector.get_columns("methoden_vorlage")}
+        if "mapping_json" not in mv_cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE methoden_vorlage ADD COLUMN mapping_json TEXT"))
+                conn.commit()
+
 
 def _backfill_projekte(app):
     """Wickelt bestehende PIAs einmalig in die Projektstruktur ein.
@@ -101,11 +109,12 @@ def create_app(config_class=None):
         api_key=app.config.get("VOYAGE_API_KEY"),
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),
     ))
+    app.projekt_service = ProjektService()
     app.interview_service = InterviewService(
-        app.method_service, app.catalog_service, llm_client, rag=app.rag_service
+        app.method_service, app.catalog_service, llm_client, rag=app.rag_service,
+        projekt_service=app.projekt_service,
     )
     app.generation_service = GenerationService(app.method_service)
-    app.projekt_service = ProjektService()
     app.praesentation_service = PraesentationService(llm_client)
     app.auth_service = AuthService()
     app.transcriber = Transcriber(
@@ -131,7 +140,10 @@ def create_app(config_class=None):
     def inject_globals():
         user = current_user()
         org = app.auth_service.get_org(user.org_id) if user and user.org_id else None
-        return {"app_version": app_version, "current_user": user, "current_org": org}
+        branding = app.auth_service.get_branding(user.org_id) if user and user.org_id else None
+        return {"app_version": app_version, "current_user": user,
+                "current_org": org, "current_branding": branding,
+                "stt_available": getattr(app.transcriber, "available", False)}
 
     @app.teardown_appcontext
     def remove_session(exception=None):
