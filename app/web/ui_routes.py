@@ -361,6 +361,55 @@ def projekt_kostensatz(projekt_id):
     return redirect(url_for("ui.projekt_detail", projekt_id=projekt.id))
 
 
+# ---- Rechtsgrundlagenanalyse (abgeleitetes Ergebnis, eigenes Modul) ----- #
+
+KANTONE = [
+    ("AG", "Aargau"), ("AI", "Appenzell Innerrhoden"), ("AR", "Appenzell Ausserrhoden"),
+    ("BE", "Bern"), ("BL", "Basel-Landschaft"), ("BS", "Basel-Stadt"), ("FR", "Freiburg"),
+    ("GE", "Genf"), ("GL", "Glarus"), ("GR", "Graubünden"), ("JU", "Jura"), ("LU", "Luzern"),
+    ("NE", "Neuenburg"), ("NW", "Nidwalden"), ("OW", "Obwalden"), ("SG", "St. Gallen"),
+    ("SH", "Schaffhausen"), ("SO", "Solothurn"), ("SZ", "Schwyz"), ("TG", "Thurgau"),
+    ("TI", "Tessin"), ("UR", "Uri"), ("VD", "Waadt"), ("VS", "Wallis"), ("ZG", "Zug"),
+    ("ZH", "Zürich"),
+]
+
+
+@bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen")
+@permission_required("read")
+def rechtsgrundlagen(projekt_id):
+    projekt = _load_projekt(projekt_id)
+    svc = current_app.rechtsgrundlagen_service
+    entwurf = svc.get_entwurf(projekt.id)
+    wissen, session = svc.projektwissen(projekt,
+                                        ebene=entwurf.ebene if entwurf else None,
+                                        kanton=entwurf.kanton if entwurf else None)
+    stamp = f"{date.today():%Y%m%d}_{_safe_filename(projekt.name or 'Projekt')}"
+    return render_template(
+        "rechtsgrundlagen.html", projekt=projekt, entwurf=entwurf,
+        genannte=wissen.genannte_rechtsgrundlagen(), hat_pia=session is not None,
+        kantone=KANTONE, download_name=f"{stamp}_Rechtsgrundlagenanalyse.docx")
+
+
+@bp.post("/projekt/<int:projekt_id>/rechtsgrundlagen/erzeugen")
+@permission_required("write")
+def rechtsgrundlagen_erzeugen(projekt_id):
+    projekt = _load_projekt(projekt_id)
+    ebenen = request.form.getlist("ebene")
+    current_app.rechtsgrundlagen_service.erzeuge_entwurf(
+        projekt, ebene=",".join(ebenen) or None, kanton=request.form.get("kanton") or None)
+    return redirect(url_for("ui.rechtsgrundlagen", projekt_id=projekt.id))
+
+
+@bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/download/<path:filename>")
+@permission_required("read")
+def rechtsgrundlagen_download(projekt_id, filename):
+    projekt = _load_projekt(projekt_id)
+    buf = current_app.rechtsgrundlagen_service.generate_docx(projekt)
+    return send_file(
+        buf, as_attachment=True, download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
 # ---- Dokumente & Präsentation am Ergebnis ------------------------------ #
 
 _UPLOAD_LIMIT = 15 * 1024 * 1024   # 15 MB (decodiert)
