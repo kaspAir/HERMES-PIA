@@ -8,8 +8,10 @@ import json
 
 from app.domains.ergebnisse.models import ErgebnisEntwurf
 from app.domains.ergebnisse.projektwissen import Projektwissen
+from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
 from app.domains.ergebnisse.rechtsgrundlagen.proposals import analysiere
 from app.domains.projekt.reference import ERG_PIA
+from app.domains.rechtsquellen.fedlex import FedlexClient
 from app.shared.database import SessionLocal
 
 METHOD_ID = "rechtsgrundlagenanalyse"
@@ -25,11 +27,13 @@ _TABELLEN = {
 
 
 class RechtsgrundlagenService:
-    def __init__(self, interview_service, projekt_service, generation_service, llm=None):
+    def __init__(self, interview_service, projekt_service, generation_service,
+                 llm=None, fedlex=None):
         self.interview = interview_service
         self.projekte = projekt_service
         self.generation = generation_service
         self.llm = llm
+        self.fedlex = fedlex or FedlexClient()   # Phase B: Bundes-Fundstellen (Fedlex)
 
     # ---- PIA-Zugriff (nur lesen) ---------------------------------------- #
     def _pia(self, projekt):
@@ -58,29 +62,49 @@ class RechtsgrundlagenService:
         rows = self._bereinige(rows)
         return rows if rows else [{k: "" for k in spalten}]
 
-    def _bestehende(self, wissen, vorschlag):
-        """Genannte Gesetze aus dem PIA garantiert aufführen; LLM-Beschreibung mergen.
-        Keine erfundenen Fundstellen."""
+    def _grounding(self, wissen):
+        """Verifizierte Bundes-Fundstellen (Fedlex) zu den genannten Gesetzen – oder {}."""
+        try:
+            return ground_federal(wissen.genannte_rechtsgrundlagen(), wissen.ebene, self.fedlex)
+        except Exception:  # noqa: BLE001 – Grounding-Störung darf den Entwurf nicht kippen
+            return {}
+
+    @staticmethod
+    def _dokumente(rows, grounded):
+        """Referenzierte/Mitgeltende übernehmen; bei Bundes-Treffer Link/SR ergänzen."""
+        out = []
+        for r in rows:
+            name = str(r.get("name", "")).strip()
+            g = grounded.get(name)
+            out.append({"name": name,
+                        "link": f"SR {g['sr']} – {g['url']}" if g else ""})
+        return out or [{"name": "", "link": ""}]
+
+    def _bestehende(self, wissen, vorschlag, grounded):
+        """Genannte Gesetze aus dem PIA garantiert aufführen. Bei Bundes-Treffer die
+        VERIFIZIERTE Fundstelle (offizieller Titel + SR) als Beschreibung; sonst die
+        allgemeine LLM-Beschreibung. Nie eine Fundstelle erfinden."""
         vorschlag = self._bereinige(vorschlag)
         by_name = {r.get("rechtsgrundlage", "").lower(): r for r in vorschlag}
         rows = []
         for name in wissen.genannte_rechtsgrundlagen():
-            treffer = by_name.pop(name.lower(), None)
-            rows.append({"rechtsgrundlage": name,
-                         "beschreibung": (treffer or {}).get("beschreibung", "")})
+            llm_row = by_name.pop(name.lower(), None)
+            g = grounded.get(name)
+            if g:
+                beschreibung = f"{g['titel']} (SR {g['sr']})"
+            else:
+                beschreibung = (llm_row or {}).get("beschreibung", "")
+            rows.append({"rechtsgrundlage": name, "beschreibung": beschreibung})
         rows.extend(by_name.values())          # zusätzliche LLM-Vorschläge anhängen
         return rows or [{"rechtsgrundlage": "", "beschreibung": ""}]
 
     def build_answers(self, wissen):
-        v = analysiere(wissen, self.llm)
+        grounded = self._grounding(wissen)
+        v = analysiere(wissen, self.llm, grounding=grounded)
         return {
-            "referenzierte_dokumente": {"extracted": [
-                {"name": r.get("name", ""), "link": ""} for r in wissen.referenzierte()
-            ] or [{"name": "", "link": ""}]},
-            "mitgeltende_unterlagen": {"extracted": [
-                {"name": r.get("name", ""), "link": ""} for r in wissen.mitgeltende()
-            ] or [{"name": "", "link": ""}]},
-            "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(wissen, v.get("bestehende"))},
+            "referenzierte_dokumente": {"extracted": self._dokumente(wissen.referenzierte(), grounded)},
+            "mitgeltende_unterlagen": {"extracted": self._dokumente(wissen.mitgeltende(), grounded)},
+            "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(wissen, v.get("bestehende"), grounded)},
             "bevorstehende_aenderungen": {"extracted": self._rows_or_blank(
                 v.get("bevorstehende"), _TABELLEN["bevorstehende_aenderungen"])},
             "identifizierte_luecken": {"extracted": self._rows_or_blank(

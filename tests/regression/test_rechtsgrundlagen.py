@@ -31,11 +31,20 @@ class _FakeLLM:
         return json.dumps(self._payload)
 
 
+class _FakeFedlex:
+    """Kein Netzwerk: liefert die vorgegebene {Suchbegriff: [Treffer]}-Zuordnung."""
+    def __init__(self, mapping=None):
+        self._m = mapping or {}
+
+    def suche_mehrere(self, begriffe, **kw):
+        return self._m
+
+
 # ---- Modul-Logik (kein DB, kein echter LLM) ------------------------------- #
 
 def test_seeding_ohne_llm_uebernimmt_pia_gesetze():
     wissen = Projektwissen(_PIA, ebene="kanton", kanton="ZH")
-    svc = RechtsgrundlagenService(None, None, None, llm=None)
+    svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=_FakeFedlex())
     answers = svc.build_answers(wissen)
     namen = [r["rechtsgrundlage"] for r in answers["bestehende_rechtsgrundlagen"]["extracted"]]
     assert "Bundesgesetz über den Datenschutz (DSG)" in namen
@@ -51,7 +60,7 @@ def test_seeding_ohne_llm_uebernimmt_pia_gesetze():
 
 def test_llm_vorschlag_wird_gemergt_und_pia_bleibt_fuehrend():
     wissen = Projektwissen(_PIA, ebene="bund")
-    svc = RechtsgrundlagenService(None, None, None, llm=_FakeLLM({
+    svc = RechtsgrundlagenService(None, None, None, fedlex=_FakeFedlex(), llm=_FakeLLM({
         "bestehende": [{"rechtsgrundlage": "Bundesgesetz über den Datenschutz (DSG)",
                         "beschreibung": "Regelt den Schutz von Personendaten."}],
         "luecken": [{"luecke": "Fehlende Grundlage", "beschreibung": "für neue Bearbeitung"}],
@@ -119,3 +128,54 @@ def test_entwurf_und_docx_end_to_end(app):
         volltext = "\n".join(p.text for p in doc.paragraphs)
         assert "Bestehende Rechtsgrundlagen" in volltext
         assert "Empfehlung" in volltext
+
+
+# ---- Phase B: Fedlex-Grounding (ohne Netzwerk) ---------------------------- #
+
+def test_fedlex_parsing_gemockt():
+    from app.domains.rechtsquellen.fedlex import FedlexClient
+    client = FedlexClient()
+    client._fetch = lambda sparql: [
+        {"sr": {"value": "312.0"}, "title": {"value": "Schweizerische Strafprozessordnung vom 5. Oktober 2007 (StPO)"},
+         "cons": {"value": "https://fedlex.data.admin.ch/eli/cc/2010/267"}},
+        {"sr": {"value": "312.1"}, "title": {"value": "Jugendstrafprozessordnung (JStPO)"},
+         "cons": {"value": "https://fedlex.data.admin.ch/eli/cc/2010/226"}},
+    ]
+    res = client.suche_mehrere(["Strafprozessordnung"])
+    hit = res["Strafprozessordnung"][0]
+    assert hit["sr"] == "312.0"                       # kürzeste SR = Haupterlass
+    assert hit["url"] == "https://www.fedlex.admin.ch/eli/cc/2010/267/de"
+
+
+def test_suchbegriffe_aus_gesetzesname():
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import suchbegriffe
+    t = suchbegriffe("Bundesgesetz über den Datenschutz (DSG)")
+    assert "DSG" in t and "Datenschutz" in t
+    assert "Bundesgesetz" not in t                    # generisch -> nicht als Begriff
+
+
+def test_ground_federal_nur_bei_bund():
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
+    fake = _FakeFedlex({"StPO": [{"sr": "312.0", "titel": "StPO …", "url": "u"}]})
+    namen = ["Schweizerische Strafprozessordnung (StPO)"]
+    assert ground_federal(namen, "kanton", fake) == {}        # nicht Bund -> kein Grounding
+    g = ground_federal(namen, "bund", fake)
+    assert g["Schweizerische Strafprozessordnung (StPO)"]["sr"] == "312.0"
+
+
+def test_service_reichert_referenzierte_und_bestehende_mit_fundstelle_an():
+    fake = _FakeFedlex({
+        "DSG": [{"sr": "235.1", "titel": "Bundesgesetz vom 19. Juni 1992 über den Datenschutz (DSG)",
+                 "url": "https://www.fedlex.admin.ch/eli/cc/1993/1945_1945_1945/de"}],
+    })
+    wissen = Projektwissen(_PIA, ebene="bund")
+    svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=fake)
+    answers = svc.build_answers(wissen)
+    # Referenzierte: der DSG-Eintrag bekommt SR + Fedlex-Link
+    dsg_ref = next(r for r in answers["referenzierte_dokumente"]["extracted"]
+                   if "Datenschutz" in r["name"])
+    assert "SR 235.1" in dsg_ref["link"] and "fedlex.admin.ch" in dsg_ref["link"]
+    # Bestehende Rechtsgrundlagen: verifizierter Titel + SR als Beschreibung
+    dsg_best = next(r for r in answers["bestehende_rechtsgrundlagen"]["extracted"]
+                    if "Datenschutz" in r["rechtsgrundlage"])
+    assert "SR 235.1" in dsg_best["beschreibung"]
