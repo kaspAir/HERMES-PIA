@@ -149,19 +149,30 @@ def test_entwurf_und_docx_end_to_end(app):
 
 # ---- Phase B: Fedlex-Grounding (ohne Netzwerk) ---------------------------- #
 
-def test_fedlex_parsing_gemockt():
+def test_fedlex_offline_index_lookup():
     from app.domains.rechtsquellen.fedlex import FedlexClient
-    client = FedlexClient()
-    client._fetch = lambda sparql: [
-        {"sr": {"value": "312.0"}, "title": {"value": "Schweizerische Strafprozessordnung vom 5. Oktober 2007 (StPO)"},
-         "cons": {"value": "https://fedlex.data.admin.ch/eli/cc/2010/267"}},
-        {"sr": {"value": "312.1"}, "title": {"value": "Jugendstrafprozessordnung (JStPO)"},
-         "cons": {"value": "https://fedlex.data.admin.ch/eli/cc/2010/226"}},
-    ]
-    res = client.suche_mehrere(["Strafprozessordnung"])
-    hit = res["Strafprozessordnung"][0]
-    assert hit["sr"] == "312.0"                       # kürzeste SR = Haupterlass
-    assert hit["url"] == "https://www.fedlex.admin.ch/eli/cc/2010/267/de"
+    # Injizierter Mini-Index (kein Netzwerk): kürzeste SR = Haupterlass, Wortgrenzen.
+    client = FedlexClient(index=[
+        {"sr": "312.0", "titel": "Schweizerische Strafprozessordnung vom 5. Oktober 2007 (StPO)",
+         "url": "https://www.fedlex.admin.ch/eli/cc/2010/267/de"},
+        {"sr": "312.1", "titel": "Schweizerische Jugendstrafprozessordnung (JStPO)",
+         "url": "https://www.fedlex.admin.ch/eli/cc/2010/226/de"},
+        {"sr": "272", "titel": "Bundesgesetz über den Gerichtsstand (Gerichtsstandsgesetz)",
+         "url": "x"},
+    ])
+    res = client.suche_mehrere(["Strafprozessordnung", "DSG"])
+    assert res["Strafprozessordnung"][0]["sr"] == "312.0"
+    assert res["Strafprozessordnung"][0]["url"].endswith("/de")
+    assert "DSG" not in res             # 'dsg' matcht NICHT in 'GerichtsstanDSGesetz'
+
+
+def test_fedlex_index_mitgeliefert():
+    """Der reale Offline-Index ist vorhanden und findet Kernerlasse."""
+    from app.domains.rechtsquellen.fedlex import FedlexClient
+    res = FedlexClient().suche_mehrere(["Strafprozessordnung", "Datenschutz"])
+    assert res["Strafprozessordnung"][0]["sr"] == "312.0"
+    assert res["Datenschutz"][0]["sr"] == "235.1"
+    assert "fedlex.admin.ch" in res["Strafprozessordnung"][0]["url"]
 
 
 def test_suchbegriffe_aus_gesetzesname():

@@ -1,103 +1,70 @@
-"""Fedlex-Connector: sucht Bundeserlasse (SR) über den offiziellen SPARQL-Endpunkt.
+"""Fedlex-Connector: verknüpft Suchbegriffe mit Bundeserlassen (SR).
 
-Liefert zu Suchbegriffen echte, verifizierbare Fundstellen (SR-Nummer, Titel,
-Fedlex-Permalink). Bei Netzwerk-/Endpunkt-/Parsingfehlern -> leeres Ergebnis:
-es wird NIE eine Fundstelle geraten.
+Arbeitet OFFLINE gegen einen mitgelieferten SR-Index (data/fedlex_sr_de.json.gz,
+einmalig aus dem offiziellen Fedlex-SPARQL geholt – siehe scripts/refresh_fedlex_index.py).
+So funktioniert das Grounding auf JEDEM Host, ohne Live-Netzwerk – der Managed-Host
+erreicht den Fedlex-Dienst nicht. Liefert echte SR-Nummer + offizieller Titel +
+Fedlex-Permalink. Nichts wird geraten: kein Treffer -> keine Fundstelle.
 """
+import gzip
+import json
 import logging
 import re
-
-import requests
+from pathlib import Path
 
 log = logging.getLogger("hermes.fedlex")
 
-ENDPOINT = "https://fedlex.data.admin.ch/sparqlendpoint"
-# Manche Endpunkte/Proxys weisen den Default-Python-User-Agent ab.
-_HEADERS = {
-    "Accept": "application/sparql-results+json",
-    "User-Agent": "HERMES-PIA/1.0 (+https://hermespia.ch)",
-}
-
-# Deutsche Sprach-URI in den Fedlex-Daten.
-_LANG_DE = "http://publications.europa.eu/resource/authority/language/DEU"
-
-_SPARQL = """PREFIX jolux: <http://data.legilux.public.lu/resource/ontology/jolux#>
-PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-SELECT DISTINCT ?sr ?title ?cons WHERE {{
-  ?cons a jolux:ConsolidationAbstract ;
-        jolux:classifiedByTaxonomyEntry/skos:notation ?sr ;
-        jolux:isRealizedBy ?expr .
-  ?expr jolux:language <%s> ;
-        jolux:title ?title .
-  FILTER(REGEX(LCASE(STR(?title)), "{muster}"))
-}} LIMIT {limit}""" % _LANG_DE
+_INDEX_PATH = Path(__file__).resolve().parent / "data" / "fedlex_sr_de.json.gz"
+_INDEX_CACHE = None
 
 
-def _permalink(cons_uri):
-    """Wandelt die Daten-URI in den öffentlichen Fedlex-Permalink (deutsch)."""
-    if not cons_uri:
-        return ""
-    return cons_uri.replace("fedlex.data.admin.ch", "www.fedlex.admin.ch") + "/de"
+def _load_offline_index():
+    """Lädt den mitgelieferten SR-Index (gecacht). Leere Liste, falls Datei fehlt."""
+    global _INDEX_CACHE
+    if _INDEX_CACHE is None:
+        try:
+            with gzip.open(_INDEX_PATH, "rt", encoding="utf-8") as f:
+                _INDEX_CACHE = json.load(f)
+            log.info("Fedlex-SR-Index geladen: %d Erlasse", len(_INDEX_CACHE))
+        except Exception as e:  # noqa: BLE001 – ohne Index einfach kein Grounding
+            log.warning("Fedlex-SR-Index nicht ladbar: %s", e)
+            _INDEX_CACHE = []
+    return _INDEX_CACHE
 
 
 def _sanitize(term):
-    """Nur unbedenkliche Zeichen in den Regex-Filter lassen (kein Injection-Risiko).
-    Bindestrich bleibt erhalten (z.B. 'DNA-Profil-Gesetz')."""
+    """Nur unbedenkliche Zeichen; Bindestrich bleibt (z.B. 'DNA-Profil-Gesetz')."""
     return re.sub(r"[^a-zäöüéèàç0-9 -]", "", (term or "").lower()).strip()
 
 
 class FedlexClient:
-    def __init__(self, endpoint=ENDPOINT, timeout=20):
-        self.endpoint = endpoint
-        self.timeout = timeout
+    def __init__(self, index=None):
+        # index optional (Tests); sonst wird der mitgelieferte Offline-Index geladen.
+        self._index = index
 
-    # Für Tests überschreibbar: liefert die rohen SPARQL-Bindings.
-    def _fetch(self, sparql):
-        r = requests.get(
-            self.endpoint, params={"query": sparql},
-            headers=_HEADERS, timeout=self.timeout,
-        )
-        r.raise_for_status()
-        return r.json().get("results", {}).get("bindings", [])
+    def _get_index(self):
+        if self._index is None:
+            self._index = _load_offline_index()
+        return self._index
 
-    def suche_mehrere(self, begriffe, treffer_je_begriff=1, limit=200):
-        """Ein SPARQL-Aufruf für mehrere Begriffe (Regex-Alternation).
-
-        Rückgabe: {begriff: [{sr, titel, url}]} – je Begriff die Treffer mit der
-        KÜRZESTEN SR-Nummer (i.d.R. der Haupterlass, nicht die Ausführungsverordnung).
-        Leeres Dict bei Störung – nie geraten.
-        """
-        terms = [t for t in {_sanitize(b) for b in (begriffe or [])} if len(t) >= 3]
-        if not terms:
+    def suche_mehrere(self, begriffe, treffer_je_begriff=1):
+        """{begriff: [{sr, titel, url}]} – je Begriff die Treffer mit der KÜRZESTEN
+        SR-Nummer (i.d.R. der Haupterlass). Wortgrenzen, damit 'DSG' nicht in
+        'GerichtsstanDSGesetz' matcht. Leeres Dict bei leerer Eingabe/ohne Index."""
+        index = self._get_index()
+        if not index:
             return {}
-        muster = "(" + "|".join(re.escape(t) for t in terms) + ")"
-        try:
-            bindings = self._fetch(_SPARQL.format(muster=muster, limit=limit))
-            log.info("Fedlex-Abfrage ok: %d Begriffe, %d Roh-Treffer", len(terms), len(bindings))
-        except Exception as e:  # noqa: BLE001 – jede Störung -> keine Treffer (kein Raten)
-            log.warning("Fedlex nicht erreichbar/Abfrage fehlgeschlagen (%s): %s",
-                        type(e).__name__, e)
-            return {}
-
-        # Alle Treffer sammeln, je SR nur einmal.
-        eintraege = {}
-        for b in bindings:
-            sr = (b.get("sr") or {}).get("value", "").strip()
-            titel = (b.get("title") or {}).get("value", "").strip()
-            uri = (b.get("cons") or {}).get("value", "")
-            if sr and titel and sr not in eintraege:
-                eintraege[sr] = {"sr": sr, "titel": titel, "url": _permalink(uri)}
-
-        # Treffer den Originalbegriffen zuordnen – mit WORTGRENZEN, damit z.B. 'DSG'
-        # nicht faelschlich in 'GerichtsstanDSGesetz' matcht.
         ergebnis = {}
         for original in (begriffe or []):
             t = _sanitize(original)
             if len(t) < 3:
                 continue
             wort = re.compile(r"\b" + re.escape(t) + r"\b", re.IGNORECASE)
-            passend = [e for e in eintraege.values() if wort.search(e["titel"])]
-            passend.sort(key=lambda e: (len(e["sr"]), e["sr"]))
+            passend = [e for e in index if wort.search(e.get("titel", ""))]
+            passend.sort(key=lambda e: (len(e.get("sr", "")), e.get("sr", "")))
             if passend:
-                ergebnis[original] = passend[:treffer_je_begriff]
+                ergebnis[original] = [
+                    {"sr": e["sr"], "titel": e["titel"], "url": e.get("url", "")}
+                    for e in passend[:treffer_je_begriff]
+                ]
         return ergebnis
