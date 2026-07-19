@@ -37,6 +37,8 @@ def test_template_vorhanden_und_ladbar():
 
 
 def test_build_und_fuellen_erhaelt_formeln():
+    # Ein Fake liefert dieselbe Payload für alle (getrennten) Aufrufe: Gruppen tragen
+    # die Keys für deckblatt_und_gruppen UND für auswirkungen.
     fake = _FakeLLM({
         "beschreibung": "Nachfolgelösung Juris Fiat der Justizbehörden.",
         "geschaeftsprozesse": "Fallführung Strafverfahren",
@@ -46,10 +48,10 @@ def test_build_und_fuellen_erhaelt_formeln():
                      "klassifizierung": "Klassifizierung: Vertraulich",
                      "personendaten": "besonders schützenswerte Personendaten",
                      "risiko": "Personendaten werden bearbeitet - Risikovorprüfung ergibt hohe Risiken",
-                     "ausw_vertraulichkeit": "Schwerwiegende Persönlichkeitsverletzung",
-                     "ausw_verfuegbarkeit": "Verfahren verzögern sich",
-                     "ausw_integritaet": "Fehlurteile möglich",
-                     "ausw_nachvollziehbarkeit": "Beweiswert gefährdet"},
+                     "vertraulichkeit": "Schwerwiegende Persönlichkeitsverletzung",
+                     "verfuegbarkeit": "Verfahren verzögern sich",
+                     "integritaet": "Fehlurteile möglich",
+                     "nachvollziehbarkeit": "Beweiswert gefährdet"},
                     {"gruppe": "X", "klassifizierung": "UNGUELTIG", "risiko": "quatsch"}],
         "zeilen": [{"zeile": 6, "grundwerte": ["vertraulichkeit", "integritaet"]}],
     })
