@@ -182,13 +182,14 @@ def test_suchbegriffe_aus_gesetzesname():
     assert "Bundesgesetz" not in t                    # generisch -> nicht als Begriff
 
 
-def test_ground_federal_nur_bei_bund():
+def test_ground_federal_immer(_ebene="egal"):
     from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
     fake = _FakeFedlex({"StPO": [{"sr": "312.0", "titel": "StPO …", "url": "u"}]})
     namen = ["Schweizerische Strafprozessordnung (StPO)"]
-    assert ground_federal(namen, "kanton", fake) == {}        # nicht Bund -> kein Grounding
-    g = ground_federal(namen, "bund", fake)
-    assert g["Schweizerische Strafprozessordnung (StPO)"]["sr"] == "312.0"
+    # Bundesrecht gilt in jedem Kanton -> auch bei Kantonsebene grounden.
+    for ebene in ("kanton", "bund", "bund,kanton"):
+        g = ground_federal(namen, ebene, fake)
+        assert g["Schweizerische Strafprozessordnung (StPO)"]["sr"] == "312.0"
 
 
 def test_service_reichert_referenzierte_und_bestehende_mit_fundstelle_an():

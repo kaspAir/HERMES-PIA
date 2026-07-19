@@ -35,10 +35,14 @@ def suchbegriffe(name):
     return terms
 
 
-def ground_federal(namen, ebene, client):
-    """{name -> {sr, titel, url}} für die auf Bundesebene auffindbaren Gesetze.
-    Leeres Dict, wenn nicht Bundesebene / kein Client / kein Treffer."""
-    if not client or not ist_bund(ebene) or not namen:
+def ground_federal(namen, ebene=None, client=None):
+    """{name -> {sr, titel, url}} für die als Bundeserlass auffindbaren Gesetze.
+
+    Wird IMMER versucht (der Offline-Index kostet kein Netzwerk): Bundesrecht (z.B.
+    StGB/StPO) gilt in jedem Kanton – auch bei rein kantonaler Ebene sollen die
+    Bundesgesetze ihre echte SR-Fundstelle bekommen. `ebene` bleibt nur aus
+    Kompatibilität. Leeres Dict, wenn kein Client / kein Treffer."""
+    if not client or not namen:
         return {}
     begriffe_je_name = {n: suchbegriffe(n) for n in namen}
     alle = [t for terms in begriffe_je_name.values() for t in terms]
