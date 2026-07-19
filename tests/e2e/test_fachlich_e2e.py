@@ -91,10 +91,26 @@ def test_orakel_projekttyp_gueltigkeit():
 # Der eigentliche E2E-Fall – nur auf Promotion, gegen echte Dienste            #
 # --------------------------------------------------------------------------- #
 
+def _testfall_ids():
+    """IDs der fachlichen Testfälle aus dem Katalog (YAML). So laufen auf Promotion
+    automatisch ALLE Fälle, für die eine Aufnahme hinterlegt ist – nicht nur einer."""
+    pfad = Path(__file__).resolve().parents[1] / "fachlich" / "hermes_pia_testfaelle.yaml"
+    try:
+        import yaml
+        data = yaml.safe_load(pfad.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return ["pia-fachlich-0003"]
+    faelle = data.get("testfaelle") or []
+    ids = [f.get("id") for f in faelle if isinstance(f, dict) and f.get("id")]
+    return ids or ["pia-fachlich-0003"]
+
+
 @pytest.mark.promotion
-def test_e2e_ausgangslage_diktat_bis_pia():
-    """pia-fachlich-0003 als echter Durchlauf: Aufnahme → STT → LLM → PIA."""
-    fall_id = "pia-fachlich-0003"
+@pytest.mark.parametrize("fall_id", _testfall_ids())
+def test_e2e_fachfall_diktat_bis_pia(fall_id):
+    """Jeder fachliche Fall MIT hinterlegter Aufnahme fliesst als echter Durchlauf
+    (Aufnahme → STT → LLM → PIA) und wird gegen die Invarianten (§10) geprüft.
+    Fälle ohne Aufnahme werden übersprungen (kein Fehlschlag)."""
     audio = _audio_fixture(fall_id)
     if audio is None:
         pytest.skip(f"Keine Audio-Aufnahme unter tests/e2e/fixtures/{fall_id}_* – siehe README.")
