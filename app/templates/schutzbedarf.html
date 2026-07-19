@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="admin-page">
+  <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">&larr; Projekt: {{ projekt.name }}</a>
+  <h2>Schutzbedarfsanalyse (ISV / BACS)</h2>
+  <p class="hero-desc">Befüllt das offizielle NCSC/BACS-Template (P041-Hi01) aus dem PIA.
+    HERMES PIA füllt das Deckblatt und das Informationsverzeichnis und macht einen
+    <strong>Vorschlag zur Beurteilung</strong> (Tab «Erhebung Schutzbedarf») — die
+    Formeln und die Einstufung bleiben unangetastet. <strong>Die Beurteilung ist durch
+    die/den ISDS-Verantwortliche/n zu prüfen und zu bestätigen.</strong></p>
+
+  {% if not hat_pia %}
+    <p class="muted vorlage-status">Für dieses Projekt liegt noch kein PIA vor – die
+      Analyse wird daraus abgeleitet. Bitte zuerst den PIA erstellen.</p>
+  {% else %}
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Entwurf erzeugen</h3>
+    <form method="post" action="{{ url_for('ui.schutzbedarf_erzeugen', projekt_id=projekt.id) }}">
+      <button type="submit" class="btn-primary">
+        {{ 'Entwurf neu erzeugen' if entwurf else 'Entwurf erzeugen' }}
+      </button>
+    </form>
+  </section>
+
+  {% if entwurf %}
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Entwurf</h3>
+    <p class="muted vorlage-status">Zuletzt aktualisiert:
+      {{ entwurf.updated_at.strftime('%d.%m.%Y %H:%M') if entwurf.updated_at else '—' }}</p>
+    <a href="{{ url_for('ui.schutzbedarf_download', projekt_id=projekt.id, filename=download_name) }}"
+       class="btn-primary btn-large">&#8595; Schutzbedarfsanalyse herunterladen (.xlsx)</a>
+  </section>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
