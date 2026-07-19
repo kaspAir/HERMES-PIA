@@ -599,3 +599,23 @@ def test_base_roles_respektiert_vorhandene():
     InterviewService._ensure_base_roles(rows)
     assert sum("projektlei" in r["rolle"].lower() for r in rows) == 1  # keine Dublette
     assert any("auftraggeber" in r["rolle"].lower() for r in rows)
+
+
+# --- Ziele-Vorschlag verlangt mind. ein Systemziel (Fund #1) --------------- #
+
+def test_ziele_vorschlag_prompt_verlangt_systemziel():
+    from app.domains.interview.extraction import generate_suggestion
+    captured = {}
+
+    class _LLM:
+        def complete(self, system, messages, max_tokens=2048):
+            captured["user"] = messages[0]["content"]
+            return '[{"kategorie":"Systemziel","beschreibung":"X","messgroesse":"y","prioritaet":"Hoch"}]'
+
+    svc = _svc()
+    method = svc.methods.get("hermes_pia")
+    section = svc._section_by_id(method, "ziele")
+    generate_suggestion(_LLM(), section, "Projektkontext", svc._vocabularies(method))
+    # Die Vollstaendigkeitskriterien (inkl. Systemziel) stehen im Prompt.
+    assert "Vollstaendigkeitskriterien" in captured["user"]
+    assert "Systemziel" in captured["user"]
