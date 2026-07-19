@@ -52,6 +52,14 @@ PL_ROLLEN = {'projektleiter', 'projektleiterin', 'projektleiter/in',
              'projektleitung', 'pl'}
 AG_ROLLEN = {'auftraggeber', 'auftraggeberin', 'auftraggeber/in', 'ag'}
 
+# Geschlechtergerechte Deckblatt-Labels: Metadata-Key → {'w': weiblich, 'm': männlich}.
+# Ist das Geschlecht unbekannt ('u'), bleibt die Doppelform der Vorlage ("Autor/-in").
+COVER_GENDER_LABELS = {
+    'autor':         {'w': 'Autorin',         'm': 'Autor'},
+    'projektleiter': {'w': 'Projektleiterin', 'm': 'Projektleiter'},
+    'auftraggeber':  {'w': 'Auftraggeberin',  'm': 'Auftraggeber'},
+}
+
 # Risikostufen -> Zahlenwert für die Risikozahl (EW × AG).
 RISK_LEVELS = {'tief': 1, 'niedrig': 1, 'gering': 1, 'klein': 1,
                'mittel': 2, 'hoch': 3, 'gross': 3, 'sehr hoch': 3}
@@ -335,6 +343,18 @@ class GenerationService:
             if not value:
                 continue
 
+            # Geschlechtergerechtes Label: "Autor/-in" -> "Autorin"/"Autor", wenn das
+            # Geschlecht bekannt ist. Unbekannt -> Doppelform der Vorlage bleibt.
+            glabels = COVER_GENDER_LABELS.get(key)
+            if glabels:
+                g = metadata.get(f'{key}_geschlecht', 'u')
+                if g in glabels:
+                    label_ts = list(direct_runs[0].iter(W_T))
+                    if label_ts:
+                        label_ts[0].text = glabels[g]
+                        for extra in label_ts[1:]:
+                            extra.text = ''
+
             # Word-Feld (z.B. DATE bei Bearbeitungsdatum) durch den statischen
             # Wert ersetzen – sonst zeigt Word das gecachte Vorlagendatum.
             fld = p_el.find(W_FLD)
@@ -449,7 +469,7 @@ class GenerationService:
             # Nächsten Normal-Paragraph suchen
             for j in range(i + 1, min(i + 6, len(children))):
                 if _tag(children[j]) == 'p' and _p_style(children[j]) == STYLE_NORMAL:
-                    _set_p_text(children[j], text)
+                    _set_p_multiline(children[j], text)
                     break
                 if _tag(children[j]) in (STYLE_H1, STYLE_H2, 'tbl'):
                     break
@@ -558,10 +578,16 @@ class GenerationService:
                                     sdt_pr.remove(showing)
                             all_cells.append(tc)
 
-            # Erste Spalte: Nummer (nur wenn Nr-Spalte im Schema vorhanden)
+            # Erste Spalte: Nummer (nur wenn Nr-Spalte im Schema vorhanden).
+            # Referenzierte Dokumente: Nummer als [01] mit Word-Textmarke, damit sie
+            # im Text als Referenz (Querverweis) verwendet werden kann.
             start_idx = 0
             if has_nr and all_cells:
-                _set_tc_text(all_cells[0], f'{idx + 1:02d}')
+                nr_txt = f'{idx + 1:02d}'
+                if section.get('id') == 'referenzierte_dokumente':
+                    self._set_tc_bookmark(all_cells[0], f'[{nr_txt}]', f'ref_{nr_txt}')
+                else:
+                    _set_tc_text(all_cells[0], nr_txt)
                 start_idx = 1
 
             # Datenspalten in Reihenfolge
@@ -576,6 +602,31 @@ class GenerationService:
         # Alle originalen Vorlage-Datenzeilen entfernen (nicht nur die erste)
         for row in template_rows:
             tbl_el.remove(row)
+
+    def _next_bookmark_id(self):
+        self._bookmark_id = getattr(self, '_bookmark_id', 1000) + 1
+        return self._bookmark_id
+
+    def _set_tc_bookmark(self, tc_el, text, name):
+        """Setzt den Zellentext und umschliesst ihn mit einer Word-Textmarke, sodass die
+        Nummer (z.B. [01]) als Referenz/Querverweis im Dokument verwendbar ist."""
+        p = tc_el.find(f'{{{W}}}p')
+        if p is None:
+            return
+        _set_p_text(p, text)
+        bm_id = str(self._next_bookmark_id())
+        start = etree.Element(f'{{{W}}}bookmarkStart')
+        start.set(f'{{{W}}}id', bm_id)
+        start.set(f'{{{W}}}name', name)
+        end = etree.Element(f'{{{W}}}bookmarkEnd')
+        end.set(f'{{{W}}}id', bm_id)
+        runs = [c for c in p if c.tag == f'{{{W}}}r']
+        if runs:
+            p.insert(list(p).index(runs[0]), start)
+            p.insert(list(p).index(runs[-1]) + 1, end)
+        else:
+            p.append(start)
+            p.append(end)
 
     # ------------------------------------------------------------------ #
     # Änderungskontrolle (Kapitel 8)                                       #
@@ -812,6 +863,46 @@ def _set_p_text(p_el, text):
         t.text = line
         if line and (line[0] == ' ' or line[-1] == ' '):
             t.set(XML_SPACE, 'preserve')
+
+
+# Fliesstext-Zeilen, die im Dokument fett hervorgehoben werden (Übersichtlichkeit).
+_FETT_ZEILE_MARKER = ('komplexitätseinschätzung', 'komplexitaetseinschaetzung')
+
+
+def _set_p_multiline(p_el, text):
+    """Schreibt mehrzeiligen Fliesstext als ECHTE Absätze (nicht als [Shift]+[Enter]-
+    Zeilenumbrüche) – das macht den PIA übersichtlicher. Der Kopf 'Komplexitäts-
+    einschätzung der Initialisierung:' wird fett gesetzt. Der Absatzstil von p_el
+    wird für alle erzeugten Absätze übernommen."""
+    text = _fix_hermes_terms(text or '')
+    parent = p_el.getparent()
+    if parent is None or '\n' not in text:
+        _set_p_text(p_el, text)
+        return
+    lines = text.split('\n')
+    pPr = p_el.find(f'{{{W}}}pPr')
+
+    def _fill(target_p, line):
+        r = etree.SubElement(target_p, f'{{{W}}}r')
+        if line.strip() and any(m in line.lower() for m in _FETT_ZEILE_MARKER):
+            rPr = etree.SubElement(r, f'{{{W}}}rPr')
+            etree.SubElement(rPr, f'{{{W}}}b')
+        t = etree.SubElement(r, f'{{{W}}}t')
+        t.text = line
+        if line and (line[0] == ' ' or line[-1] == ' '):
+            t.set(XML_SPACE, 'preserve')
+
+    for r in list(p_el):
+        if r.tag == f'{{{W}}}r':
+            p_el.remove(r)
+    _fill(p_el, lines[0])
+    idx = list(parent).index(p_el)
+    for k, line in enumerate(lines[1:], 1):
+        newp = etree.Element(f'{{{W}}}p')
+        if pPr is not None:
+            newp.append(copy.deepcopy(pPr))
+        _fill(newp, line)
+        parent.insert(idx + k, newp)
 
 
 def _row_style(row_el):

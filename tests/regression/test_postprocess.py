@@ -263,3 +263,65 @@ def test_ohne_dauer_greift_komplexitaetsfaktor():
     d, m, y = map(int, rows[0]["termin"].split("."))
     tage = (date(y, m, d) - date(2026, 1, 5)).days
     assert 55 <= tage <= 70                            # ~9 Wochen
+
+
+# --- PT-Schätzung (Kap. 3.1) und Konsistenz mit Kap. 5 / Kap. 3.3 ---------- #
+
+def _answers_9monate(pa_rows):
+    return {
+        "ausgangslage": {"raw_text": "Neun Monate für die Phase Initialisierung eingeplant."},
+        "termine": {"raw_text": "neun Monate", "extracted": [
+            {"ergebnis": "Schutzbedarfsanalyse", "termin": "01.03.2026"},
+            {"ergebnis": "Beschaffungsanalyse", "termin": "01.03.2026"},
+            {"ergebnis": "Prototyp: SAP", "termin": "01.04.2026"},
+            {"ergebnis": "Meilenstein Durchführungsfreigabe", "termin": "05.10.2026"},
+        ]},
+        "personalaufwand": {"raw_text": "intern plus externe Expertise", "extracted": pa_rows},
+    }
+
+
+def test_personalaufwand_bekommt_pt_und_ist_konsistent_mit_kap5():
+    svc = _svc()
+    answers = _answers_9monate([{"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}])
+    section = svc._section_by_id(svc.methods.get("hermes_pia"), "personalaufwand")
+    svc._postprocess_section(section, answers["personalaufwand"], answers)
+
+    rows = answers["personalaufwand"]["extracted"]
+    pt_by_role = {r["rolle"]: int(r["aufwand"]) for r in rows}
+    # Jede Rolle hat jetzt PT > 0
+    assert all(v > 0 for v in pt_by_role.values()), pt_by_role
+    # Projektleiter trägt am meisten, Auftraggeber am wenigsten
+    assert pt_by_role["Projektleiter"] == max(pt_by_role.values())
+    assert pt_by_role["Auftraggeber"] == min(pt_by_role.values())
+
+    # Kap. 5: Monatssumme je Rolle == PT aus Kap. 3.1
+    org = svc._build_projektorganisation(answers, "2026-02-01")
+    for row in org:
+        summe = sum(int(row.get(f"monat_{i}") or 0) for i in range(1, 10))
+        assert summe == pt_by_role[row["rolle_person"]], row["rolle_person"]
+
+
+def test_pt_steigt_mit_komplexitaet():
+    svc = _svc()
+    einfach = _answers_9monate([{"rolle": "Projektleiter", "name": "", "aufwand": ""}])
+    komplex = _answers_9monate([{"rolle": "Projektleiter", "name": "", "aufwand": ""}])
+    komplex["ausgangslage"]["komplexitaet"] = {
+        "Technik": {"stufe": "hoch", "einschaetzung": "x"},
+        "Organisation": {"stufe": "hoch", "einschaetzung": "y"},
+    }
+    sec = svc._section_by_id(svc.methods.get("hermes_pia"), "personalaufwand")
+    svc._postprocess_section(sec, einfach["personalaufwand"], einfach)
+    svc._postprocess_section(sec, komplex["personalaufwand"], komplex)
+    pt_e = int(einfach["personalaufwand"]["extracted"][0]["aufwand"])
+    pt_k = int(komplex["personalaufwand"]["extracted"][0]["aufwand"])
+    assert pt_k > pt_e, f"komplexer ({pt_k}) muss > einfacher ({pt_e}) sein"
+
+
+def test_pt_vom_pl_genannt_bleibt():
+    svc = _svc()
+    answers = _answers_9monate([{"rolle": "Projektleiter", "name": "", "aufwand": "50"}])
+    sec = svc._section_by_id(svc.methods.get("hermes_pia"), "personalaufwand")
+    svc._postprocess_section(sec, answers["personalaufwand"], answers)
+    pl = next(r for r in answers["personalaufwand"]["extracted"]
+              if "projektleiter" in r["rolle"].lower())
+    assert pl["aufwand"] == "50"  # vom PL genannter Wert bleibt unangetastet

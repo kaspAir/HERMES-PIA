@@ -544,6 +544,7 @@ class InterviewService:
             self._ensure_deliverable_roles(rows, answers)
             self._ensure_external_experts(rows, answers,
                                           section_answer.get("raw_text", ""))
+            self._ensure_role_pt(rows, answers)
         elif sid == "risiken":
             for r in rows:
                 if not isinstance(r, dict):
@@ -713,6 +714,20 @@ class InterviewService:
             if any(a in text for a in ausloeser) and not has_role(*rollen_kw):
                 rows.append({"rolle": rolle, "name": "", "aufwand": ""})
 
+    def _ensure_role_pt(self, rows, answers):
+        """Schätzt fehlende PT je Rolle: FTE-Last × Arbeitstage/Monat × Dauer × Komplexität.
+        Je komplexer/länger die Phase, desto grösser der Aufwand (vom PL genannte Werte
+        bleiben unangetastet). Diese PT sind die einzige Quelle für die Monatsverteilung
+        in Kap. 5 und die Personalkosten in Kap. 3.3 – so sind 3.1/4.1/5 konsistent."""
+        monate = self._phase_monate(answers)
+        faktor = self._complexity_factor(answers)
+        for r in rows:
+            if not isinstance(r, dict) or str(r.get("aufwand", "")).strip():
+                continue
+            pt = round(_rollen_last(r.get("rolle", "")) * _ARBEITSTAGE_PRO_MONAT * monate * faktor)
+            if pt > 0:
+                r["aufwand"] = str(pt)
+
     def _externe_expertise_signal(self, answers, extra_text=""):
         """True, wenn Ausgangslage/Komplexität ODER der Personalschritt selbst den
         Bedarf an externer Fachexpertise signalisieren."""
@@ -763,7 +778,7 @@ class InterviewService:
         personal = (answers.get("personalaufwand") or {}).get("extracted")
         if not isinstance(personal, list) or not personal:
             return None
-        months = self._initialisierung_monate(answers, start_datum)
+        months = self._phase_monate(answers, start_datum)
         rows = []
         for p in personal:
             if not isinstance(p, dict):
@@ -784,6 +799,15 @@ class InterviewService:
         import re as _re
         m = _re.search(r"\d+", str(value or ""))
         return int(m.group()) if m else 0
+
+    def _phase_monate(self, answers, start_datum=None, cap=9):
+        """Monate der Phase Initialisierung – bevorzugt die vom PL genannte Dauer,
+        sonst die Termin-Spanne. Gemeinsame Basis für PT-Schätzung (Kap. 3.1) und die
+        Monatsverteilung (Kap. 5), damit beide dieselbe Phasenlänge verwenden."""
+        w = self._phase_dauer_wochen(answers)
+        if w and w > 0:
+            return min(max(1, round(w / _WOCHEN_PRO_MONAT)), cap)
+        return self._initialisierung_monate(answers, start_datum, cap)
 
     @staticmethod
     def _initialisierung_monate(answers, start_datum, cap=9):
@@ -1533,6 +1557,27 @@ _DAUER_RE = re.compile(r"(\d{1,2}|[a-zäöü]+)\s*(monat|woche)", re.IGNORECASE)
 _DAUER_KONTEXT = ("phase", "initialisier", "dauer", "eingeplant", "geplant", "vorgesehen")
 _WOCHEN_PRO_MONAT = 4.345
 _MAX_TERMIN_RANG = 9  # Rang der Durchführungsfreigabe = Phasenende
+
+# PT-Schätzung: FTE-Anteil je Rolle während der Phase Initialisierung. Der Aufwand
+# skaliert mit Dauer (Monate) und Komplexität – je komplexer/länger, desto grösser.
+_ARBEITSTAGE_PRO_MONAT = 20
+_ROLLEN_LAST = (
+    ("projektleiter", 0.40),
+    ("auftraggeber", 0.05),
+    ("extern", 0.35),
+    ("isds", 0.15),
+    ("anwendervertreter", 0.15),
+    ("entwickler", 0.25),
+)
+_ROLLEN_LAST_DEFAULT = 0.15
+
+
+def _rollen_last(rolle):
+    r = (rolle or "").lower()
+    for kw, load in _ROLLEN_LAST:
+        if kw in r:
+            return load
+    return _ROLLEN_LAST_DEFAULT
 
 
 def _parse_dauer_wochen(text):
