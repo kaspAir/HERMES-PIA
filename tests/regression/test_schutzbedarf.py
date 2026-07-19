@@ -39,8 +39,18 @@ def test_template_vorhanden_und_ladbar():
 def test_build_und_fuellen_erhaelt_formeln():
     fake = _FakeLLM({
         "beschreibung": "Nachfolgelösung Juris Fiat der Justizbehörden.",
+        "geschaeftsprozesse": "Fallführung Strafverfahren",
+        "zugriff": "Justizbehörden des Kantons",
+        "geografisch": "Datenhaltung ausschliesslich in der Schweiz",
         "gruppen": [{"gruppe": "Straf- und Personendaten",
-                     "personendaten": "besonders schützenswerte Personendaten"}],
+                     "klassifizierung": "Klassifizierung: Vertraulich",
+                     "personendaten": "besonders schützenswerte Personendaten",
+                     "risiko": "Personendaten werden bearbeitet - Risikovorprüfung ergibt hohe Risiken",
+                     "ausw_vertraulichkeit": "Schwerwiegende Persönlichkeitsverletzung",
+                     "ausw_verfuegbarkeit": "Verfahren verzögern sich",
+                     "ausw_integritaet": "Fehlurteile möglich",
+                     "ausw_nachvollziehbarkeit": "Beweiswert gefährdet"},
+                    {"gruppe": "X", "klassifizierung": "UNGUELTIG", "risiko": "quatsch"}],
         "zeilen": [{"zeile": 6, "grundwerte": ["vertraulichkeit", "integritaet"]}],
     })
     svc = _svc(llm=fake)
@@ -48,9 +58,17 @@ def test_build_und_fuellen_erhaelt_formeln():
                            metadata={"projektname": "BKI Test 2", "verwaltungseinheit": "Justiz",
                                      "auftraggeber": "Monika Musterfrau", "projektleiter": "Helene Digital"})
     cv = svc.build_cellvalues(wissen)
-    # Deckblatt aus PIA-Metadaten
+    # Deckblatt aus PIA-Metadaten + LLM-Zusatzfelder
     assert cv[CM.TAB_DECKBLATT]["D6"] == "BKI Test 2"
     assert "Monika" in cv[CM.TAB_DECKBLATT]["D13"]
+    assert cv[CM.TAB_DECKBLATT]["D11"] == "Fallführung Strafverfahren"      # Geschäftsprozesse
+    assert cv[CM.TAB_DECKBLATT]["D18"].startswith("Datenhaltung")           # Geografisch
+    # Info-Dropdowns nur bei gültigem Wert
+    assert cv[CM.TAB_INFOVERZEICHNIS]["C6"] == "Klassifizierung: Vertraulich"
+    assert "hohe Risiken" in cv[CM.TAB_INFOVERZEICHNIS]["E6"]
+    assert "C7" not in cv[CM.TAB_INFOVERZEICHNIS]        # ungültiger Dropdown-Wert -> nicht gesetzt
+    # Tab 3 Auswirkungen je Gruppe
+    assert cv[CM.TAB_AUSWIRKUNGEN]["C6"].startswith("Schwerwiegende")
     # Tab 4: Vorschlag nur in gültigen Eingabezellen, gültiger Wert
     assert cv[CM.TAB_ERHEBUNG]["C6"] == CM.TRIFFT_ZU     # Vertraulichkeit, Zeile 6
     assert cv[CM.TAB_ERHEBUNG]["E6"] == CM.TRIFFT_ZU     # Integrität, Zeile 6

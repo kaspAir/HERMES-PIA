@@ -84,30 +84,46 @@ class SchutzbedarfService:
         input_cells = self._erhebung_input_cells(ws_erh)
         szenarien = self._szenarien(ws_erh, input_cells)
 
-        cv = {CM.TAB_DECKBLATT: {}, CM.TAB_INFOVERZEICHNIS: {}, CM.TAB_ERHEBUNG: {}}
+        cv = {CM.TAB_DECKBLATT: {}, CM.TAB_INFOVERZEICHNIS: {},
+              CM.TAB_AUSWIRKUNGEN: {}, CM.TAB_ERHEBUNG: {}}
         md = wissen.metadata
         D = cv[CM.TAB_DECKBLATT]
         if md.get("projektname"):
             D[CM.DECKBLATT["schutzobjektname"]] = md["projektname"]
-        if md.get("projektnummer"):
-            D[CM.DECKBLATT["interne_bezeichnung"]] = md["projektnummer"]
+        # Interne Bezeichnung: Projektnummer, sonst Projektname als Referenz.
+        if md.get("projektnummer") or md.get("projektname"):
+            D[CM.DECKBLATT["interne_bezeichnung"]] = md.get("projektnummer") or md["projektname"]
         if md.get("verwaltungseinheit"):
             D[CM.DECKBLATT["amt"]] = md["verwaltungseinheit"]
         involvierte = ", ".join(x for x in (md.get("auftraggeber"), md.get("projektleiter")) if x)
         if involvierte:
             D[CM.DECKBLATT["involvierte"]] = involvierte
 
-        # LLM: Beschreibung + Informationsgruppen (Freitextspalten, keine Dropdowns)
+        # LLM: Deckblatt-Zusatzfelder + Informationsgruppen + Auswirkungen (Tab 3)
         info = informationsgruppen(wissen, self.llm)
-        if info.get("beschreibung"):
-            D[CM.DECKBLATT["beschreibung"]] = info["beschreibung"]
+        for feld, key in (("beschreibung", "beschreibung"), ("geschaeftsprozesse", "geschaeftsprozesse"),
+                          ("zugriff", "zugriff"), ("geografisch", "geografisch")):
+            if info.get(key):
+                D[CM.DECKBLATT[feld]] = str(info[key])[:900]
+
         I = cv[CM.TAB_INFOVERZEICHNIS]
+        A = cv[CM.TAB_AUSWIRKUNGEN]
         for idx, g in enumerate(info.get("gruppen", [])[:len(CM.INFO_ZEILEN)]):
             row = CM.INFO_ZEILEN.start + idx
             if g.get("gruppe"):
                 I[f"{CM.INFO_SPALTEN['gruppe']}{row}"] = str(g["gruppe"])[:250]
             if g.get("personendaten"):
                 I[f"{CM.INFO_SPALTEN['personendaten']}{row}"] = str(g["personendaten"])[:250]
+            # Dropdowns nur bei exakt gültigem Wert setzen.
+            if g.get("klassifizierung") in CM.INFO_KLASS_WERTE:
+                I[f"{CM.INFO_SPALTEN['klassifizierung']}{row}"] = g["klassifizierung"]
+            if g.get("risiko") in CM.INFO_RISIKO_WERTE:
+                I[f"{CM.INFO_SPALTEN['risiko']}{row}"] = g["risiko"]
+            # Tab 3: Auswirkungstexte je Grundwert (Freitext).
+            for gw, spalte in CM.AUSWIRKUNG_SPALTE.items():
+                txt = g.get(f"ausw_{gw}")
+                if txt:
+                    A[f"{spalte}{row}"] = str(txt)[:600]
 
         # Tab 4: beratende Beurteilung – NUR gültige Eingabezellen setzen.
         E = cv[CM.TAB_ERHEBUNG]

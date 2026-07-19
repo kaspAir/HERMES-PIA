@@ -26,22 +26,34 @@ _SYS_INFO = (
 
 
 def informationsgruppen(wissen, llm):
-    """Vorschlag Informationsverzeichnis: Datengruppen des Schutzobjekts + Klassifizierung
-    + Personendaten-Hinweis. Ohne LLM: []."""
+    """Vorschlag für Deckblatt-Zusatzfelder + Informationsverzeichnis + Auswirkungen
+    (Tab 3) je Gruppe. Dropdown-Werte in den exakten Vorlage-Formulierungen. Ohne LLM: {}."""
     if llm is None:
         return {}
     user = (
-        f"Ausgangslage/Projekt: {wissen.ausgangslage_text()[:1500]}\n"
+        f"Ausgangslage/Projekt: {wissen.ausgangslage_text()[:1600]}\n"
         f"Auftraggeber: {(wissen.metadata or {}).get('auftraggeber', '')}\n\n"
-        "Liste die wichtigsten INFORMATIONSGRUPPEN, die das IT-Schutzobjekt bearbeitet. "
-        "Gib NUR JSON:\n"
-        '{"beschreibung":"kurzer Beschrieb des Schutzobjekts (Gegenstand/Zweck)",'
-        '"gruppen":[{"gruppe":"","klassifizierung":"Nicht klassifiziert|INTERN|VERTRAULICH|GEHEIM",'
-        '"personendaten":"z.B. besonders schützenswerte Personendaten / keine"}]}\n'
-        "Max. 8 Gruppen. Keine erfundenen Details – nur was aus dem Kontext folgt."
+        "Erstelle einen Vorschlag zur Schutzbedarfsanalyse. Gib NUR JSON:\n"
+        '{"beschreibung":"Gegenstand/Zweck des IT-Schutzobjekts",'
+        '"geschaeftsprozesse":"unterstützte Geschäftsprozesse",'
+        '"zugriff":"wer hat Zugriff (Personen/Gruppen/Rollen)",'
+        '"geografisch":"geographische Rahmenbedingungen (z.B. Datenhaltung nur in CH)",'
+        '"gruppen":[{"gruppe":"Informationsgruppe",'
+        '"klassifizierung":"einer von: Nicht klassifiziert | Klassifizierung: Intern | '
+        'Klassifizierung: Vertraulich | Klassifizierung: Geheim",'
+        '"personendaten":"kurzer Text: Art der Personendaten",'
+        '"risiko":"einer von: Keine Personendaten | Personendaten werden bearbeitet - '
+        "Risikovorprüfung ergibt kein hohes Risiko | Personendaten werden bearbeitet - "
+        'Risikovorprüfung ergibt hohe Risiken",'
+        '"ausw_vertraulichkeit":"Auswirkung bei Offenlegung",'
+        '"ausw_verfuegbarkeit":"Auswirkung bei längerem Ausfall",'
+        '"ausw_integritaet":"Auswirkung bei unautorisierter Veränderung",'
+        '"ausw_nachvollziehbarkeit":"Auswirkung wenn Urheberschaft unklar"}]}\n'
+        "Max. 8 Gruppen. Kurze, sachliche Texte. Keine erfundenen Details – nur was aus "
+        "dem Kontext folgt. Die Dropdown-Felder EXAKT in einer der genannten Formulierungen."
     )
     try:
-        raw = llm.complete(_SYS_INFO, [{"role": "user", "content": user}], max_tokens=1500)
+        raw = llm.complete(_SYS_INFO, [{"role": "user", "content": user}], max_tokens=3000)
     except Exception:  # noqa: BLE001
         return {}
     return _parse_json(raw) or {}
