@@ -281,7 +281,7 @@ class InterviewService:
     # Antwortverarbeitung                                                  #
     # ------------------------------------------------------------------ #
 
-    def submit_answer(self, session_id, raw_text):
+    def submit_answer(self, session_id, raw_text, tarife=None):
         """Verarbeitet die Antwort des Projektleiters auf die aktuelle Frage."""
         session = self.get_session(session_id)
         answers = self._answers(session)
@@ -316,7 +316,7 @@ class InterviewService:
         # Deterministische HERMES-Korrekturen (Kosten nur Initialisierung,
         # Pflichtrollen im Personalaufwand) auch bei direkt diktierten Angaben.
         if not self._is_empty(extracted):
-            self._postprocess_section(section, entry, answers)
+            self._postprocess_section(section, entry, answers, tarife)
             entry["complete"] = self._is_complete(section, entry["extracted"])
 
         # Nach der Ausgangslage: Projekttyp ableiten – aus dem bereinigten Text
@@ -346,7 +346,7 @@ class InterviewService:
         self._persist_answers(session, answers)
         return self.current_state(session)
 
-    def reprocess(self, session_id):
+    def reprocess(self, session_id, tarife=None):
         """Wendet die deterministischen HERMES-Korrekturen erneut auf die bereits
         gespeicherten Antworten an – ohne neues Interview.
 
@@ -375,7 +375,7 @@ class InterviewService:
                 _assign_termine_dates(entry["extracted"], session.start_datum,
                                       self._complexity_factor(answers),
                                       ziel_wochen=self._phase_dauer_wochen(answers))
-            self._postprocess_section(section, entry, answers)
+            self._postprocess_section(section, entry, answers, tarife)
             entry["complete"] = self._is_complete(section, entry["extracted"])
             changed.append(sid)
 
@@ -517,7 +517,7 @@ class InterviewService:
             + "\n".join(lines)
         )
 
-    def _postprocess_section(self, section, section_answer, answers):
+    def _postprocess_section(self, section, section_answer, answers, tarife=None):
         """Deterministische HERMES-Korrekturen nach dem Befüllen eines Abschnitts.
 
         - Kosten: nur die Phase Initialisierung behalten (nie Konzept/Realisierung/…).
@@ -538,7 +538,7 @@ class InterviewService:
         elif sid == "rahmenbedingungen":
             section_answer["extracted"] = self._strip_duration_caps(rows)
         elif sid == "kosten":
-            section_answer["extracted"] = self._kosten_breakdown(rows, answers)
+            section_answer["extracted"] = self._kosten_breakdown(rows, answers, tarife)
         elif sid == "personalaufwand":
             self._ensure_base_roles(rows)
             self._ensure_deliverable_roles(rows, answers)
@@ -583,7 +583,7 @@ class InterviewService:
         return out
 
     @staticmethod
-    def _kosten_breakdown(rows, answers):
+    def _kosten_breakdown(rows, answers, tarife=None):
         """Leitet die Initialisierungskosten KONSISTENT aus dem Personalaufwand (Kap. 3.1)
         ab – dieser ist die einzige Quelle für die intern/extern-Zuordnung. So kann das
         Kostenblatt nicht mehr externe Posten ausweisen, die im Personalaufwand fehlen.
@@ -595,8 +595,11 @@ class InterviewService:
         Total werden deterministisch ergänzt.
         """
         import re as _re
-        # Anpassbare Standard-Tagessätze (CHF/PT); externe Fachleute teurer als interne.
-        TAGESSATZ_INTERN, TAGESSATZ_EXTERN = 1200, 1800
+        # Massgebliche Tagessätze (CHF/PT): aus den hinterlegten Kostensätzen (Projekt
+        # übersteuert Org), sonst Standard. Externe Fachleute teurer als interne.
+        tarife = tarife or {}
+        TAGESSATZ_INTERN = int(tarife.get("intern") or 1200)
+        TAGESSATZ_EXTERN = int(tarife.get("extern") or 1800)
         later = ("konzept", "realisierung", "einführung", "einfuehrung", "abschluss", "umsetzung")
         personal_kw = ("personal", "fachexpert", "experte", "beratung", "tagessatz",
                        "projektleiter", "auftraggeber", "isds", "entwickler", "anwendervertreter")
