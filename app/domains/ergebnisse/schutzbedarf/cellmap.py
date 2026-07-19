@@ -41,6 +41,14 @@ INFO_RISIKO_WERTE = ("Keine Personendaten",
 AUSWIRKUNG_SPALTE = {"vertraulichkeit": "C", "verfuegbarkeit": "D",
                      "integritaet": "E", "nachvollziehbarkeit": "F"}
 
+# Tab 5 Erhebung Anforderungen: Verfügbarkeits-Kategorien + Ja/Nein-Fragen + Bemerkung.
+TAB_ANFORDERUNGEN = "5. Erhebung Anforderungen"
+ANF_VERFUEGBARKEIT = {"servicezeit": "D6", "wartung": "D7", "verfuegbarkeit": "D8"}
+ANF_FRAGEN_ZEILEN = (9, 10, 11, 12, 13)
+ANF_ANTWORT_SPALTE = "D"
+ANF_BEMERKUNG_SPALTE = "F"
+JA_NEIN = ("Ja", "Nein")
+
 # Tab 4 Erhebung Schutzbedarf: die 4 Grundwerte je Spalte.
 GRUNDWERT_SPALTE = {
     "vertraulichkeit":    "C",

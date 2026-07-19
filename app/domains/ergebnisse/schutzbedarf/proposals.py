@@ -85,6 +85,29 @@ def auswirkungen(wissen, gruppen_namen, llm):
     return out
 
 
+def anforderungen(wissen, fragen, llm):
+    """Vorschlag Tab 5 (Erhebung Anforderungen): Verfügbarkeit (Servicezeit/Wartung/
+    Verfügbarkeit) + Ja/Nein-Antworten auf die Sicherheits-/Datenschutz-Fragen.
+    `fragen`: [(zeile, text)]. Ohne LLM: {}."""
+    if llm is None:
+        return {}
+    liste = "\n".join(f"  Zeile {z}: {str(t)[:180]}" for z, t in fragen)
+    user = (
+        f"Schutzobjekt/Ausgangslage: {wissen.ausgangslage_text()[:1300]}\n\n"
+        "Verfügbarkeits-Anforderungen (mit Leistungserbringer abzustimmen) vorschlagen "
+        "und die folgenden Ja/Nein-Fragen KONSERVATIV beantworten (im Zweifel 'Nein'), "
+        "als VORSCHLAG zur Prüfung:\n" + liste + "\n\n"
+        "Gib NUR JSON:\n"
+        '{"servicezeit":"z.B. Bürozeiten Mo-Fr / 7x24","wartung":"z.B. ausserhalb Servicezeit",'
+        '"verfuegbarkeit":"z.B. 99.5%","fragen":[{"zeile":9,"antwort":"Ja|Nein","bemerkung":""}]}'
+    )
+    try:
+        raw = llm.complete(_SYS_INFO, [{"role": "user", "content": user}], max_tokens=1500)
+    except Exception:  # noqa: BLE001
+        return {}
+    return _parse_json(raw) or {}
+
+
 def erhebung(wissen, szenarien, llm):
     """Vorschlag Tab 4: je Schaden-Szenario, welche Grundwerte betroffen sind.
 
