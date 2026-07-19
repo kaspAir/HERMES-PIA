@@ -4,11 +4,19 @@ Liefert zu Suchbegriffen echte, verifizierbare Fundstellen (SR-Nummer, Titel,
 Fedlex-Permalink). Bei Netzwerk-/Endpunkt-/Parsingfehlern -> leeres Ergebnis:
 es wird NIE eine Fundstelle geraten.
 """
+import logging
 import re
 
 import requests
 
+log = logging.getLogger("hermes.fedlex")
+
 ENDPOINT = "https://fedlex.data.admin.ch/sparqlendpoint"
+# Manche Endpunkte/Proxys weisen den Default-Python-User-Agent ab.
+_HEADERS = {
+    "Accept": "application/sparql-results+json",
+    "User-Agent": "HERMES-PIA/1.0 (+https://hermespia.ch)",
+}
 
 # Deutsche Sprach-URI in den Fedlex-Daten.
 _LANG_DE = "http://publications.europa.eu/resource/authority/language/DEU"
@@ -47,7 +55,7 @@ class FedlexClient:
     def _fetch(self, sparql):
         r = requests.get(
             self.endpoint, params={"query": sparql},
-            headers={"Accept": "application/sparql-results+json"}, timeout=self.timeout,
+            headers=_HEADERS, timeout=self.timeout,
         )
         r.raise_for_status()
         return r.json().get("results", {}).get("bindings", [])
@@ -65,7 +73,10 @@ class FedlexClient:
         muster = "(" + "|".join(re.escape(t) for t in terms) + ")"
         try:
             bindings = self._fetch(_SPARQL.format(muster=muster, limit=limit))
-        except Exception:  # noqa: BLE001 – jede Störung -> keine Treffer (kein Raten)
+            log.info("Fedlex-Abfrage ok: %d Begriffe, %d Roh-Treffer", len(terms), len(bindings))
+        except Exception as e:  # noqa: BLE001 – jede Störung -> keine Treffer (kein Raten)
+            log.warning("Fedlex nicht erreichbar/Abfrage fehlgeschlagen (%s): %s",
+                        type(e).__name__, e)
             return {}
 
         # Alle Treffer sammeln, je SR nur einmal.

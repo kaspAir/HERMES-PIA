@@ -389,7 +389,8 @@ def rechtsgrundlagen(projekt_id):
     return render_template(
         "rechtsgrundlagen.html", projekt=projekt, entwurf=entwurf,
         genannte=wissen.genannte_rechtsgrundlagen(), hat_pia=session is not None,
-        kantone=KANTONE, download_name=download_name)
+        kantone=KANTONE, download_name=download_name,
+        grounding=svc.grounding_status(projekt))
 
 
 @bp.post("/projekt/<int:projekt_id>/rechtsgrundlagen/erzeugen")

@@ -21,6 +21,12 @@ METHOD_ID = "rechtsgrundlagenanalyse"
 _DATENSCHUTZ_KW = ("datenschutz", "isds", "informationssicherheit", "datensicherheit")
 # Kantonale/kommunale Erlasse (bei reiner Bundes-Analyse ausblenden).
 _KANTONAL_KW = ("kantonal", "kommunal", "submissionsgesetz", "kant.")
+# Was in Kap. 1 als Rechtsgrundlage zählt (Gesetz/Verordnung/…), und was NICHT
+# (Konzepte/Strategien/Dokumentationen sind keine Rechtsgrundlagen).
+_LEGAL_TERMS = ("gesetz", "verordnung", "reglement", "recht", "ordnung", "erlass",
+                "beschluss", "abkommen", "konkordat", "vereinbarung", "richtlinie",
+                "verfassung", "konvention", "übereinkommen", "uebereinkommen", "dekret")
+_NICHT_LEGAL = ("betriebskonzept", "konzept", "strategie", "dokumentation", "handbuch")
 
 # Tabellen-Abschnitte mit ihren Spalten-Schlüsseln (für Leerzeilen-Fallback).
 _TABELLEN = {
@@ -76,6 +82,13 @@ class RechtsgrundlagenService:
         except Exception:  # noqa: BLE001 – Grounding-Störung darf den Entwurf nicht kippen
             return {}
 
+    def _grounding_names(self, namen, ebene):
+        """Verifizierte Bundes-Fundstellen (Fedlex) zu einer beliebigen Namensliste."""
+        try:
+            return ground_federal(namen, ebene, self.fedlex)
+        except Exception:  # noqa: BLE001
+            return {}
+
     @staticmethod
     def _ist_datenschutz(name):
         return any(k in (name or "").lower() for k in _DATENSCHUTZ_KW)
@@ -84,19 +97,28 @@ class RechtsgrundlagenService:
     def _ist_kantonal(name):
         return any(k in (name or "").lower() for k in _KANTONAL_KW)
 
-    def _relevante_gesetze(self, wissen):
-        """Genannte Gesetze, gefiltert für Kap. 1: Datenschutz/Infosec raus (Schutzbedarfs-
-        analyse); bei reiner Bundes-Analyse keine kantonalen/kommunalen Erlasse."""
-        ebenen = (wissen.ebene or "").lower()
+    @staticmethod
+    def _ist_rechtsgrundlage(name):
+        """Kap. 1 führt nur echte Rechtsgrundlagen (Gesetz/Verordnung/…), keine
+        Konzepte/Strategien/Dokumentationen (z.B. Betriebskonzept)."""
+        n = (name or "").lower()
+        if any(t in n for t in _NICHT_LEGAL):
+            return False
+        return any(t in n for t in _LEGAL_TERMS)
+
+    def _kap1_geeignet(self, name, ebene):
+        ebenen = (ebene or "").lower()
         nur_bund = "bund" in ebenen and "kanton" not in ebenen and "kommun" not in ebenen
-        out = []
-        for name in wissen.genannte_rechtsgrundlagen():
-            if self._ist_datenschutz(name):
-                continue
-            if nur_bund and self._ist_kantonal(name):
-                continue
-            out.append(name)
-        return out
+        if self._ist_datenschutz(name):
+            return False
+        if nur_bund and self._ist_kantonal(name):
+            return False
+        return self._ist_rechtsgrundlage(name)
+
+    def _relevante_gesetze(self, wissen):
+        """Aus dem PIA genannte, für Kap. 1 geeignete Rechtsgrundlagen (gefiltert)."""
+        return [n for n in wissen.genannte_rechtsgrundlagen()
+                if self._kap1_geeignet(n, wissen.ebene)]
 
     @staticmethod
     def _dokumente(rows, grounded):
@@ -147,19 +169,40 @@ class RechtsgrundlagenService:
             rows.append({"rechtsgrundlage": name, "beschreibung": beschreibung})
         return rows or [{"rechtsgrundlage": "", "beschreibung": ""}]
 
+    def _luecken(self, vorschlag):
+        """Lücken übernehmen; wenn KEINE identifiziert wurden, das explizit ausweisen
+        (es muss nicht um jeden Preis eine Lücke gefunden werden)."""
+        rows = self._bereinige(vorschlag)
+        if rows:
+            return rows
+        return [{"luecke": "Keine Lücke identifiziert",
+                 "beschreibung": "Für die im Projekt geplanten Tätigkeiten besteht nach "
+                                 "dieser Analyse eine Rechtsgrundlage."}]
+
     def build_answers(self, wissen):
-        grounded = self._grounding(wissen)
         relevante = self._relevante_gesetze(wissen)
-        v = analysiere(wissen, self.llm, grounding=grounded, bestehende_namen=relevante)
+        # LLM ermittelt selbst die einschlägigen Rechtsgrundlagen (auch im PIA nicht
+        # genannte, z.B. StReG/StReV) und prüft je Ziel, ob eine Grundlage besteht.
+        v = analysiere(wissen, self.llm, bestehende_namen=relevante)
+        entdeckt = [str(r.get("rechtsgrundlage", "")).strip()
+                    for r in (v.get("bestehende") or []) if isinstance(r, dict)]
+        # Kap.-1-Kandidaten: PIA-Recht + vom LLM ergänzte, gefiltert (echte Gesetze).
+        kap1, gesehen = [], set()
+        for name in relevante + entdeckt:
+            if name and name.lower() not in gesehen and self._kap1_geeignet(name, wissen.ebene):
+                gesehen.add(name.lower())
+                kap1.append(name)
+        # Alle Namen (PIA-Verweise für 0.2/0.3 + Kap.-1-Recht) einmal gegen Fedlex prüfen.
+        alle_namen = list({*wissen.genannte_rechtsgrundlagen(), *kap1})
+        grounded = self._grounding_names(alle_namen, wissen.ebene)
         return {
             "referenzierte_dokumente": {"extracted": self._dokumente(wissen.referenzierte(), grounded)},
             "mitgeltende_unterlagen": {"extracted": self._dokumente(wissen.mitgeltende(), grounded)},
             "definitionen": {"extracted": self._definitionen(wissen)},
-            "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(relevante, v.get("bestehende"), grounded)},
+            "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(kap1, v.get("bestehende"), grounded)},
             "bevorstehende_aenderungen": {"extracted": self._rows_or_blank(
                 v.get("bevorstehende"), _TABELLEN["bevorstehende_aenderungen"])},
-            "identifizierte_luecken": {"extracted": self._rows_or_blank(
-                v.get("luecken"), _TABELLEN["identifizierte_luecken"])},
+            "identifizierte_luecken": {"extracted": self._luecken(v.get("luecken"))},
             "vorschlaege_deckung": {"extracted": self._rows_or_blank(
                 v.get("vorschlaege"), _TABELLEN["vorschlaege_deckung"])},
             "product_compliance": {"extracted": self._rows_or_blank(
@@ -167,6 +210,17 @@ class RechtsgrundlagenService:
             "konsequenzen": {"extracted": {"text": (v.get("konsequenzen") or "").strip()}},
             "empfehlung": {"extracted": {"text": (v.get("empfehlung") or "").strip()}},
         }
+
+    def grounding_status(self, projekt):
+        """Wie viele Kap.-1-Rechtsgrundlagen sind mit einer Fedlex-Fundstelle verknüpft?
+        (Diagnose: 0 trotz Bundesebene => Fedlex vom Host nicht erreichbar.)"""
+        entwurf = self.get_entwurf(projekt.id)
+        if not entwurf or not entwurf.answers_json:
+            return None
+        rows = (json.loads(entwurf.answers_json).get("bestehende_rechtsgrundlagen") or {}).get("extracted") or []
+        mit = sum(1 for r in rows if "SR " in str(r.get("beschreibung", "")))
+        gesamt = sum(1 for r in rows if str(r.get("rechtsgrundlage", "")).strip())
+        return {"verknuepft": mit, "gesamt": gesamt}
 
     # ---- Persistenz ----------------------------------------------------- #
     def get_entwurf(self, projekt_id):

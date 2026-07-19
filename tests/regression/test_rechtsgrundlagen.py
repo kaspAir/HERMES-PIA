@@ -196,3 +196,29 @@ def test_service_reichert_referenzierte_und_bestehende_mit_fundstelle_an():
     best = next(r for r in answers["bestehende_rechtsgrundlagen"]["extracted"]
                 if "Strafprozessordnung" in r["rechtsgrundlage"])
     assert "SR 312.0" in best["beschreibung"] and "fedlex.admin.ch" in best["beschreibung"]
+
+
+def test_llm_entdeckt_zusaetzliches_gesetz_und_weist_keine_luecke_aus():
+    wissen = Projektwissen(_PIA, ebene="bund")
+    svc = RechtsgrundlagenService(None, None, None, fedlex=_FakeFedlex(), llm=_FakeLLM({
+        "bestehende": [{"rechtsgrundlage": "Strafregistergesetz (StReG)",
+                        "beschreibung": "Regelt das Strafregister VOSTRA."}],
+        "luecken": [],   # keine Lücke
+    }))
+    answers = svc.build_answers(wissen)
+    namen = [r["rechtsgrundlage"] for r in answers["bestehende_rechtsgrundlagen"]["extracted"]]
+    assert "Strafregistergesetz (StReG)" in namen          # vom LLM selbst gefunden (nicht im PIA)
+    luecken = answers["identifizierte_luecken"]["extracted"]
+    assert luecken and "Keine Lücke" in luecken[0]["luecke"]  # explizit ausgewiesen
+
+
+def test_betriebskonzept_ist_keine_rechtsgrundlage():
+    pia = {"referenzierte_dokumente": {"extracted": [
+        {"name": "Betriebskonzept / Systemdokumentation Juris Fiat", "link": ""},
+        {"name": "Schweizerische Strafprozessordnung (StPO)", "link": ""}]}}
+    svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=_FakeFedlex())
+    namen = [r["rechtsgrundlage"] for r in
+             svc.build_answers(Projektwissen(pia, ebene="bund"))
+             ["bestehende_rechtsgrundlagen"]["extracted"]]
+    assert "Schweizerische Strafprozessordnung (StPO)" in namen
+    assert not any("Betriebskonzept" in n for n in namen)   # kein Gesetz -> raus aus Kap.1

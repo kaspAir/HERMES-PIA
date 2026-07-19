@@ -75,11 +75,20 @@ def analysiere(wissen, llm, grounding=None, bestehende_namen=None):
         '"vorschlaege":[{"luecke":"","vorschlag":""}],'
         '"compliance":[{"compliance":"","beschreibung":""}],'
         '"konsequenzen":"","empfehlung":""}\n'
-        "- 'bestehende': zu den bereits identifizierten Gesetzen je eine KURZE "
-        "Beschreibung, welche geplante Tätigkeit sie abdeckt (keine Fundstelle erfinden).\n"
-        "- 'luecken': NUR Ziele ohne benennbare Rechtsgrundlage, konservativ, als "
-        "'zu prüfen'. Leere Liste, wenn alles gedeckt scheint.\n"
-        "- 'vorschlaege': je Lücke ein konkreter Weg, die Grundlage zu schaffen/klären.\n"
+        "- 'bestehende': ERMITTLE SELBST die einschlägigen bestehenden Rechtsgrundlagen "
+        "für die geplanten Tätigkeiten – AUCH solche, die oben nicht aufgeführt sind, "
+        "sofern du sie sicher kennst (einschlägige Bundesgesetze/-verordnungen des "
+        "Fachbereichs, z.B. im Justiz-/Strafregisterumfeld StReG/StReV, StGB, StPO). "
+        "Nenne je Eintrag den Gesetzesnamen MIT gebräuchlicher Abkürzung in Klammern und "
+        "eine kurze Beschreibung, welche Tätigkeit die Grundlage abdeckt. KEINE erfundene "
+        "SR-Nummer/Datierung – die Fundstelle wird separat verifiziert.\n"
+        "- 'luecken': führe die Prüfung tatsächlich durch. Eine Lücke NUR, wenn für eine "
+        "konkret geplante Tätigkeit KEINE bestehende Rechtsgrundlage benennbar ist. Sind "
+        "alle Tätigkeiten gedeckt, gib eine LEERE Liste zurück (es muss keine Lücke "
+        "gefunden werden).\n"
+        "- 'vorschlaege': je Lücke die passende Normebene zur Deckung – neues/geändertes "
+        "GESETZ (Legislative/Parlament), VERORDNUNG (Exekutive/Regierung) oder interne "
+        "RICHTLINIE/WEISUNG (Verwaltung), je nach Regelungsgegenstand.\n"
         "- 'bevorstehende': nur wenn eine Rechtsänderung tatsächlich absehbar ist, sonst [].\n"
         "- 'empfehlung': konkret und in dieser Analyse umgesetzt. Fasse dich kurz."
     )
