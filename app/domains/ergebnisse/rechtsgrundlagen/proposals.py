@@ -34,11 +34,14 @@ SYSTEM = (
 )
 
 
-def analysiere(wissen, llm):
+def analysiere(wissen, llm, grounding=None):
     """Gibt einen Dict mit Vorschlägen zurück (leer ohne LLM):
     {bestehende:[{rechtsgrundlage,beschreibung}], bevorstehende:[{...,auswirkung}],
      luecken:[{luecke,beschreibung}], vorschlaege:[{luecke,vorschlag}],
-     compliance:[{compliance,beschreibung}], konsequenzen:str, empfehlung:str}"""
+     compliance:[{compliance,beschreibung}], konsequenzen:str, empfehlung:str}
+
+    `grounding` (optional): {name -> {sr,titel,url}} verifizierter Bundesfundstellen –
+    fliesst als gesicherter Kontext in die Analyse ein (echte SR-Nummern)."""
     if llm is None:
         return {}
     ebene = wissen.ebene or "nicht angegeben"
@@ -48,24 +51,32 @@ def analysiere(wissen, llm):
         str(z.get("beschreibung", "")).strip()
         for z in wissen.ziele() if isinstance(z, dict) and z.get("beschreibung")
     )
+    verifiziert = ""
+    if grounding:
+        verifiziert = "Verifizierte Bundes-Fundstellen (Fedlex, gesichert):\n" + "\n".join(
+            f"  - {name}: SR {g['sr']} – {g['titel']}" for name, g in grounding.items()
+        ) + "\n"
     user = (
         f"Staatsebene: {ebene}. Kanton: {kanton}.\n"
         f"Ausgangslage: {wissen.ausgangslage_text()[:1500]}\n"
         f"Ziele: {ziele[:800]}\n"
-        f"Im PIA genannte Rechtsgrundlagen: {', '.join(gesetze) or 'keine'}\n\n"
-        "Erstelle einen Entwurf und gib JSON mit genau diesen Schlüsseln zurück:\n"
+        f"Im PIA genannte Rechtsgrundlagen: {', '.join(gesetze) or 'keine'}\n"
+        f"{verifiziert}\n"
+        "Erstelle einen Entwurf und gib NUR JSON mit genau diesen Schlüsseln zurück:\n"
         '{"bestehende":[{"rechtsgrundlage":"","beschreibung":""}],'
         '"bevorstehende":[{"rechtsgrundlage":"","beschreibung":"","auswirkung":"positiv|neutral|negativ"}],'
         '"luecken":[{"luecke":"","beschreibung":""}],'
         '"vorschlaege":[{"luecke":"","vorschlag":""}],'
         '"compliance":[{"compliance":"","beschreibung":""}],'
         '"konsequenzen":"","empfehlung":""}\n'
-        "Bei 'bestehende' die genannten Gesetze aufnehmen und je eine allgemeine "
-        "Beschreibung (ohne Fundstelle/Datum) ergänzen. Leere Listen sind erlaubt, "
-        "wenn nichts Belastbares vorliegt."
+        "Regeln: 'bestehende' die genannten Gesetze aufnehmen und je eine KURZE "
+        "allgemeine Beschreibung ergänzen (bei verifizierten Fundstellen darf die "
+        "SR-Nummer genannt werden, sonst KEINE Fundstelle/Datum erfinden). "
+        "'bevorstehende' nur, wenn eine Rechtsänderung plausibel absehbar ist (sonst "
+        "leere Liste). Fasse dich kurz; leere Listen sind erlaubt."
     )
     try:
-        raw = llm.complete(SYSTEM, [{"role": "user", "content": user}], max_tokens=2000)
+        raw = llm.complete(SYSTEM, [{"role": "user", "content": user}], max_tokens=3500)
     except Exception:  # noqa: BLE001 – LLM-Ausfall: lieber leerer Entwurf als Fehler
         return {}
     return _parse_json(raw) or {}

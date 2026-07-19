@@ -383,11 +383,13 @@ def rechtsgrundlagen(projekt_id):
     wissen, session = svc.projektwissen(projekt,
                                         ebene=entwurf.ebene if entwurf else None,
                                         kanton=entwurf.kanton if entwurf else None)
-    stamp = f"{date.today():%Y%m%d}_{_safe_filename(projekt.name or 'Projekt')}"
+    version = (entwurf.doc_version if entwurf and entwurf.doc_version else "0.1")
+    download_name = (f"{_safe_filename(projekt.name or 'Projekt')}"
+                     f"_Rechtsgrundlagenanalyse_V{version}.docx")
     return render_template(
         "rechtsgrundlagen.html", projekt=projekt, entwurf=entwurf,
         genannte=wissen.genannte_rechtsgrundlagen(), hat_pia=session is not None,
-        kantone=KANTONE, download_name=f"{stamp}_Rechtsgrundlagenanalyse.docx")
+        kantone=KANTONE, download_name=download_name)
 
 
 @bp.post("/projekt/<int:projekt_id>/rechtsgrundlagen/erzeugen")
