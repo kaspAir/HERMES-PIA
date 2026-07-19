@@ -54,6 +54,10 @@ def test_build_und_fuellen_erhaelt_formeln():
                      "nachvollziehbarkeit": "Beweiswert gefährdet"},
                     {"gruppe": "X", "klassifizierung": "UNGUELTIG", "risiko": "quatsch"}],
         "zeilen": [{"zeile": 6, "grundwerte": ["vertraulichkeit", "integritaet"]}],
+        "servicezeit": "Bürozeiten Mo-Fr", "wartung": "ausserhalb Servicezeit",
+        "verfuegbarkeit": "99.5%",
+        "fragen": [{"zeile": 13, "antwort": "Ja", "bemerkung": "Datenaustausch mit Polizei"},
+                   {"zeile": 10, "antwort": "UNGUELTIG"}],
     })
     svc = _svc(llm=fake)
     wissen = Projektwissen({"ausgangslage": {"extracted": {"text": "Justizsystem-Ablösung."}}},
@@ -71,6 +75,11 @@ def test_build_und_fuellen_erhaelt_formeln():
     assert "C7" not in cv[CM.TAB_INFOVERZEICHNIS]        # ungültiger Dropdown-Wert -> nicht gesetzt
     # Tab 3 Auswirkungen je Gruppe
     assert cv[CM.TAB_AUSWIRKUNGEN]["C6"].startswith("Schwerwiegende")
+    # Tab 5 Anforderungen: Verfügbarkeit + Ja/Nein (gültig), ungültige Antwort ignoriert
+    assert cv[CM.TAB_ANFORDERUNGEN]["D6"] == "Bürozeiten Mo-Fr"
+    assert cv[CM.TAB_ANFORDERUNGEN]["D13"] == "Ja"
+    assert "F13" in cv[CM.TAB_ANFORDERUNGEN]             # Bemerkung gesetzt
+    assert "D10" not in cv[CM.TAB_ANFORDERUNGEN]         # ungültige Ja/Nein-Antwort -> nicht gesetzt
     # Tab 4: Vorschlag nur in gültigen Eingabezellen, gültiger Wert
     assert cv[CM.TAB_ERHEBUNG]["C6"] == CM.TRIFFT_ZU     # Vertraulichkeit, Zeile 6
     assert cv[CM.TAB_ERHEBUNG]["E6"] == CM.TRIFFT_ZU     # Integrität, Zeile 6

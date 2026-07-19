@@ -14,6 +14,7 @@ from app.domains.ergebnisse.models import ErgebnisEntwurf
 from app.domains.ergebnisse.projektwissen import Projektwissen
 from app.domains.ergebnisse.schutzbedarf import cellmap as CM
 from app.domains.ergebnisse.schutzbedarf.proposals import (
+    anforderungen,
     auswirkungen,
     deckblatt_und_gruppen,
     erhebung,
@@ -88,8 +89,8 @@ class SchutzbedarfService:
         input_cells = self._erhebung_input_cells(ws_erh)
         szenarien = self._szenarien(ws_erh, input_cells)
 
-        cv = {CM.TAB_DECKBLATT: {}, CM.TAB_INFOVERZEICHNIS: {},
-              CM.TAB_AUSWIRKUNGEN: {}, CM.TAB_ERHEBUNG: {}}
+        cv = {CM.TAB_DECKBLATT: {}, CM.TAB_INFOVERZEICHNIS: {}, CM.TAB_AUSWIRKUNGEN: {},
+              CM.TAB_ANFORDERUNGEN: {}, CM.TAB_ERHEBUNG: {}}
         md = wissen.metadata
         D = cv[CM.TAB_DECKBLATT]
         if md.get("projektname"):
@@ -129,6 +130,26 @@ class SchutzbedarfService:
             for gw, spalte in CM.AUSWIRKUNG_SPALTE.items():
                 if impakt.get(gw):
                     A[f"{spalte}{row}"] = str(impakt[gw])[:600]
+
+        # Tab 5: Anforderungen (Verfügbarkeit + Ja/Nein-Fragen), beratend.
+        ws_anf = wb[CM.TAB_ANFORDERUNGEN]
+        fragen = [(z, ws_anf[f"B{z}"].value) for z in CM.ANF_FRAGEN_ZEILEN]
+        anf = anforderungen(wissen, fragen, self.llm)
+        AF = cv[CM.TAB_ANFORDERUNGEN]
+        for kat, coord in CM.ANF_VERFUEGBARKEIT.items():
+            if anf.get(kat):
+                AF[coord] = str(anf[kat])[:200]
+        for f in anf.get("fragen", []):
+            try:
+                z = int(f.get("zeile"))
+            except (TypeError, ValueError):
+                continue
+            if z not in CM.ANF_FRAGEN_ZEILEN:
+                continue
+            if f.get("antwort") in CM.JA_NEIN:
+                AF[f"{CM.ANF_ANTWORT_SPALTE}{z}"] = f["antwort"]
+            if f.get("bemerkung"):
+                AF[f"{CM.ANF_BEMERKUNG_SPALTE}{z}"] = str(f["bemerkung"])[:400]
 
         # Tab 4: beratende Beurteilung – NUR gültige Eingabezellen setzen.
         E = cv[CM.TAB_ERHEBUNG]
