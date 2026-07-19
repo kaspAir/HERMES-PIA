@@ -14,12 +14,13 @@ from app.factory import create_app
 _PIA = {
     "ausgangslage": {"extracted": {"text": "Ablösung des Justizsystems Juris Fiat."}},
     "referenzierte_dokumente": {"extracted": [
-        {"nr": "01", "name": "Bundesgesetz über den Datenschutz (DSG)", "link": ""},
-        {"nr": "02", "name": "Schweizerische Strafprozessordnung (StPO)", "link": ""},
+        {"nr": "01", "name": "Schweizerische Strafprozessordnung (StPO)", "link": ""},
+        {"nr": "02", "name": "Bundesgesetz über die Produktehaftpflicht (PrHG)", "link": ""},
+        {"nr": "03", "name": "Bundesgesetz über den Datenschutz (DSG)", "link": ""},  # -> Schuban
     ]},
     "mitgeltende_unterlagen": {"extracted": [
-        {"name": "Kantonales Datenschutzgesetz", "link": ""}]},
-    "ziele": {"extracted": [{"beschreibung": "Anforderungen vollständig erheben"}]},
+        {"name": "Kantonales Beschaffungsrecht (Submissionsgesetz)", "link": ""}]},  # kantonal
+    "ziele": {"extracted": [{"beschreibung": "Verfahrensschritte im System abbilden"}]},
 }
 
 
@@ -47,22 +48,39 @@ def test_seeding_ohne_llm_uebernimmt_pia_gesetze():
     svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=_FakeFedlex())
     answers = svc.build_answers(wissen)
     namen = [r["rechtsgrundlage"] for r in answers["bestehende_rechtsgrundlagen"]["extracted"]]
-    assert "Bundesgesetz über den Datenschutz (DSG)" in namen
     assert "Schweizerische Strafprozessordnung (StPO)" in namen
-    assert "Kantonales Datenschutzgesetz" in namen
+    # Datenschutzgesetz gehört in die Schutzbedarfsanalyse -> hier NICHT
+    assert "Bundesgesetz über den Datenschutz (DSG)" not in namen
     # Ohne LLM keine Beschreibung erfunden
     assert all(r.get("beschreibung", "") == ""
                for r in answers["bestehende_rechtsgrundlagen"]["extracted"])
-    # Leere analytische Tabellen bekommen eine Leerzeile (Vorlage-Beispiele werden ersetzt)
-    assert answers["identifizierte_luecken"]["extracted"] == [{"luecke": "", "beschreibung": ""}]
+    # 0.4 Definitionen: enthält die Kürzel der genannten Gesetze
+    abk = [r["abkuerzung"] for r in answers["definitionen"]["extracted"]]
+    assert "StPO" in abk and "PrHG" in abk
     assert answers["konsequenzen"]["extracted"]["text"] == ""
+
+
+def test_datenschutz_und_ebene_filter():
+    svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=_FakeFedlex())
+    # Nur Bund: kantonale Gesetze fallen weg; Datenschutz immer weg
+    namen_bund = [r["rechtsgrundlage"] for r in
+                  svc.build_answers(Projektwissen(_PIA, ebene="bund"))
+                  ["bestehende_rechtsgrundlagen"]["extracted"]]
+    assert "Schweizerische Strafprozessordnung (StPO)" in namen_bund
+    assert "Kantonales Beschaffungsrecht (Submissionsgesetz)" not in namen_bund   # kantonal, nur Bund
+    assert "Bundesgesetz über den Datenschutz (DSG)" not in namen_bund            # Datenschutz -> Schuban
+    # Bund + Kanton: kantonales Gesetz wieder dabei
+    namen_beide = [r["rechtsgrundlage"] for r in
+                   svc.build_answers(Projektwissen(_PIA, ebene="bund,kanton"))
+                   ["bestehende_rechtsgrundlagen"]["extracted"]]
+    assert "Kantonales Beschaffungsrecht (Submissionsgesetz)" in namen_beide
 
 
 def test_llm_vorschlag_wird_gemergt_und_pia_bleibt_fuehrend():
     wissen = Projektwissen(_PIA, ebene="bund")
     svc = RechtsgrundlagenService(None, None, None, fedlex=_FakeFedlex(), llm=_FakeLLM({
-        "bestehende": [{"rechtsgrundlage": "Bundesgesetz über den Datenschutz (DSG)",
-                        "beschreibung": "Regelt den Schutz von Personendaten."}],
+        "bestehende": [{"rechtsgrundlage": "Schweizerische Strafprozessordnung (StPO)",
+                        "beschreibung": "Regelt das Strafverfahren."}],
         "luecken": [{"luecke": "Fehlende Grundlage", "beschreibung": "für neue Bearbeitung"}],
         "konsequenzen": "Rechtliches Risiko ohne Anpassung.",
         "empfehlung": "Rechtsgrundlage vor Realisierung schaffen.",
@@ -70,8 +88,8 @@ def test_llm_vorschlag_wird_gemergt_und_pia_bleibt_fuehrend():
     answers = svc.build_answers(wissen)
     best = {r["rechtsgrundlage"]: r.get("beschreibung", "")
             for r in answers["bestehende_rechtsgrundlagen"]["extracted"]}
-    assert best["Bundesgesetz über den Datenschutz (DSG)"] == "Regelt den Schutz von Personendaten."
-    assert "Schweizerische Strafprozessordnung (StPO)" in best        # PIA-Gesetz weiterhin da
+    assert best["Schweizerische Strafprozessordnung (StPO)"] == "Regelt das Strafverfahren."
+    assert "Bundesgesetz über die Produktehaftpflicht (PrHG)" in best   # weiteres Bundesgesetz
     luecken = answers["identifizierte_luecken"]["extracted"]
     assert luecken and luecken[0]["luecke"] == "Fehlende Grundlage"
     assert answers["konsequenzen"]["extracted"]["text"].startswith("Rechtliches Risiko")
@@ -121,8 +139,7 @@ def test_entwurf_und_docx_end_to_end(app):
 
         doc = Document(svc.generate_docx(projekt))
         cells = " ".join(c.text for t in doc.tables for row in t.rows for c in row.cells)
-        # Aus dem PIA übernommene Gesetze stehen in 'Bestehende Rechtsgrundlagen'
-        assert "Bundesgesetz über den Datenschutz (DSG)" in cells
+        # Aus dem PIA übernommenes (Nicht-Datenschutz-)Gesetz steht im Dokument
         assert "Schweizerische Strafprozessordnung (StPO)" in cells
         # Titel/Kapitel des Templates vorhanden
         volltext = "\n".join(p.text for p in doc.paragraphs)
@@ -165,17 +182,17 @@ def test_ground_federal_nur_bei_bund():
 
 def test_service_reichert_referenzierte_und_bestehende_mit_fundstelle_an():
     fake = _FakeFedlex({
-        "DSG": [{"sr": "235.1", "titel": "Bundesgesetz vom 19. Juni 1992 über den Datenschutz (DSG)",
-                 "url": "https://www.fedlex.admin.ch/eli/cc/1993/1945_1945_1945/de"}],
+        "StPO": [{"sr": "312.0", "titel": "Schweizerische Strafprozessordnung vom 5. Oktober 2007 (StPO)",
+                  "url": "https://www.fedlex.admin.ch/eli/cc/2010/267/de"}],
     })
     wissen = Projektwissen(_PIA, ebene="bund")
     svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=fake)
     answers = svc.build_answers(wissen)
-    # Referenzierte: der DSG-Eintrag bekommt SR + Fedlex-Link
-    dsg_ref = next(r for r in answers["referenzierte_dokumente"]["extracted"]
-                   if "Datenschutz" in r["name"])
-    assert "SR 235.1" in dsg_ref["link"] and "fedlex.admin.ch" in dsg_ref["link"]
-    # Bestehende Rechtsgrundlagen: verifizierter Titel + SR als Beschreibung
-    dsg_best = next(r for r in answers["bestehende_rechtsgrundlagen"]["extracted"]
-                    if "Datenschutz" in r["rechtsgrundlage"])
-    assert "SR 235.1" in dsg_best["beschreibung"]
+    # Referenzierte: der StPO-Eintrag bekommt SR + Fedlex-Link
+    ref = next(r for r in answers["referenzierte_dokumente"]["extracted"]
+               if "Strafprozessordnung" in r["name"])
+    assert "SR 312.0" in ref["link"] and "fedlex.admin.ch" in ref["link"]
+    # Bestehende Rechtsgrundlagen: verifizierter Titel + SR + Link als Beschreibung
+    best = next(r for r in answers["bestehende_rechtsgrundlagen"]["extracted"]
+                if "Strafprozessordnung" in r["rechtsgrundlage"])
+    assert "SR 312.0" in best["beschreibung"] and "fedlex.admin.ch" in best["beschreibung"]

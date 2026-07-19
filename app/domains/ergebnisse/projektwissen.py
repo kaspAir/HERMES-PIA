@@ -39,6 +39,16 @@ class Projektwissen:
         rb = self._extracted("rahmenbedingungen")
         return [x for x in rb if isinstance(x, dict)] if isinstance(rb, list) else []
 
+    def definitionen(self):
+        d = self._extracted("definitionen")
+        return [x for x in d if isinstance(x, dict)] if isinstance(d, list) else []
+
+    def ziel_beschreibungen(self):
+        """Die geplanten Tätigkeiten des Projekts (Ziel-Beschreibungen) – Grundlage der
+        Rechtsgrundlagen-Prüfung: existiert je Ziel eine Rechtsgrundlage?"""
+        return [str(z.get("beschreibung", "")).strip()
+                for z in self.ziele() if isinstance(z, dict) and str(z.get("beschreibung", "")).strip()]
+
     def genannte_rechtsgrundlagen(self):
         """Namen der im PIA genannten Gesetze/Vorgaben (aus Referenzierten/Mitgeltenden).
         Dient als ehrlicher Ausgangspunkt für 'Bestehende Rechtsgrundlagen' – ohne
