@@ -51,6 +51,13 @@
   <section class="vorlage-block">
     <h3 class="vorlage-title">Entwurf</h3>
     <p class="muted vorlage-status">Zuletzt aktualisiert: {{ entwurf.updated_at.strftime('%d.%m.%Y %H:%M') if entwurf.updated_at else '—' }}</p>
+    {% if grounding %}
+      {% if grounding.verknuepft > 0 %}
+        <p class="muted vorlage-status">&#10003; {{ grounding.verknuepft }} von {{ grounding.gesamt }} Rechtsgrundlagen mit einer Fedlex-Fundstelle (SR) verknüpft.</p>
+      {% else %}
+        <p class="muted vorlage-status">&#9888; Keine Fedlex-Fundstelle verknüpft. Falls Ebene «Bund» gewählt ist, erreicht der Server den Fedlex-Dienst nicht — bitte melden.</p>
+      {% endif %}
+    {% endif %}
     <a href="{{ url_for('ui.rechtsgrundlagen_download', projekt_id=projekt.id, filename=download_name) }}"
        class="btn-primary btn-large">&#8595; Rechtsgrundlagenanalyse herunterladen (.docx)</a>
   </section>
