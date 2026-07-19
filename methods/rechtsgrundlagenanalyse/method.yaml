@@ -1,0 +1,128 @@
+# =====================================================================
+# Methodenmodell: HERMES 2022 - Rechtsgrundlagenanalyse
+# =====================================================================
+# Eigenes Ergebnis der Phase Initialisierung (Modul Projektgrundlagen).
+# Bewusst als EIGENE Methode/Datei gehalten - der PIA bleibt unberuehrt.
+#
+# Abgeleitet aus der HERMES-Vorlage
+#   methods/rechtsgrundlagenanalyse/template/rechtsgrundlagenanalyse.dotx
+#
+# Nur die Abschnitte, die HERMES PIA aktiv befuellt, sind hier definiert.
+# Deckblatt, Definitionen, Vorgaben und die fixen Hilfetexte kommen direkt
+# aus der Vorlage (dort bereits korrekt hinterlegt).
+
+method:
+  id: rechtsgrundlagenanalyse
+  name: "Rechtsgrundlagenanalyse"
+  framework: "HERMES 2022"
+  language: de
+  description: >
+    Die Rechtsgrundlagenanalyse beschreibt die fuer das Projektergebnis
+    geltenden Rechtsgrundlagen und den allfaelligen Bedarf fuer deren
+    Aenderung (Product Compliance). Datenschutz/Informationssicherheit
+    gehoeren NICHT hierher, sondern in die Schutzbedarfsanalyse.
+  template: "template/rechtsgrundlagenanalyse.dotx"
+
+vocabularies:
+  auswirkung: ["positiv", "neutral", "negativ"]
+
+metadata_fields:
+  - { id: projektname,        label: "Projektname",        required: true }
+  - { id: projektnummer,      label: "Projektnummer",      required: false }
+  - { id: verwaltungseinheit, label: "Verwaltungseinheit", required: false }
+  - { id: geschaeftsbereich,  label: "Geschaeftsbereich",  required: false }
+  - { id: autor,              label: "Autor/-in",          required: false }
+  - { id: projektleiter,      label: "Projektleiter/in",   required: true }
+  - { id: auftraggeber,       label: "Auftraggeber/in",    required: true }
+  - { id: version,            label: "Version",            required: false, default: "0.1" }
+  - { id: status,             label: "Dokument Status",    required: false, default: "in Arbeit" }
+  - { id: klassifizierung,    label: "Klassifizierung",    required: false, default: "Nicht klassifiziert" }
+
+# ---------------------------------------------------------------------
+# Abschnitte - Reihenfolge/Titel entsprechen den Vorlage-Ueberschriften.
+# ---------------------------------------------------------------------
+sections:
+
+  # --- Einleitung: aus dem PIA uebernommene Verweise ------------------
+  - id: referenzierte_dokumente
+    number: "0.2"
+    title: "Referenzierte Dokumente"
+    type: table
+    quelle: pia            # wird aus dem PIA uebernommen
+    columns:
+      - { id: nr,   label: "Nr." }
+      - { id: name, label: "Name" }
+      - { id: link, label: "Nummer / Link" }
+
+  - id: mitgeltende_unterlagen
+    number: "0.3"
+    title: "Mitgeltende Unterlagen"
+    type: table
+    quelle: pia
+    columns:
+      - { id: name, label: "Name" }
+      - { id: link, label: "Nummer / Link" }
+
+  # --- Kern: die eigentliche Rechtsgrundlagenanalyse ------------------
+  - id: bestehende_rechtsgrundlagen
+    number: "1"
+    title: "Bestehende Rechtsgrundlagen"
+    type: table
+    quelle: vorschlag      # Entwurf: aus PIA genannte Gesetze + LLM-Beschreibung
+    columns:
+      - { id: nr,            label: "Nr." }
+      - { id: rechtsgrundlage, label: "Rechtsgrundlage" }
+      - { id: beschreibung,  label: "Beschreibung" }
+
+  - id: bevorstehende_aenderungen
+    number: "2"
+    title: "Bevorstehende Aenderungen"
+    type: table
+    quelle: vorschlag
+    columns:
+      - { id: nr,            label: "Nr." }
+      - { id: rechtsgrundlage, label: "Rechtsgrundlage" }
+      - { id: beschreibung,  label: "Beschreibung" }
+      - { id: auswirkung,    label: "Auswirkung auf Projekt" }
+
+  - id: identifizierte_luecken
+    number: "3"
+    title: "Identifizierte Luecken"
+    type: table
+    quelle: vorschlag
+    columns:
+      - { id: nr,          label: "Nr." }
+      - { id: luecke,      label: "Identifizierte Luecke" }
+      - { id: beschreibung, label: "Beschreibung" }
+
+  - id: vorschlaege_deckung
+    number: "4"
+    title: "Vorschlaege zur Deckung von Luecken"
+    type: table
+    quelle: vorschlag
+    columns:
+      - { id: nr,       label: "Nr." }
+      - { id: luecke,   label: "Identifizierte Luecke" }
+      - { id: vorschlag, label: "Vorschlag zur Deckung" }
+
+  - id: product_compliance
+    number: "5"
+    title: "Hinweise betreffend Product Compliance"
+    type: table
+    quelle: vorschlag
+    columns:
+      - { id: nr,          label: "Nr." }
+      - { id: compliance,  label: "Product Compliance" }
+      - { id: beschreibung, label: "Beschreibung" }
+
+  - id: konsequenzen
+    number: "6"
+    title: "Beurteilung der Konsequenzen"
+    type: free_text
+    quelle: vorschlag
+
+  - id: empfehlung
+    number: "7"
+    title: "Empfehlung"
+    type: free_text
+    quelle: vorschlag

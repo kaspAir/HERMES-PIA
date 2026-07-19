@@ -384,10 +384,23 @@ class GenerationService:
                     if showing is not None:
                         sdt_pr.remove(showing)
             elif len(direct_runs) >= 3:
-                # Standard-Struktur: runs[0]=Label, runs[1]=Tab, runs[2]=Wert
-                for t in direct_runs[2].iter(W_T):
-                    t.text = value
-                    break
+                # Standard-Struktur: runs[0]=Label, dann Tab-/Leer-Runs, zuletzt der
+                # Wert-Run. Manche Vorlagen haben 3 Runs (Label/Tab/Wert), andere 4
+                # (Label/leer/leer/Wert). Robust: den LETZTEN text­tragenden Run nach
+                # dem Label als Wert-Run behandeln.
+                value_run = None
+                for r in direct_runs[1:]:
+                    if any(True for _ in r.iter(W_T)):
+                        value_run = r
+                if value_run is None:          # kein Wert-Run mit Text: an letzten Run anhängen
+                    value_run = direct_runs[-1]
+                    etree.SubElement(value_run, W_T)
+                ts = list(value_run.iter(W_T))
+                ts[0].text = value
+                if value and (value[0] == ' ' or value[-1] == ' '):
+                    ts[0].set(XML_SPACE, 'preserve')
+                for extra in ts[1:]:
+                    extra.text = ''
             elif len(direct_runs) == 1:
                 # Einzelner Label-Run (z.B. "Projektname / Projektnummer" in Magenta):
                 # Label-Text durch Wert ersetzen und Farb-Formatierung entfernen.

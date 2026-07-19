@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="admin-page">
+  <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">&larr; Projekt: {{ projekt.name }}</a>
+  <h2>Rechtsgrundlagenanalyse</h2>
+  <p class="hero-desc">Entwurf aus dem vorhandenen PIA (Phase A). HERMES PIA übernimmt
+    die im PIA genannten Rechtsgrundlagen, schlägt Lücken, Product Compliance,
+    Konsequenzen und eine Empfehlung vor — <strong>ohne erfundene Fundstellen</strong>.
+    Die verifizierte Fundstelle (Fedlex) folgt in Phase B.</p>
+
+  {% if not hat_pia %}
+    <p class="muted vorlage-status">Für dieses Projekt liegt noch kein PIA vor. Bitte
+      zuerst den Projektinitialisierungsauftrag erstellen — daraus wird der Entwurf abgeleitet.</p>
+  {% else %}
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Detailfragen</h3>
+    <form method="post" action="{{ url_for('ui.rechtsgrundlagen_erzeugen', projekt_id=projekt.id) }}">
+      <div class="branding-zeile">
+        <span class="branding-label">Staatsebene:</span>
+        {% set ebenen = (entwurf.ebene or '').split(',') if entwurf else [] %}
+        <label class="chk"><input type="checkbox" name="ebene" value="bund" {{ 'checked' if 'bund' in ebenen else '' }}> Bund</label>
+        <label class="chk"><input type="checkbox" name="ebene" value="kanton" {{ 'checked' if 'kanton' in ebenen else '' }}> Kanton</label>
+        <label class="chk"><input type="checkbox" name="ebene" value="kommune" {{ 'checked' if 'kommune' in ebenen else '' }}> Kommune</label>
+      </div>
+      <div class="branding-zeile">
+        <span class="branding-label">Kanton:</span>
+        <select name="kanton" style="width:16em">
+          <option value="">– (keiner / nur Bund) –</option>
+          {% for kz, kn in kantone %}
+            <option value="{{ kz }}" {{ 'selected' if entwurf and entwurf.kanton == kz else '' }}>{{ kn }} ({{ kz }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn-primary" style="margin-top:12px">
+        {{ 'Entwurf neu erzeugen' if entwurf else 'Entwurf erzeugen' }}
+      </button>
+    </form>
+  </section>
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Im PIA genannte Rechtsgrundlagen (Ausgangspunkt)</h3>
+    {% if genannte %}
+      <ul>{% for g in genannte %}<li>{{ g }}</li>{% endfor %}</ul>
+    {% else %}
+      <p class="muted vorlage-status">Im PIA sind noch keine Rechtsgrundlagen/Referenzen erfasst.</p>
+    {% endif %}
+  </section>
+
+  {% if entwurf %}
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Entwurf</h3>
+    <p class="muted vorlage-status">Zuletzt aktualisiert: {{ entwurf.updated_at.strftime('%d.%m.%Y %H:%M') if entwurf.updated_at else '—' }}</p>
+    <a href="{{ url_for('ui.rechtsgrundlagen_download', projekt_id=projekt.id, filename=download_name) }}"
+       class="btn-primary btn-large">&#8595; Rechtsgrundlagenanalyse herunterladen (.docx)</a>
+  </section>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}
