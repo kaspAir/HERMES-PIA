@@ -1,0 +1,144 @@
+"""Beweist: Schutzbedarfsanalyse befüllt das BACS-Excel NUR in Eingabezellen –
+die Formeln bleiben unangetastet. Modular, PIA unberührt."""
+import io
+import json
+
+import openpyxl
+import pytest
+
+from app.config import Config, get_config
+from app.domains.ergebnisse.projektwissen import Projektwissen
+from app.domains.ergebnisse.schutzbedarf import cellmap as CM
+from app.domains.ergebnisse.schutzbedarf.service import SchutzbedarfService
+from app.factory import create_app
+
+
+class _FakeLLM:
+    def __init__(self, payload):
+        self._p = payload
+
+    def complete(self, system, messages, max_tokens=1024):
+        return json.dumps(self._p)
+
+
+def _svc(llm=None):
+    return SchutzbedarfService(None, None, get_config().METHODS_DIR, llm=llm)
+
+
+def _formeln(ws):
+    return sum(1 for r in ws.iter_rows() for c in r
+               if isinstance(c.value, str) and c.value.startswith("="))
+
+
+def test_template_vorhanden_und_ladbar():
+    wb = openpyxl.load_workbook(_svc()._template_pfad())
+    assert CM.TAB_ERHEBUNG in wb.sheetnames
+    assert _formeln(wb[CM.TAB_ERHEBUNG]) == 127 and _formeln(wb["6. Einstufung"]) == 35
+
+
+def test_build_und_fuellen_erhaelt_formeln():
+    # Ein Fake liefert dieselbe Payload für alle (getrennten) Aufrufe: Gruppen tragen
+    # die Keys für deckblatt_und_gruppen UND für auswirkungen.
+    fake = _FakeLLM({
+        "beschreibung": "Nachfolgelösung Juris Fiat der Justizbehörden.",
+        "geschaeftsprozesse": "Fallführung Strafverfahren",
+        "zugriff": "Justizbehörden des Kantons",
+        "geografisch": "Datenhaltung ausschliesslich in der Schweiz",
+        "gruppen": [{"gruppe": "Straf- und Personendaten",
+                     "klassifizierung": "Klassifizierung: Vertraulich",
+                     "personendaten": "besonders schützenswerte Personendaten",
+                     "risiko": "Personendaten werden bearbeitet - Risikovorprüfung ergibt hohe Risiken",
+                     "vertraulichkeit": "Schwerwiegende Persönlichkeitsverletzung",
+                     "verfuegbarkeit": "Verfahren verzögern sich",
+                     "integritaet": "Fehlurteile möglich",
+                     "nachvollziehbarkeit": "Beweiswert gefährdet"},
+                    {"gruppe": "X", "klassifizierung": "UNGUELTIG", "risiko": "quatsch"}],
+        "zeilen": [{"zeile": 6, "grundwerte": ["vertraulichkeit", "integritaet"]}],
+        "servicezeit": "Bürozeiten Mo-Fr", "wartung": "ausserhalb Servicezeit",
+        "verfuegbarkeit": "99.5%",
+        "fragen": [{"zeile": 13, "antwort": "Ja", "bemerkung": "Datenaustausch mit Polizei"},
+                   {"zeile": 10, "antwort": "UNGUELTIG"}],
+    })
+    svc = _svc(llm=fake)
+    wissen = Projektwissen({"ausgangslage": {"extracted": {"text": "Justizsystem-Ablösung."}}},
+                           metadata={"projektname": "BKI Test 2", "verwaltungseinheit": "Justiz",
+                                     "auftraggeber": "Monika Musterfrau", "projektleiter": "Helene Digital"})
+    cv = svc.build_cellvalues(wissen)
+    # Deckblatt aus PIA-Metadaten + LLM-Zusatzfelder
+    assert cv[CM.TAB_DECKBLATT]["D6"] == "BKI Test 2"
+    assert "Monika" in cv[CM.TAB_DECKBLATT]["D13"]
+    assert cv[CM.TAB_DECKBLATT]["D11"] == "Fallführung Strafverfahren"      # Geschäftsprozesse
+    assert cv[CM.TAB_DECKBLATT]["D18"].startswith("Datenhaltung")           # Geografisch
+    # Info-Dropdowns nur bei gültigem Wert
+    assert cv[CM.TAB_INFOVERZEICHNIS]["C6"] == "Klassifizierung: Vertraulich"
+    assert "hohe Risiken" in cv[CM.TAB_INFOVERZEICHNIS]["E6"]
+    assert "C7" not in cv[CM.TAB_INFOVERZEICHNIS]        # ungültiger Dropdown-Wert -> nicht gesetzt
+    # Tab 3 Auswirkungen je Gruppe
+    assert cv[CM.TAB_AUSWIRKUNGEN]["C6"].startswith("Schwerwiegende")
+    # Tab 5 Anforderungen: Verfügbarkeit + Ja/Nein (gültig), ungültige Antwort ignoriert
+    assert cv[CM.TAB_ANFORDERUNGEN]["D6"] == "Bürozeiten Mo-Fr"
+    assert cv[CM.TAB_ANFORDERUNGEN]["D13"] == "Ja"
+    assert "F13" in cv[CM.TAB_ANFORDERUNGEN]             # Bemerkung gesetzt
+    assert "D10" not in cv[CM.TAB_ANFORDERUNGEN]         # ungültige Ja/Nein-Antwort -> nicht gesetzt
+    # Tab 4: Vorschlag nur in gültigen Eingabezellen, gültiger Wert
+    assert cv[CM.TAB_ERHEBUNG]["C6"] == CM.TRIFFT_ZU     # Vertraulichkeit, Zeile 6
+    assert cv[CM.TAB_ERHEBUNG]["E6"] == CM.TRIFFT_ZU     # Integrität, Zeile 6
+
+    # Zellwerte in eine Kopie schreiben (wie generate_xlsx) und Formeln prüfen
+    wb = openpyxl.load_workbook(svc._template_pfad())
+    for sheet, zellen in cv.items():
+        ws = wb[sheet]
+        for coord, wert in zellen.items():
+            if isinstance(ws[coord].value, str) and ws[coord].value.startswith("="):
+                pytest.fail(f"Formelzelle {sheet}!{coord} würde überschrieben")
+            ws[coord].value = wert
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    wb2 = openpyxl.load_workbook(buf)
+    assert _formeln(wb2[CM.TAB_ERHEBUNG]) == 127          # alle Formeln erhalten
+    assert _formeln(wb2["6. Einstufung"]) == 35
+    assert wb2[CM.TAB_DECKBLATT]["D6"].value == "BKI Test 2"
+    assert wb2[CM.TAB_ERHEBUNG]["C6"].value == CM.TRIFFT_ZU
+
+
+def test_ohne_llm_nur_deterministisch():
+    svc = _svc(llm=None)
+    cv = svc.build_cellvalues(Projektwissen({}, metadata={"projektname": "P"}))
+    assert cv[CM.TAB_DECKBLATT]["D6"] == "P"
+    assert cv[CM.TAB_ERHEBUNG] == {}                      # ohne LLM keine Beurteilung
+
+
+# ---- End-to-End über den Service (DB + Download) -------------------------- #
+
+@pytest.fixture
+def app(tmp_path):
+    from app.shared.database import SessionLocal
+    db_path = str(tmp_path / "sba.db").replace("\\", "/")
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + db_path
+        SECRET_KEY = "x"
+
+    SessionLocal.remove()
+    application = create_app(_Cfg)
+    SessionLocal.remove()
+    yield application
+    SessionLocal.remove()
+
+
+def test_end_to_end_xlsx(app):
+    from app.domains.interview.models import InterviewSession
+    from app.shared.database import SessionLocal
+    with app.app_context():
+        ps = app.projekt_service
+        projekt = ps.create_projekt(org_id=1, name="BKI Test 2", verwaltungseinheit="Justiz")
+        erg = ps.add_ergebnis(projekt.id, "projektinitialisierungsauftrag", created_by="Helene Digital")
+        db = SessionLocal()
+        db.add(InterviewSession(method_id="hermes_pia", project_name="BKI Test 2", org_id=1,
+                                created_by="Helene Digital", ergebnis_id=erg.id,
+                                answers_json=json.dumps({"ausgangslage": {"extracted": {"text": "x"}}})))
+        db.commit()
+        svc = app.schutzbedarf_service
+        svc.erzeuge_entwurf(projekt)                       # keyless LLM -> deterministisch
+        wb = openpyxl.load_workbook(svc.generate_xlsx(projekt))
+        assert _formeln(wb[CM.TAB_ERHEBUNG]) == 127
+        assert wb[CM.TAB_DECKBLATT]["D6"].value == "BKI Test 2"

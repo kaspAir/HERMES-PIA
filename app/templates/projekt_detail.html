@@ -111,6 +111,17 @@
                  class="btn-link">{{ 'Bearbeiten' if current_user.can_write else 'Ansehen' }}</a>
             </div>
           </li>
+          <li class="ergebnis-item">
+            <div class="ergebnis-head">
+              <span class="ergebnis-titel">Schutzbedarfsanalyse</span>
+              <span class="badge badge-rolle">ISDS-Verantwortliche/r</span>
+            </div>
+            <div class="ergebnis-aufgabe muted">BACS-Template (ISV), aus dem PIA vorbefüllt.</div>
+            <div class="ergebnis-actions">
+              <a href="{{ url_for('ui.schutzbedarf', projekt_id=projekt.id) }}"
+                 class="btn-link">{{ 'Bearbeiten' if current_user.can_write else 'Ansehen' }}</a>
+            </div>
+          </li>
         </ul>
         {% endif %}
       </div>
