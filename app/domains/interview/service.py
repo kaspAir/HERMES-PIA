@@ -642,24 +642,27 @@ class InterviewService:
 
     @staticmethod
     def _ensure_deliverable_roles(rows, answers):
-        """Stellt sicher, dass Anwendervertreter (bei Beschaffungsanalyse) und
-        Entwickler (bei Prototyp) im Personalaufwand vertreten sind."""
+        """Stellt die für die geplanten Lieferergebnisse zuständigen Rollen sicher:
+        Schutzbedarfsanalyse → ISDS-Verantwortliche/r, Beschaffungsanalyse →
+        Anwendervertreter, Prototyp → Entwickler. Nur, wenn das Ergebnis geplant ist."""
         termine = (answers.get("termine") or {}).get("extracted") or []
         text = " ".join(
             f"{r.get('ergebnis','')} {r.get('abnahme','')}"
             for r in termine if isinstance(r, dict)
         ).lower()
 
-        def has_role(key):
-            return any(key in str(r.get("rolle", "")).lower()
+        def has_role(*keys):
+            return any(any(k in str(r.get("rolle", "")).lower() for k in keys)
                        for r in rows if isinstance(r, dict))
 
-        if "anwendervertreter" in text or "beschaffungsanalyse" in text:
-            if not has_role("anwendervertreter"):
-                rows.append({"rolle": "Anwendervertreter", "name": "", "aufwand": ""})
-        if "entwickler" in text or "prototyp" in text:
-            if not has_role("entwickler"):
-                rows.append({"rolle": "Entwickler", "name": "", "aufwand": ""})
+        # (Auslöser im Ergebnis-Text, Rolle, Erkennungs-Stichwort der Rolle)
+        for ausloeser, rolle, rollen_kw in (
+            (("schutzbedarf",),                 "ISDS-Verantwortliche/r", ("isds",)),
+            (("beschaffungsanalyse", "anwendervertreter"), "Anwendervertreter", ("anwendervertreter",)),
+            (("prototyp", "entwickler"),        "Entwickler",             ("entwickler",)),
+        ):
+            if any(a in text for a in ausloeser) and not has_role(*rollen_kw):
+                rows.append({"rolle": rolle, "name": "", "aufwand": ""})
 
     def _externe_expertise_signal(self, answers, extra_text=""):
         """True, wenn Ausgangslage/Komplexität ODER der Personalschritt selbst den

@@ -190,3 +190,22 @@ def test_projektorganisation_spalten_decken_vorlage_ab():
     assert cols[0] == "rolle_person"
     assert cols[-1] == "bestaetigung"
     assert [f"monat_{i}" for i in range(1, 10)] == cols[1:-1]
+
+
+def test_personalaufwand_ergaenzt_isds_bei_schutzbedarfsanalyse():
+    # Schutzbedarfsanalyse -> ISDS-Verantwortliche/r (frueher fehlte diese Rolle).
+    rows = [{"rolle": "Projektleiter", "name": "", "aufwand": "15"}]
+    answers = {"termine": {"extracted": [
+        {"ergebnis": "Schutzbedarfsanalyse", "abnahme": "ISDS-Verantwortliche/r"},
+    ]}}
+    InterviewService._ensure_deliverable_roles(rows, answers)
+    assert any("isds" in r["rolle"].lower() for r in rows)
+
+
+def test_deliverable_roles_nur_bei_geplantem_ergebnis():
+    # Keine ausloesenden Ergebnisse -> keine abgeleiteten Rollen.
+    rows = [{"rolle": "Projektleiter", "name": "", "aufwand": "15"}]
+    answers = {"termine": {"extracted": [{"ergebnis": "Projektmanagementplan"}]}}
+    InterviewService._ensure_deliverable_roles(rows, answers)
+    rollen = " ".join(r["rolle"].lower() for r in rows)
+    assert "isds" not in rollen and "anwendervertreter" not in rollen and "entwickler" not in rollen
