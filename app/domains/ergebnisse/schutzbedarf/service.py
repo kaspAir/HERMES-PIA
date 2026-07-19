@@ -13,7 +13,11 @@ from openpyxl.utils import get_column_letter
 from app.domains.ergebnisse.models import ErgebnisEntwurf
 from app.domains.ergebnisse.projektwissen import Projektwissen
 from app.domains.ergebnisse.schutzbedarf import cellmap as CM
-from app.domains.ergebnisse.schutzbedarf.proposals import erhebung, informationsgruppen
+from app.domains.ergebnisse.schutzbedarf.proposals import (
+    auswirkungen,
+    deckblatt_und_gruppen,
+    erhebung,
+)
 from app.domains.projekt.reference import ERG_PIA
 from app.shared.database import SessionLocal
 
@@ -99,16 +103,17 @@ class SchutzbedarfService:
         if involvierte:
             D[CM.DECKBLATT["involvierte"]] = involvierte
 
-        # LLM: Deckblatt-Zusatzfelder + Informationsgruppen + Auswirkungen (Tab 3)
-        info = informationsgruppen(wissen, self.llm)
-        for feld, key in (("beschreibung", "beschreibung"), ("geschaeftsprozesse", "geschaeftsprozesse"),
-                          ("zugriff", "zugriff"), ("geografisch", "geografisch")):
-            if info.get(key):
-                D[CM.DECKBLATT[feld]] = str(info[key])[:900]
+        # LLM (getrennte, kompakte Aufrufe – zuverlässiger als ein grosser).
+        info = deckblatt_und_gruppen(wissen, self.llm)
+        for feld in ("beschreibung", "geschaeftsprozesse", "zugriff", "geografisch"):
+            if info.get(feld):
+                D[CM.DECKBLATT[feld]] = str(info[feld])[:900]
 
+        gruppen = info.get("gruppen", [])[:len(CM.INFO_ZEILEN)]
+        ausw = auswirkungen(wissen, [g.get("gruppe", "") for g in gruppen], self.llm)
         I = cv[CM.TAB_INFOVERZEICHNIS]
         A = cv[CM.TAB_AUSWIRKUNGEN]
-        for idx, g in enumerate(info.get("gruppen", [])[:len(CM.INFO_ZEILEN)]):
+        for idx, g in enumerate(gruppen):
             row = CM.INFO_ZEILEN.start + idx
             if g.get("gruppe"):
                 I[f"{CM.INFO_SPALTEN['gruppe']}{row}"] = str(g["gruppe"])[:250]
@@ -119,11 +124,11 @@ class SchutzbedarfService:
                 I[f"{CM.INFO_SPALTEN['klassifizierung']}{row}"] = g["klassifizierung"]
             if g.get("risiko") in CM.INFO_RISIKO_WERTE:
                 I[f"{CM.INFO_SPALTEN['risiko']}{row}"] = g["risiko"]
-            # Tab 3: Auswirkungstexte je Grundwert (Freitext).
+            # Tab 3: Auswirkungstexte je Grundwert (Freitext, nach Gruppenname gematcht).
+            impakt = ausw.get(str(g.get("gruppe", "")).strip().lower(), {})
             for gw, spalte in CM.AUSWIRKUNG_SPALTE.items():
-                txt = g.get(f"ausw_{gw}")
-                if txt:
-                    A[f"{spalte}{row}"] = str(txt)[:600]
+                if impakt.get(gw):
+                    A[f"{spalte}{row}"] = str(impakt[gw])[:600]
 
         # Tab 4: beratende Beurteilung – NUR gültige Eingabezellen setzen.
         E = cv[CM.TAB_ERHEBUNG]
