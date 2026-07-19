@@ -574,3 +574,28 @@ def test_expertise_signal_auch_beim_personalschritt():
     svc = _svc()
     assert svc._externe_expertise_signal({}, "wir brauchen externe Beratung")
     assert not svc._externe_expertise_signal({}, "alles wird intern erledigt")
+
+
+# --- Personalaufwand: Basisrollen (PL/AG) immer vorhanden (Fund #2) -------- #
+
+def test_personalaufwand_hat_immer_pl_und_ag():
+    rows = []  # LLM lieferte keine Rollen
+    InterviewService._ensure_base_roles(rows)
+    txt = " ".join(r["rolle"].lower() for r in rows)
+    assert "projektleiter" in txt and "auftraggeber" in txt
+
+
+def test_base_roles_keine_dubletten_und_pl_zuerst():
+    rows = [{"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}]
+    InterviewService._ensure_base_roles(rows)
+    rollen = [r["rolle"].lower() for r in rows]
+    assert sum("projektleiter" in r for r in rollen) == 1
+    assert sum("auftraggeber" in r for r in rollen) == 1
+    assert "projektleiter" in rollen[0]  # Basisrollen fuehren die Tabelle an
+
+
+def test_base_roles_respektiert_vorhandene():
+    rows = [{"rolle": "Projektleitung", "name": "", "aufwand": "12"}]
+    InterviewService._ensure_base_roles(rows)
+    assert sum("projektlei" in r["rolle"].lower() for r in rows) == 1  # keine Dublette
+    assert any("auftraggeber" in r["rolle"].lower() for r in rows)

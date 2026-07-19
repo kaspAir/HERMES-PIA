@@ -491,6 +491,7 @@ class InterviewService:
         elif sid == "kosten":
             section_answer["extracted"] = self._kosten_breakdown(rows, answers)
         elif sid == "personalaufwand":
+            self._ensure_base_roles(rows)
             self._ensure_deliverable_roles(rows, answers)
             self._ensure_external_experts(rows, answers,
                                           section_answer.get("raw_text", ""))
@@ -622,6 +623,22 @@ class InterviewService:
         s_ext = emit(extern_items, "Summe externe Kosten")
         out.append({"phase": "Total Initialisierung", "betrag": str(s_int + s_ext)})
         return out
+
+    @staticmethod
+    def _ensure_base_roles(rows):
+        """Projektleiter und Auftraggeber sind in der Phase Initialisierung IMMER
+        besetzt – auch wenn das LLM sie nicht aus dem Diktat extrahiert hat. Sonst
+        bliebe im Extremfall nur eine ergänzte Rolle (z.B. externe Fachexpertise)
+        übrig. Sie führen die Tabelle an (vor abgeleiteten/externen Rollen)."""
+        def has(*keys):
+            return any(any(k in str(r.get("rolle", "")).lower() for k in keys)
+                       for r in rows if isinstance(r, dict))
+        fehlend = []
+        if not has("projektleiter", "projektleitung"):
+            fehlend.append({"rolle": "Projektleiter", "name": "", "aufwand": ""})
+        if not has("auftraggeber"):
+            fehlend.append({"rolle": "Auftraggeber", "name": "", "aufwand": ""})
+        rows[:0] = fehlend
 
     @staticmethod
     def _ensure_deliverable_roles(rows, answers):
