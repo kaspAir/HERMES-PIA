@@ -209,3 +209,22 @@ def test_deliverable_roles_nur_bei_geplantem_ergebnis():
     InterviewService._ensure_deliverable_roles(rows, answers)
     rollen = " ".join(r["rolle"].lower() for r in rows)
     assert "isds" not in rollen and "anwendervertreter" not in rollen and "entwickler" not in rollen
+
+
+def test_postprocess_personalaufwand_garantiert_basis_und_abgeleitete_rollen():
+    """End-to-end ueber _postprocess_section: PL/AG immer, plus die zu den
+    geplanten Ergebnissen gehoerenden Rollen (ISDS/Anwendervertreter/Entwickler)."""
+    svc = _svc()
+    section = svc._section_by_id(svc.methods.get("hermes_pia"), "personalaufwand")
+    answers = {"termine": {"extracted": [
+        {"ergebnis": "Schutzbedarfsanalyse", "abnahme": "ISDS-Verantwortliche/r"},
+        {"ergebnis": "Beschaffungsanalyse", "abnahme": "Anwendervertreter"},
+        {"ergebnis": "Prototyp: SAP", "abnahme": "Entwickler"},
+    ]}}
+    sa = {"extracted": [{"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}],
+          "raw_text": ""}
+    svc._postprocess_section(section, sa, answers)
+    rollen = " ".join(r["rolle"].lower() for r in sa["extracted"])
+    for erwartet in ("projektleiter", "auftraggeber", "isds", "anwendervertreter", "entwickler"):
+        assert erwartet in rollen, f"Rolle fehlt: {erwartet}"
+    assert sa["extracted"][0]["rolle"] == "Projektleiter"  # Basisrollen zuerst
