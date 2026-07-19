@@ -208,6 +208,13 @@
            class="btn-primary btn-large">
           &#8595; PIA herunterladen (.docx)
         </a>
+        <form method="post"
+              action="{{ url_for('ui.interview_reprocess', session_id=session.id) }}"
+              style="margin-top:16px">
+          <button type="submit" class="btn-secondary" title="Wendet die HERMES-Korrekturen (Rollen, Kosten, Termine/Dauer) erneut auf die bestehenden Antworten an – ohne neues Interview.">
+            &#8635; Neu verarbeiten
+          </button>
+        </form>
         <a href="{{ url_for('ui.index') }}" class="btn-link" style="display:block;margin-top:16px">
           Zur Übersicht
         </a>

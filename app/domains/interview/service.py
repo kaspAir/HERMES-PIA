@@ -346,6 +346,52 @@ class InterviewService:
         self._persist_answers(session, answers)
         return self.current_state(session)
 
+    def reprocess(self, session_id):
+        """Wendet die deterministischen HERMES-Korrekturen erneut auf die bereits
+        gespeicherten Antworten an – ohne neues Interview.
+
+        Damit wirken Verbesserungen an der Aufbereitung (Pflicht-/Ergebnisrollen,
+        externe Expertise, Kosten, Termine samt genannter Phasendauer, Projekt-
+        organisation) sofort auf eine bestehende Session, statt erst beim nächsten
+        kompletten Durchlauf. Kein LLM-Aufruf für bereits gefüllte Felder.
+        Gibt die Liste der berührten Abschnitts-IDs zurück.
+        """
+        session = self.get_session(session_id)
+        answers = self._answers(session)
+        method = self._effective_method(session)
+        changed = []
+
+        for section in self._interviewable_sections(method):
+            sid = section.get("id")
+            entry = answers.get(sid)
+            if not isinstance(entry, dict) or self._is_empty(entry.get("extracted")):
+                continue
+            # Termine: Datteln verwerfen und mit Dauer/Komplexität neu setzen –
+            # sonst greift die genannte Phasendauer nicht auf bestehende Termine.
+            if sid == "termine" and isinstance(entry.get("extracted"), list):
+                for r in entry["extracted"]:
+                    if isinstance(r, dict):
+                        r.pop("termin", None)
+                _assign_termine_dates(entry["extracted"], session.start_datum,
+                                      self._complexity_factor(answers),
+                                      ziel_wochen=self._phase_dauer_wochen(answers))
+            self._postprocess_section(section, entry, answers)
+            entry["complete"] = self._is_complete(section, entry["extracted"])
+            changed.append(sid)
+
+        # Projektorganisation (Kap. 6) aus dem korrigierten Personalaufwand neu ableiten.
+        org_entry = answers.get("projektorganisation")
+        if isinstance(org_entry, dict) and not self._is_empty(
+                (answers.get("personalaufwand") or {}).get("extracted")):
+            org = self._build_projektorganisation(answers, session.start_datum)
+            if org:
+                org_entry["extracted"] = org
+                if "projektorganisation" not in changed:
+                    changed.append("projektorganisation")
+
+        self._persist_answers(session, answers)
+        return changed
+
     def answer_followup(self, session_id, risk_id, accepted, raw_text=None):
         """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen.
 
