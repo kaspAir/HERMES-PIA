@@ -15,6 +15,7 @@ import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registr
 import app.domains.projekt.models     # noqa: F401 – Projektstruktur-Tabellen registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
+from app.domains.praesentation.service import PraesentationService
 from app.domains.projekt.service import ProjektService
 from app.domains.stt.transcriber import Transcriber
 from app.shared.database import Base, SessionLocal, init_engine
@@ -49,6 +50,22 @@ def _migrate_db(engine):
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE interview_session ADD COLUMN {col} {dtype}"))
         conn.commit()
+
+    # methoden_vorlage: bestätigte Kapitel-Zuordnung (nachträglich ergänzt).
+    if "methoden_vorlage" in inspector.get_table_names():
+        mv_cols = {c["name"] for c in inspector.get_columns("methoden_vorlage")}
+        if "mapping_json" not in mv_cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE methoden_vorlage ADD COLUMN mapping_json TEXT"))
+                conn.commit()
+
+    # corpus_chunks: strukturierte Initialisierungs-Dauer (nachträglich ergänzt).
+    if "corpus_chunks" in inspector.get_table_names():
+        cc_cols = {c["name"] for c in inspector.get_columns("corpus_chunks")}
+        if "init_dauer_wochen" not in cc_cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE corpus_chunks ADD COLUMN init_dauer_wochen INTEGER"))
+                conn.commit()
 
 
 def _backfill_projekte(app):
@@ -100,11 +117,13 @@ def create_app(config_class=None):
         api_key=app.config.get("VOYAGE_API_KEY"),
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),
     ))
+    app.projekt_service = ProjektService()
     app.interview_service = InterviewService(
-        app.method_service, app.catalog_service, llm_client, rag=app.rag_service
+        app.method_service, app.catalog_service, llm_client, rag=app.rag_service,
+        projekt_service=app.projekt_service,
     )
     app.generation_service = GenerationService(app.method_service)
-    app.projekt_service = ProjektService()
+    app.praesentation_service = PraesentationService(llm_client)
     app.auth_service = AuthService()
     app.transcriber = Transcriber(
         api_url=app.config.get("STT_API_URL"),
@@ -127,7 +146,12 @@ def create_app(config_class=None):
 
     @app.context_processor
     def inject_globals():
-        return {"app_version": app_version, "current_user": current_user()}
+        user = current_user()
+        org = app.auth_service.get_org(user.org_id) if user and user.org_id else None
+        branding = app.auth_service.get_branding(user.org_id) if user and user.org_id else None
+        return {"app_version": app_version, "current_user": user,
+                "current_org": org, "current_branding": branding,
+                "stt_available": getattr(app.transcriber, "available", False)}
 
     @app.teardown_appcontext
     def remove_session(exception=None):

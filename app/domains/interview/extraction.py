@@ -327,6 +327,76 @@ def nachweis_begruendungen(llm_client, items, context):
         return {}
 
 
+def suggest_missing_items(llm_client, section, context, existing_rows, vocabularies=None):
+    """Prueft einen vom Projektleiter TEILWEISE gefuellten Tabellen-Abschnitt auf
+    fehlende TYPISCHE Positionen ("Haben Sie auch an ... gedacht?").
+
+    Rueckgabe: Liste von Zeilen-Dicts (max. 4, nur Spalten des Abschnitts),
+    [] wenn nichts Wesentliches fehlt oder kein LLM verfuegbar ist.
+    """
+    if llm_client is None or not existing_rows:
+        return []
+    columns = [c for c in section.get("columns", []) if c.get("id") != "nr"]
+    if not columns:
+        return []
+    col_ids = {c["id"] for c in columns}
+    col_desc = ", ".join(f"{c['id']} ({c.get('label', c['id'])})" for c in columns)
+    existing_desc = "\n".join(
+        "- " + "; ".join(f"{k}: {v}" for k, v in r.items() if str(v).strip())
+        for r in existing_rows if isinstance(r, dict)
+    )
+    system = (
+        "Du bist ein erfahrener HERMES-2022-Projektberater und pruefst einen Abschnitt "
+        "eines Projektinitialisierungsauftrags auf VOLLSTAENDIGKEIT. Der Projektleiter "
+        "hat bereits eigene Eintraege gemacht; du ergaenzt NUR, was fuer diesen Abschnitt "
+        "TYPISCH ist, zum Projekt passt und noch fehlt. Keine Duplikate, nichts Erfundenes, "
+        "keine exotischen Positionen. Antworte ausschliesslich mit validem JSON.\n\n"
+        + HERMES_RULES
+    )
+    user = (
+        f"Projektkontext:\n{context}\n\n"
+        f"Abschnitt: {section.get('title', section.get('id'))}\n"
+        f"Spalten: {col_desc}\n\n"
+        f"Bereits vom Projektleiter erfasst:\n{existing_desc}\n\n"
+        "Welche typischen Positionen fehlen noch (maximal 4)? Wenn nichts Wesentliches "
+        "fehlt, gib eine leere Liste zurueck.\n\n"
+        'Rueckgabe als JSON: {"fehlend": [{"<spalten-id>": "<wert>", ...}, ...]}'
+    )
+    try:
+        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1536)
+        data = _parse_json(raw) or {}
+        items = data.get("fehlend") if isinstance(data, dict) else None
+        out = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            row = {k: str(v).strip() for k, v in item.items()
+                   if k in col_ids and str(v).strip()}
+            if row:
+                out.append(fix_hermes_terms(row))
+        return out[:4]
+    except Exception:
+        return []
+
+
+# Bevorzugte Spalte fuer die Kurz-Benennung eines Eintrags in der Rueckfrage.
+_LABEL_COLUMNS = ("bezeichnung", "name", "rolle", "vorgaben", "abkuerzung",
+                  "empfaenger", "ergebnis", "beschreibung")
+
+
+def item_label(row):
+    """Kurzname eines Zeilen-Dicts fuer die 'Haben Sie auch an ...'-Frage."""
+    for key in _LABEL_COLUMNS:
+        value = str(row.get(key, "")).strip()
+        if value:
+            return value if len(value) <= 60 else value[:59].rstrip() + "…"
+    for value in row.values():
+        if str(value).strip():
+            v = str(value).strip()
+            return v if len(v) <= 60 else v[:59].rstrip() + "…"
+    return ""
+
+
 def _vocab_values(col, vocabularies):
     """Loest den Vokabular-Verweis einer Spalte in die erlaubten Werte auf.
 
@@ -372,9 +442,11 @@ def detect_project_type(llm_client, available_types, ausgangslage_text):
         result = _parse_json(raw) or {}
         pt = result.get("project_type_id", "")
         known = {t["id"] for t in available_types}
-        return pt if pt in known else available_types[0]["id"]
+        # Kein stilles Raten: bei unbekannter Antwort lieber KEIN Typ (None) als der
+        # zufaellig erste Listeneintrag - die Erkennung wird spaeter nachgeholt.
+        return pt if pt in known else None
     except Exception:
-        return available_types[0]["id"]
+        return None
 
 
 def detect_gender(llm_client, name):
@@ -453,7 +525,12 @@ def _extract_table(llm_client, section_title, columns, raw_text, vocabularies=No
         f"aus diesem Beitrag.\n\n"
         f"Felder je Eintrag:\n{col_desc}\n\n"
         f"Beitrag: {raw_text}\n\n"
-        f"Rueckgabe als JSON-Array. Felder ohne Information mit leerem String befuellen."
+        "WICHTIG: JEDE vom Projektleiter explizit genannte Position wird als eigene "
+        "Zeile erfasst - nichts weglassen, nichts wegdiskutieren, auch wenn sie dir "
+        "unueblich oder unnoetig erscheint (z.B. eine genannte Anleitung, ein Handbuch, "
+        "ein internes Dokument). Die HERMES-Vorgaben beschraenken nur, was DU von dir "
+        "aus ergaenzen darfst - NICHT, was der Projektleiter selbst nennt.\n\n"
+        "Rueckgabe als JSON-Array. Felder ohne Information mit leerem String befuellen."
     )
     try:
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
@@ -547,10 +624,18 @@ def _suggest_table(llm_client, section, context, vocabularies=None):
         "Antworte ausschliesslich mit einem validen JSON-Array, keine Erklaerungen.\n\n"
         + HERMES_RULES
     )
+    # Vollstaendigkeitskriterien aus der method.yaml an das LLM weitergeben, damit
+    # der Vorschlag sie erfuellt (z.B. Ziele: mind. ein Systemziel UND ein Vorgehensziel).
+    completeness = (section.get("interview") or {}).get("completeness") or []
+    krit = ""
+    if completeness:
+        krit = ("Der Vorschlag MUSS diese Vollstaendigkeitskriterien erfuellen:\n"
+                + "\n".join(f"  - {c}" for c in completeness) + "\n\n")
     user = (
         f"PIA-Abschnitt: \"{section['title']}\"\n\n"
         f"Projektkontext:\n{context}\n\n"
         f"Felder je Eintrag:\n{col_desc}\n\n"
+        f"{krit}"
         f"Erzeuge 3-6 plausible Eintraege fuer diesen Abschnitt, abgestimmt auf den "
         f"Projektkontext. Felder ohne Information mit leerem String befuellen.\n\n"
         f"Rueckgabe als JSON-Array. Leeres Array, wenn kein sinnvoller Vorschlag moeglich ist."

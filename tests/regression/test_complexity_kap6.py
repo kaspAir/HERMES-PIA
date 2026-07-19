@@ -29,7 +29,7 @@ def test_complexity_factor_steigt_mit_stufe():
 
 def test_hoehere_komplexitaet_streckt_termine():
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "termine")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"termine")
     base = svc._catalog_suggestion("fachanwendung_einfuehrung", section)
     from app.domains.interview.service import _assign_termine_dates
 
@@ -80,6 +80,31 @@ def test_widerlegen_ohne_text_ersetzt_widerspruechlichen_volltext():
     # Der widersprechende Detail-Text ist weg, eine kurze Notiz steht da.
     assert "Konfliktpotenzial" not in res["einschaetzung"]
     assert "nicht" in res["einschaetzung"].lower()
+
+
+def test_apply_complexity_reassess_kennt_die_richtung():
+    """Die Neubewertung muss wissen, OB widersprochen oder bestätigt wurde –
+    sonst kann ein starker Widerspruch die Stufe nie senken. Die Formulierungs-
+    Anweisung bleibt neutral (keine dritte Person über den PL)."""
+    class _PromptCapture:
+        def __init__(self):
+            self.prompts = []
+
+        def complete(self, system, messages, max_tokens=1536):
+            self.prompts.append(messages[0]["content"])
+            return '[{"dimension":"Technologie","stufe":"gering","einschaetzung":"Neu."}]'
+
+    for refuted, marker in ((True, "BESTRITTEN"), (False, "bestätigt und ergänzt")):
+        llm = _PromptCapture()
+        svc = _svc(llm)
+        answers = {"ausgangslage": {"extracted": {"text": "Basis"}}}
+        fu = {"type": "complexity", "dimension": "Technologie", "stufe": "hoch",
+              "einschaetzung": "alt"}
+        svc._apply_complexity(answers, fu, raw_text="ist doch simpel", refuted=refuted)
+        assert marker in llm.prompts[0]
+        assert "ohne den Projektleiter" in llm.prompts[0]   # Formulierung bleibt neutral
+        # Die (ggf. gesenkte) Neubewertung wird übernommen
+        assert answers["ausgangslage"]["komplexitaet"]["Technologie"]["stufe"] == "gering"
 
 
 def test_apply_complexity_gesprochenes_wird_nie_woertlich_uebernommen():
@@ -158,7 +183,7 @@ def test_nachweis_ausgangslage_herkunft_kombiniert_bei_komplexitaet():
     svc = _svc()  # ohne LLM -> Fallback-Begründung, Herkunft deterministisch
     sess = type("S", (), {"method_id": "hermes_pia", "project_name": "P",
                           "project_type_id": "x", "auftraggeber": "A"})()
-    title = svc._section_by_id("hermes_pia", "ausgangslage").get("title")
+    title = svc._section_by_id(svc.methods.get("hermes_pia"),"ausgangslage").get("title")
     answers = {"ausgangslage": {"raw_text": "Diktat", "extracted": {"text": "Basis."},
                                 "komplexitaet": {"Technologie": {"stufe": "hoch",
                                                                  "einschaetzung": "X."}}}}
@@ -244,7 +269,7 @@ def test_pruefmethode_meilenstein_vs_inhalt():
 
 def test_postprocess_risiken_setzt_verantwortung_und_termin():
     svc = _svc()
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sa = {"extracted": [{"beschreibung": "Risiko", "ew": "Mittel", "ag": "Hoch"}]}
     svc._postprocess_section(section, sa, {})
     r = sa["extracted"][0]
@@ -259,7 +284,7 @@ class _RiskLLM:
 
 def test_postprocess_risiken_schaetzt_fehlende_ew_ag():
     svc = _svc(_RiskLLM())
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sa = {"extracted": [{"beschreibung": "Stakeholder nicht verfügbar"}]}
     svc._postprocess_section(section, sa, {})
     r = sa["extracted"][0]
@@ -269,7 +294,7 @@ def test_postprocess_risiken_schaetzt_fehlende_ew_ag():
 
 def test_risiken_gapcheck_nur_bei_eingegebenen_risiken():
     svc = _svc()  # ohne LLM -> Gap-Check isoliert (keine AI-/Komplexitäts-Followups)
-    section = svc._section_by_id("hermes_pia", "risiken")
+    section = svc._section_by_id(svc.methods.get("hermes_pia"),"risiken")
     sess = type("S", (), {"project_type_id": "betriebsabloesung",
                           "start_datum": None, "method_id": "hermes_pia"})()
     # Leere Risiken -> KEIN Gap-Check, damit das normale Vorschlags-Angebot greift
@@ -277,6 +302,198 @@ def test_risiken_gapcheck_nur_bei_eingegebenen_risiken():
     # Eingegebene Risiken -> Gap-Check ergänzt typische fehlende Risiken
     fus = svc._build_followups(section, [{"beschreibung": "Spezielles Einzelrisiko"}], "x", sess, {})
     assert any(f.get("type") == "catalog" for f in fus)
+
+
+# --- Garantie: Komplexitäts-Abfrage wird nachgeholt (Selbstheilung) -------- #
+
+import pytest
+
+
+@pytest.fixture
+def app(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    db_path = str(tmp_path / "cx.db").replace("\\", "/")
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + db_path
+        SECRET_KEY = "x"
+
+    SessionLocal.remove()
+    application = create_app(_Cfg)
+    SessionLocal.remove()
+    yield application
+    SessionLocal.remove()
+
+
+class _CountingAssessLLM:
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, system, messages, max_tokens=1536):
+        self.calls += 1
+        return '[{"dimension":"Technologie","stufe":"hoch","einschaetzung":"T."}]'
+
+
+def _session_mit_ausgangslage_ohne_followups(app, followups=None, komplexitaet=None):
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    # Projekttyp setzen, damit die (separate) Typ-Selbstheilung hier nicht feuert.
+    svc._set_project_type(session, "fachanwendung_einfuehrung")
+    entry = {"raw_text": "diktat", "extracted": {"text": "Die Ausgangslage."},
+             "complete": True, "followups": followups or []}
+    if komplexitaet:
+        entry["komplexitaet"] = komplexitaet
+    svc._persist_answers(session, {"ausgangslage": entry})
+    return svc, svc.get_session(session.id)
+
+
+def test_current_state_holt_fehlende_komplexitaet_nach(app):
+    """Ausgangslage beantwortet, aber keine Komplexitäts-Followups (LLM-Fehler beim
+    Submit oder Bearbeiten-Pfad): current_state MUSS sie nacherzeugen."""
+    svc, session = _session_mit_ausgangslage_ohne_followups(app)
+    llm = _CountingAssessLLM()
+    svc.llm = llm
+
+    state = svc.current_state(session)
+    assert state["phase"] == "followup"
+    assert state["followup"]["type"] == "complexity"
+    # Alle 5 Dimensionen garantiert und persistiert
+    fus = svc._answers(session)["ausgangslage"]["followups"]
+    assert sum(1 for f in fus if f.get("type") == "complexity") == 5
+
+    # Zweiter Aufruf: nichts Neues, kein weiterer LLM-Call
+    svc.current_state(session)
+    assert llm.calls == 1
+    assert sum(1 for f in svc._answers(session)["ausgangslage"]["followups"]
+               if f.get("type") == "complexity") == 5
+
+
+def test_keine_nachholung_wenn_komplexitaet_vorhanden(app):
+    svc, session = _session_mit_ausgangslage_ohne_followups(
+        app, komplexitaet={"Technologie": {"stufe": "hoch", "einschaetzung": "X."}})
+    llm = _CountingAssessLLM()
+    svc.llm = llm
+    state = svc.current_state(session)
+    assert llm.calls == 0                      # bereits verarbeitet -> kein Re-Ask
+    assert state["phase"] == "question"        # weiter zum nächsten Abschnitt
+
+
+def test_keine_nachholung_wenn_followups_schon_gestellt(app):
+    """Auch dismissed/accepted Complexity-Followups verhindern eine erneute Abfrage."""
+    svc, session = _session_mit_ausgangslage_ohne_followups(
+        app, followups=[{"risk_id": "complexity_0", "type": "complexity",
+                         "status": "dismissed", "frage": "?"}])
+    llm = _CountingAssessLLM()
+    svc.llm = llm
+    svc.current_state(session)
+    assert llm.calls == 0
+
+
+def test_update_free_text_fuehrt_zu_nachgeholter_komplexitaet(app):
+    """Der Bearbeiten-Pfad (Ausgangslage nachbesprechen) muss in die
+    Komplexitäts-Abfrage münden, nicht direkt zum nächsten Abschnitt."""
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    sid = session.id
+    svc._persist_answers(session, {"ausgangslage": {
+        "raw_text": "alt", "extracted": {"text": "Alt."}, "complete": True,
+        "followups": []}})
+    svc.llm = None                             # Bearbeiten ohne LLM-Reformulierung
+    svc.update_free_text(sid, "ausgangslage", "Neuer nachgesprochener Text.")
+    svc.llm = _CountingAssessLLM()             # beim nächsten Seitenaufbau verfügbar
+    state = svc.current_state(svc.get_session(sid))
+    assert state["phase"] == "followup"
+    assert state["followup"]["type"] == "complexity"
+
+
+def test_answer_followup_ergaenzung_wird_uebernommen_oder_abgelehnt(app):
+    """'Haben Sie auch an ... gedacht?': Ja ergänzt die Zeilen, Nein lässt alles unverändert."""
+    svc = app.interview_service
+    svc.llm = None
+    for accepted, erwartet in ((True, 2), (False, 1)):
+        session = svc.start_session(method_id="hermes_pia",
+                                    project_name=f"P{accepted}", org_id=1)
+        sid = session.id
+        svc._persist_answers(session, {"sachmittel": {
+            "raw_text": "diktat",
+            "extracted": [{"bezeichnung": "Cloud-Testumgebung", "quantitaet": "1"}],
+            "complete": True,
+            "followups": [{"risk_id": "ergaenzung_sachmittel", "type": "ergaenzung",
+                           "status": "pending", "frage": "Haben Sie auch an ... gedacht?",
+                           "rows": [{"bezeichnung": "Projektmanagement-Werkzeug",
+                                     "quantitaet": "pauschal"}]}],
+        }})
+        svc.answer_followup(sid, "ergaenzung_sachmittel", accepted)
+        entry = svc._answers(svc.get_session(sid))["sachmittel"]
+        assert len(entry["extracted"]) == erwartet
+        assert entry["followups"][0]["status"] == ("accepted" if accepted else "dismissed")
+
+
+def test_pia_version_startet_bei_0_0(app):
+    """Neue PIAs starten bei 0.0 – der erste generierte PIA ist damit 0.1."""
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    assert session.doc_version == "0.0"
+    assert svc.version_info(session)["current_version"] == "0.0"
+    neue, _ = svc.record_version_bump(session.id, "minor", "PL", "")
+    assert neue == "0.1"
+
+
+# --- Projekttyp: kein stilles Raten + Selbstheilung + Korrektur ------------ #
+
+class _TypeLLM:
+    """Beantwortet Klassifizierung mit 'betriebsabloesung', alles andere neutral."""
+    def complete(self, system, messages, max_tokens=None):
+        if "Klassifiziere" in messages[0]["content"]:
+            return '{"project_type_id": "betriebsabloesung", "confidence": 0.9}'
+        return '{"text": "Neu formuliert."}'
+
+
+class _BrokenLLM:
+    def complete(self, system, messages, max_tokens=None):
+        raise RuntimeError("kaputt")
+
+
+def test_detect_project_type_raet_nie_stillschweigend():
+    from app.domains.interview.extraction import detect_project_type
+    types = [{"id": "a", "description": "x"}, {"id": "b", "description": "y"}]
+
+    class _Unknown:
+        def complete(self, system, messages, max_tokens=None):
+            return '{"project_type_id": "gibtsnicht"}'
+
+    assert detect_project_type(_Unknown(), types, "Text") is None   # unbekannt -> None
+    assert detect_project_type(_BrokenLLM(), types, "Text") is None  # Fehler -> None
+
+
+def test_current_state_holt_projekttyp_nach(app):
+    """Scheiterte die Typ-Erkennung beim Submit, wird sie beim nächsten
+    Seitenaufbau nachgeholt (statt für immer falsch/leer zu bleiben)."""
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    svc._persist_answers(session, {"ausgangslage": {
+        "raw_text": "x", "extracted": {"text": "Wir migrieren alle Server in die Cloud."},
+        "complete": True, "followups": [],
+        "komplexitaet": {"Technologie": {"stufe": "hoch", "einschaetzung": "T."}}}})
+    assert session.project_type_id is None
+    svc.llm = _TypeLLM()
+    svc.current_state(svc.get_session(session.id))
+    assert svc.get_session(session.id).project_type_id == "betriebsabloesung"
+
+
+def test_update_free_text_korrigiert_falschen_projekttyp(app):
+    """Nachbesprechen der Ausgangslage erkennt den Typ NEU und korrigiert eine
+    frühere (z.B. auf halbem Text beruhende) Fehleinstufung."""
+    svc = app.interview_service
+    session = svc.start_session(method_id="hermes_pia", project_name="P", org_id=1)
+    sid = session.id
+    svc._set_project_type(session, "fachanwendung_einfuehrung")   # falsch eingestuft
+    svc.llm = _TypeLLM()
+    svc.update_free_text(sid, "ausgangslage", "Wir migrieren alle Server in die Cloud.")
+    assert svc.get_session(sid).project_type_id == "betriebsabloesung"
 
 
 # --- assess_complexity Parsing -------------------------------------------- #
@@ -301,3 +518,104 @@ def test_assess_complexity_garantiert_alle_dimensionen():
     assert "Politik & Stakeholder" in namen          # fehlte im LLM-Output -> ergänzt
     assert next(o for o in out if o["dimension"] == "Technologie")["stufe"] == "hoch"
     assert all(o.get("einschaetzung") for o in out)  # keine leere Einschätzung
+
+
+# --- Aktive Nachfrage: externe Fachexpertise (beratender Anspruch) --------- #
+
+def _pa_section(svc):
+    return svc._section_by_id(svc.methods.get("hermes_pia"), "personalaufwand")
+
+
+def _stub_session():
+    return type("S", (), {"project_type_id": None, "start_datum": None,
+                          "method_id": "hermes_pia"})()
+
+
+def test_externe_fachexpertise_wird_aktiv_erfragt():
+    # Signalisiert der PL externen Bedarf beim Personalschritt, fragt HERMES PIA
+    # aktiv nach dem Thema (statt es 'offen' zu lassen).
+    svc = _svc()  # ohne LLM -> nur die deterministische Nachfrage
+    raw = "Möglichst viel intern, aber wir brauchen externe Fachexpertise."
+    fus = svc._build_followups(_pa_section(svc), [{"rolle": "Projektleiter"}],
+                               raw, _stub_session(), {})
+    assert any(f.get("type") == "expertise" for f in fus)
+
+
+def test_keine_expertise_nachfrage_ohne_signal():
+    svc = _svc()
+    fus = svc._build_followups(_pa_section(svc), [{"rolle": "Projektleiter"}],
+                               "Wir machen alles intern.", _stub_session(), {})
+    assert not any(f.get("type") == "expertise" for f in fus)
+
+
+def test_expertise_thema_wird_in_rolle_geschrieben():
+    svc = _svc()
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "name": "", "aufwand": "12"},
+        {"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}]}}
+    svc._apply_expertise_thema(answers, "Sicherheitsarchitektur.")
+    rollen = [r["rolle"] for r in answers["personalaufwand"]["extracted"]]
+    assert "Externe Fachexpertise (Sicherheitsarchitektur)" in rollen
+
+
+def test_expertise_ohne_thema_laesst_rolle_bestehen():
+    # Abgelehnt / kein Thema -> die Rolle wird NIE stillschweigend entfernt.
+    svc = _svc()
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}]}}
+    svc._apply_expertise_thema(answers, None)
+    rollen = [r["rolle"] for r in answers["personalaufwand"]["extracted"]]
+    assert "Externe Fachexpertise" in rollen
+
+
+def test_expertise_signal_auch_beim_personalschritt():
+    # Das Signal greift auch, wenn es NICHT in der Ausgangslage, sondern erst
+    # beim Personalschritt fällt.
+    svc = _svc()
+    assert svc._externe_expertise_signal({}, "wir brauchen externe Beratung")
+    assert not svc._externe_expertise_signal({}, "alles wird intern erledigt")
+
+
+# --- Personalaufwand: Basisrollen (PL/AG) immer vorhanden (Fund #2) -------- #
+
+def test_personalaufwand_hat_immer_pl_und_ag():
+    rows = []  # LLM lieferte keine Rollen
+    InterviewService._ensure_base_roles(rows)
+    txt = " ".join(r["rolle"].lower() for r in rows)
+    assert "projektleiter" in txt and "auftraggeber" in txt
+
+
+def test_base_roles_keine_dubletten_und_pl_zuerst():
+    rows = [{"rolle": "Externe Fachexpertise", "name": "", "aufwand": ""}]
+    InterviewService._ensure_base_roles(rows)
+    rollen = [r["rolle"].lower() for r in rows]
+    assert sum("projektleiter" in r for r in rollen) == 1
+    assert sum("auftraggeber" in r for r in rollen) == 1
+    assert "projektleiter" in rollen[0]  # Basisrollen fuehren die Tabelle an
+
+
+def test_base_roles_respektiert_vorhandene():
+    rows = [{"rolle": "Projektleitung", "name": "", "aufwand": "12"}]
+    InterviewService._ensure_base_roles(rows)
+    assert sum("projektlei" in r["rolle"].lower() for r in rows) == 1  # keine Dublette
+    assert any("auftraggeber" in r["rolle"].lower() for r in rows)
+
+
+# --- Ziele-Vorschlag verlangt mind. ein Systemziel (Fund #1) --------------- #
+
+def test_ziele_vorschlag_prompt_verlangt_systemziel():
+    from app.domains.interview.extraction import generate_suggestion
+    captured = {}
+
+    class _LLM:
+        def complete(self, system, messages, max_tokens=2048):
+            captured["user"] = messages[0]["content"]
+            return '[{"kategorie":"Systemziel","beschreibung":"X","messgroesse":"y","prioritaet":"Hoch"}]'
+
+    svc = _svc()
+    method = svc.methods.get("hermes_pia")
+    section = svc._section_by_id(method, "ziele")
+    generate_suggestion(_LLM(), section, "Projektkontext", svc._vocabularies(method))
+    # Die Vollstaendigkeitskriterien (inkl. Systemziel) stehen im Prompt.
+    assert "Vollstaendigkeitskriterien" in captured["user"]
+    assert "Systemziel" in captured["user"]

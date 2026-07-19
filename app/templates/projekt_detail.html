@@ -55,6 +55,43 @@
                  class="btn-link">{{ 'Bearbeiten' if current_user.can_write else 'Ansehen' }}</a>
             </div>
             {% endif %}
+            {% set dok = freigabe_docs.get(erg.id) %}
+            <div class="ergebnis-freigabe">
+              {% if dok %}
+              <div class="freigabe-info">
+                <span class="badge badge-freigabe">zur Freigabe</span>
+                <a href="{{ url_for('ui.ergebnis_dokument_download', projekt_id=projekt.id, dokument_id=dok.id, filename=dok.filename) }}"
+                   class="btn-link" title="Hochgeladene Freigabeversion herunterladen">{{ dok.filename }}</a>
+                <span class="muted">({{ dok.created_at.strftime('%d.%m.%Y %H:%M') if dok.created_at }})</span>
+              </div>
+              <a class="btn-link"
+                 href="{{ url_for('ui.ergebnis_praesentation', projekt_id=projekt.id, ergebnis_id=erg.id, filename=downloads.praesentation) }}">
+                &#9654; Präsentation für Auftraggeber/Projektausschuss (.pptx)</a>
+              <a class="btn-link"
+                 href="{{ url_for('ui.ergebnis_projektplan', projekt_id=projekt.id, ergebnis_id=erg.id, fmt='msproject', filename=downloads.plan_msproject) }}">
+                &#9654; Projektplan für Microsoft Project (.xml)</a>
+              <form class="inline-form plan-excel-form" method="get"
+                    action="{{ url_for('ui.ergebnis_projektplan', projekt_id=projekt.id, ergebnis_id=erg.id, fmt='excel', filename=downloads.plan_excel) }}">
+                <button type="submit" class="btn-link">&#9654; Projektplan als Excel (.xlsx)</button>
+                <select name="einheit" class="mic-select" title="Zeiteinheit des Gantt-Rasters">
+                  <option value="">Zeiteinheit: Vorschlag</option>
+                  <option value="tag">Tage</option>
+                  <option value="woche">Wochen</option>
+                  <option value="monat">Monate</option>
+                  <option value="quartal">Quartale</option>
+                  <option value="semester">Semester</option>
+                  <option value="jahr">Jahre</option>
+                </select>
+              </form>
+              {% endif %}
+              {% if current_user.can_write %}
+              <label class="btn-link upload-label">
+                {{ 'Neue Freigabeversion hochladen (.docx)' if dok else 'Freigabeversion hochladen (.docx)' }}
+                <input type="file" accept=".docx" class="upload-input"
+                       data-url="{{ url_for('ui.ergebnis_dokument_upload', projekt_id=projekt.id, ergebnis_id=erg.id) }}">
+              </label>
+              {% endif %}
+            </div>
           </li>
           {% endfor %}
         </ul>
@@ -69,5 +106,145 @@
   <p class="admin-empty">Für dieses Projekt ist noch keine Phase angelegt.</p>
   {% endif %}
 
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Präsentationsvorlage</h3>
+    <p class="muted vorlage-status">
+      {% if vorlage and vorlage.projekt_id %}
+        Aktiv: Projekt-Vorlage «{{ vorlage.filename }}» – sie übersteuert die
+        <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO-Vorlage</a>.
+      {% elif vorlage %}
+        Aktiv: PMO-Vorlage «{{ vorlage.filename }}» (organisationsweit, siehe
+        <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO</a>).
+      {% else %}
+        Keine Vorlage vorhanden – Präsentationen verwenden ein neutrales Standardlayout.
+        Die organisationsweite Vorlage wird im <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO-Bereich</a> gepflegt.
+      {% endif %}
+      Auch eine leere Präsentation kann als Vorlage dienen (Folienmaster/Design werden übernommen).
+    </p>
+    {% if current_user.can_write %}
+    <div class="vorlage-actions">
+      <label class="btn-link upload-label">Eigene Vorlage für dieses Projekt hochladen (.pptx)
+        <input type="file" accept=".pptx" class="upload-input"
+               data-url="{{ url_for('ui.praesentations_vorlage_upload', projekt_id=projekt.id) }}">
+      </label>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Word-Vorlage (Interviewstruktur)</h3>
+    <p class="muted vorlage-status">
+      {% if methoden_vorlage %}
+        Aktiv: Projekt-Vorlage «{{ methoden_vorlage.filename }}» – sie übersteuert die
+        <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO-Wortvorlage</a> für dieses Projekt.
+      {% elif org_methoden_vorlage %}
+        Aktiv: PMO-Wortvorlage «{{ org_methoden_vorlage.filename }}» (organisationsweit, siehe
+        <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO</a>).
+      {% else %}
+        Keine Wortvorlage – das Interview folgt der HERMES-Standardstruktur.
+        Organisationsweite Vorlagen pflegt der <a href="{{ url_for('ui.pmo') }}" class="btn-link">PMO-Bereich</a>.
+      {% endif %}
+      HERMES PIA liest die Kapitel aus der Vorlage und strukturiert das Interview danach.
+    </p>
+    {% if methoden_report %}
+    <p class="muted vorlage-status vorlage-erkennung">
+      <strong>{{ methoden_report.erkannt }}</strong> von {{ methoden_report.gesamt }}
+      Kapiteln als HERMES-Kapitel erkannt.
+      {% if methoden_report.generic %}
+        Als Freitext erfragt: {{ methoden_report.generic | map(attribute='heading') | join(', ') }}.
+      {% endif %}
+      {% if methoden_report.missing_titles %}
+        Nicht in der Vorlage enthalten: {{ methoden_report.missing_titles | join(', ') }}.
+      {% endif %}
+    </p>
+    {% endif %}
+    {% if current_user.can_write %}
+    <label class="dropzone" data-scope="projekt">
+      <input type="file" accept=".docx,.dotx" class="upload-input" hidden
+             data-url="{{ url_for('ui.methoden_vorlage_upload', projekt_id=projekt.id) }}">
+      <span class="dropzone-text">Word-Vorlage hierher ziehen oder klicken (.docx/.dotx)</span>
+    </label>
+    {% endif %}
+    {% if methoden_vorlage %}
+      {% with editor=methoden_editor, save_url=methoden_mapping_url %}
+        {% include "partials/methoden_zuordnung.html" %}
+      {% endwith %}
+    {% endif %}
+  </section>
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Kostensätze (projektspezifisch)</h3>
+    <p class="muted vorlage-status">Übersteuert die PMO-Vorgabe für dieses Projekt.
+      Leer lassen = PMO-Standard gilt.</p>
+    {% set kostensatz_action = url_for('ui.projekt_kostensatz', projekt_id=projekt.id) %}
+    {% include "_kostensatz_form.html" with context %}
+  </section>
+
+  <div id="upload-status" class="muted upload-status"></div>
+
 </div>
+
+<script>
+// Datei-Uploads als Base64-in-JSON (Text-Body): derselbe proxy-erprobte
+// Transportweg wie beim Diktat – binaere POST-Bodies scheiterten am Hosting-Proxy.
+(function () {
+  var statusEl = document.getElementById('upload-status');
+  function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+
+  function upload(url, file, scope) {
+    if (!file) return;
+    setStatus('Lade «' + file.name + '» hoch …');
+    var fr = new FileReader();
+    fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
+    fr.onload = function () {
+      var b64 = String(fr.result).split(',')[1] || '';
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data: b64, scope: scope || 'projekt' })
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; })
+                .then(function (d) { return { ok: r.ok, d: d }; });
+      })
+      .then(function (res) {
+        if (res.ok) { location.reload(); }
+        else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); }
+      })
+      .catch(function () { setStatus('Netzwerkfehler beim Upload.'); });
+    };
+    fr.readAsDataURL(file);
+  }
+
+  // Klick-/Auswahl-Upload (Dateidialog)
+  document.querySelectorAll('.upload-input').forEach(function (input) {
+    input.addEventListener('change', function () {
+      upload(input.dataset.url, input.files && input.files[0], input.dataset.scope);
+      input.value = '';
+    });
+  });
+
+  // Drag-&-Drop-Upload
+  document.querySelectorAll('.dropzone').forEach(function (zone) {
+    var input = zone.querySelector('.upload-input');
+    var url = input ? input.dataset.url : zone.dataset.url;
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.add('dropzone--over');
+      });
+    });
+    ['dragleave', 'dragend', 'drop'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.remove('dropzone--over');
+      });
+    });
+    zone.addEventListener('drop', function (e) {
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      upload(url, file, zone.dataset.scope);
+    });
+  });
+}());
+</script>
 {% endblock %}

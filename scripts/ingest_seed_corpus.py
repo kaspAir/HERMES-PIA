@@ -46,7 +46,12 @@ def main(directory):
                 skipped += 1
                 continue
             projekt = f.stem.replace("_pseudo", "")
-            n = rag.ingest_document(text, projekt=projekt, org_id=None, ergebnistyp="PIA")
+            # Strukturierte Initialisierungs-Dauer (Wochen) je Seed erfassen, damit sie
+            # neuen Projekten als Vergleichswert dient (beratender Dauer-Vorschlag).
+            from app.domains.interview.service import _parse_dauer_wochen
+            dauer = _parse_dauer_wochen(text)
+            n = rag.ingest_document(text, projekt=projekt, org_id=None, ergebnistyp="PIA",
+                                    init_dauer_wochen=round(dauer) if dauer else None)
             if n:
                 docs += 1
                 chunks += n

@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 from datetime import date
 
@@ -8,6 +9,12 @@ from flask import (
 )
 
 from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from app.domains.method.template_structure import (
+    ZIEL_GENERISCH,
+    ZIEL_UNVERAENDERT,
+    build_derived_method,
+    propose_mapping,
+)
 from app.web.auth import (
     current_user, login_required, login_user, logout_user, permission_required,
     roles_required,
@@ -189,27 +196,45 @@ def interview_workspace(session_id):
     )
 
 
+def _tarife_for_session(session):
+    """Massgebliche Kostensätze (CHF/PT) für eine Session: Projekt übersteuert Org."""
+    ps = current_app.projekt_service
+    projekt = ps.projekt_for_ergebnis(session.ergebnis_id) if session.ergebnis_id else None
+    return ps.effective_tarife(org_id=session.org_id,
+                               projekt_id=projekt.id if projekt else None)
+
+
 @bp.post("/interview/<int:session_id>/answer")
 @permission_required("write")
 def interview_answer(session_id):
-    _load_session(session_id)
+    session = _load_session(session_id)
     raw_text = request.form.get("raw_text", "").strip()
     try:
-        current_app.interview_service.submit_answer(session_id, raw_text)
+        current_app.interview_service.submit_answer(
+            session_id, raw_text, tarife=_tarife_for_session(session))
     except ValueError as e:
         return str(e), 400
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
+@bp.post("/interview/<int:session_id>/reprocess")
+@permission_required("write")
+def interview_reprocess(session_id):
+    session = _load_session(session_id)
+    current_app.interview_service.reprocess(session_id, tarife=_tarife_for_session(session))
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
 @bp.post("/interview/<int:session_id>/followup")
 @permission_required("write")
 def interview_followup(session_id):
-    _load_session(session_id)
+    session = _load_session(session_id)
     risk_id = request.form.get("risk_id", "")
     accepted = request.form.get("accepted", "0") == "1"
     raw_text = request.form.get("raw_text", "").strip() or None
     try:
-        current_app.interview_service.answer_followup(session_id, risk_id, accepted, raw_text)
+        current_app.interview_service.answer_followup(
+            session_id, risk_id, accepted, raw_text, tarife=_tarife_for_session(session))
     except ValueError as e:
         return str(e), 400
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
@@ -228,6 +253,12 @@ def interview_transcribe(session_id):
     Für Behördendaten einen CH/EU- oder self-hosted-Endpoint (STT_API_URL) verwenden.
     """
     _load_session(session_id)
+    return _transcribe_request()
+
+
+def _transcribe_request():
+    """Gemeinsame Diktat-Logik: Audio (Base64-JSON bevorzugt, Roh-Body als
+    Fallback) an den STT-Dienst geben und den Text zurückgeben."""
     tr = current_app.transcriber
     if not getattr(tr, "available", False):
         return jsonify({"text": "", "error": "Transkription ist nicht konfiguriert."}), 200
@@ -253,6 +284,13 @@ def interview_transcribe(session_id):
     return jsonify({"text": text})
 
 
+@bp.post("/transcribe")
+@permission_required("write")
+def transcribe():
+    """Session-unabhängiges Diktat (z.B. Bemerkungsfelder im Zuordnungs-Editor)."""
+    return _transcribe_request()
+
+
 @bp.post("/interview/<int:session_id>/delete")
 @permission_required("delete")
 def interview_delete(session_id):
@@ -270,15 +308,466 @@ def projekt_detail(projekt_id):
     projekt = _load_projekt(projekt_id)
     svc = current_app.projekt_service
     structure = svc.structure(projekt)
-    # PIA-Ergebnisse mit ihrer Session verknüpfen (für „Weiter"/Download-Links).
-    sessions = {}
+    # PIA-Ergebnisse mit ihrer Session bzw. Freigabe-Dokumenten verknüpfen.
+    sessions, freigabe_docs = {}, {}
     for modul in structure["module"]:
         for erg in modul["ergebnisse"]:
             s = current_app.interview_service.session_for_ergebnis(erg.id)
             if s:
                 sessions[erg.id] = s
+            dok = svc.latest_dokument(erg.id, art="freigabe")
+            if dok:
+                freigabe_docs[erg.id] = dok
+    vorlage = svc.resolve_vorlage(projekt)
+    methoden_vorlage = svc.projekt_methoden_vorlage(projekt.id)
+    org_methoden_vorlage = svc.org_methoden_vorlage(projekt.org_id)
+    aktive_methoden_vorlage = methoden_vorlage or org_methoden_vorlage
+    methoden_report = _methoden_vorlage_report(aktive_methoden_vorlage)
+    # Download-Dateinamen (yyyymmdd_Projektname.*) stehen in der URL, weil der
+    # Hosting-Proxy den Content-Disposition-Header verschluckt.
+    stamp = f"{date.today():%Y%m%d}_{_safe_filename(projekt.name or 'Projekt')}"
+    downloads = {
+        "praesentation": f"{stamp}.pptx",
+        "plan_msproject": f"{stamp}_Projektplan.xml",
+        "plan_excel": f"{stamp}_Projektplan.xlsx",
+    }
     return render_template("projekt_detail.html", projekt=projekt,
-                           structure=structure, sessions=sessions)
+                           structure=structure, sessions=sessions,
+                           freigabe_docs=freigabe_docs, vorlage=vorlage,
+                           methoden_vorlage=methoden_vorlage,
+                           org_methoden_vorlage=org_methoden_vorlage,
+                           aktive_methoden_vorlage=aktive_methoden_vorlage,
+                           methoden_report=methoden_report,
+                           methoden_editor=_methoden_editor(methoden_vorlage),
+                           methoden_mapping_url=url_for(
+                               "ui.methoden_mapping", projekt_id=projekt.id),
+                           kostensatz=svc.projekt_kostensatz(projekt.id),
+                           org_kostensatz=svc.org_kostensatz(projekt.org_id),
+                           downloads=downloads)
+
+
+@bp.post("/projekt/<int:projekt_id>/kostensatz")
+@permission_required("write")
+def projekt_kostensatz(projekt_id):
+    """Speichert den projektspezifischen Kostensatz (übersteuert die PMO-Vorgabe)."""
+    projekt = _load_projekt(projekt_id)
+    current_app.projekt_service.set_kostensatz(
+        satz_intern=request.form.get("satz_intern"),
+        satz_extern=request.form.get("satz_extern"),
+        einheit=request.form.get("einheit", "tag"),
+        stunden_pro_tag=request.form.get("stunden_pro_tag") or 8,
+        org_id=projekt.org_id, projekt_id=projekt.id,
+    )
+    return redirect(url_for("ui.projekt_detail", projekt_id=projekt.id))
+
+
+# ---- Dokumente & Präsentation am Ergebnis ------------------------------ #
+
+_UPLOAD_LIMIT = 15 * 1024 * 1024   # 15 MB (decodiert)
+
+
+def _json_upload(allowed_ext):
+    """Liest einen Base64-JSON-Upload {filename, data} und validiert ihn.
+    Rückgabe: (filename, bytes) oder (None, Fehlermeldung)."""
+    payload = request.get_json(silent=True) or {}
+    filename = (payload.get("filename") or "").strip()
+    exts = (allowed_ext,) if isinstance(allowed_ext, str) else tuple(allowed_ext)
+    if not filename.lower().endswith(exts):
+        return None, f"Nur {'/'.join(exts)}-Dateien sind erlaubt."
+    try:
+        data = base64.b64decode(payload.get("data") or "")
+    except Exception:  # noqa: BLE001 – kaputtes Base64 = keine Daten
+        data = b""
+    if not data:
+        return None, "Keine Dateidaten empfangen."
+    if len(data) > _UPLOAD_LIMIT:
+        return None, "Datei zu gross (max. 15 MB)."
+    if not data.startswith(b"PK"):     # docx/pptx sind ZIP-Container
+        return None, "Die Datei ist keine gültige Office-Datei."
+    return filename, data
+
+
+def _methoden_vorlage_report(vorlage):
+    """Erkennungs-Vorschau einer hochgeladenen Wortvorlage: wie viele Kapitel
+    erkennt HERMES PIA, welche werden generisch erfragt, welche kanonischen
+    Kapitel fehlen. Gibt None zurück, wenn keine Vorlage vorliegt."""
+    if vorlage is None:
+        return None
+    try:
+        method = current_app.method_service.get("hermes_pia")
+        _, report = build_derived_method(vorlage.data, method)
+    except Exception:  # noqa: BLE001 – Vorschau darf nie eine Seite sprengen
+        return None
+    titel = {s["id"]: s.get("title", s["id"]) for s in method.get("sections", [])}
+    report["missing_titles"] = [titel.get(sid, sid)
+                                for sid in report.get("missing_canonical", [])]
+    report["erkannt"] = len(report.get("matched", []))
+    report["gesamt"] = report["erkannt"] + len(report.get("generic", []))
+    return report
+
+
+def _methoden_editor(vorlage):
+    """Baut die Daten für den Kapitel-Zuordnungs-Editor: je Vorlagenkapitel das
+    (bestätigte oder vorgeschlagene) Ziel + Bemerkung, die Dropdown-Optionen und
+    die im Template fehlenden HERMES-Kapitel."""
+    if vorlage is None:
+        return None
+    try:
+        method = current_app.method_service.get("hermes_pia")
+        vorschlag, missing_ids = propose_mapping(vorlage.data, method)
+    except Exception:  # noqa: BLE001 – Editor darf die Seite nie sprengen
+        return None
+    sections = method.get("sections", [])
+    optionen = [{"id": s["id"], "label": f"{s.get('number', '')} {s['title']}".strip()}
+                for s in sections if s.get("type") in ("free_text", "table")]
+    titel = {s["id"]: s.get("title", s["id"]) for s in sections}
+
+    saved = {}
+    if vorlage.mapping_json:
+        try:
+            for e in json.loads(vorlage.mapping_json):
+                saved[e.get("heading")] = e
+        except (ValueError, TypeError):
+            saved = {}
+
+    rows = []
+    for v in vorschlag:
+        s = saved.get(v["heading"], {})
+        rows.append({"heading": v["heading"], "level": v["level"],
+                     "ziel": s.get("ziel", v["ziel"]),
+                     "bemerkung": s.get("bemerkung", "")})
+    return {
+        "vorlage_id": vorlage.id,
+        "rows": rows,
+        "optionen": optionen,
+        "missing": [titel.get(i, i) for i in missing_ids],
+        "bestaetigt": bool(vorlage.mapping_json),
+        "ziel_generisch": ZIEL_GENERISCH,
+        "ziel_unveraendert": ZIEL_UNVERAENDERT,
+    }
+
+
+def _save_mapping_from_form(vorlage_id):
+    headings = request.form.getlist("heading[]")
+    ziele = request.form.getlist("ziel[]")
+    bemerkungen = request.form.getlist("bemerkung[]")
+    mapping = []
+    for i, h in enumerate(headings):
+        mapping.append({
+            "heading": h,
+            "ziel": ziele[i] if i < len(ziele) else ZIEL_UNVERAENDERT,
+            "bemerkung": (bemerkungen[i] if i < len(bemerkungen) else "").strip(),
+        })
+    current_app.projekt_service.set_methoden_mapping(vorlage_id, mapping)
+
+
+def _load_ergebnis(projekt_id, ergebnis_id):
+    """Stellt sicher, dass das Ergebnis zum (zugriffsgeprüften) Projekt gehört."""
+    _load_projekt(projekt_id)
+    projekt = current_app.projekt_service.projekt_for_ergebnis(ergebnis_id)
+    if not projekt or projekt.id != int(projekt_id):
+        abort(404)
+    return projekt
+
+
+@bp.post("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/dokument")
+@permission_required("write")
+def ergebnis_dokument_upload(projekt_id, ergebnis_id):
+    """Lädt den freigabebereiten PIA (.docx) zum Ergebnis hoch (Base64-JSON)."""
+    _load_ergebnis(projekt_id, ergebnis_id)
+    filename, data = _json_upload(".docx")
+    if filename is None:
+        return jsonify({"error": data}), 400
+    user = current_user()
+    dok = current_app.projekt_service.add_dokument(
+        ergebnis_id, filename, data, art="freigabe",
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        uploaded_by=getattr(user, "email", None),
+    )
+    if dok is None:
+        abort(404)
+    return jsonify({"ok": True, "dokument_id": dok.id})
+
+
+@bp.get("/projekt/<int:projekt_id>/dokument/<int:dokument_id>/<path:filename>")
+@permission_required("read")
+def ergebnis_dokument_download(projekt_id, dokument_id, filename):
+    # Der Dateiname steht IN DER URL: der Hosting-Proxy verschluckt den
+    # Content-Disposition-Header, der Browser benennt die Datei sonst nach
+    # dem letzten URL-Segment (gleiches Muster wie beim PIA-Word-Download).
+    _load_projekt(projekt_id)
+    dok = current_app.projekt_service.get_dokument(dokument_id)
+    if not dok:
+        abort(404)
+    projekt = current_app.projekt_service.projekt_for_ergebnis(dok.ergebnis_id)
+    if not projekt or projekt.id != int(projekt_id):
+        abort(404)
+    return send_file(
+        io.BytesIO(dok.data),
+        mimetype=dok.mimetype or "application/octet-stream",
+        as_attachment=True,
+        download_name=dok.filename,
+    )
+
+
+@bp.post("/projekt/<int:projekt_id>/vorlage")
+@permission_required("write")
+def praesentations_vorlage_upload(projekt_id):
+    """Lädt eine projektspezifische .pptx-Vorlage hoch – sie ÜBERSTEUERT die
+    PMO-Vorlage der Organisationseinheit. Die organisationsweite Vorlage wird
+    im PMO-Bereich gepflegt."""
+    projekt = _load_projekt(projekt_id)
+    filename, data = _json_upload(".pptx")
+    if filename is None:
+        return jsonify({"error": data}), 400
+    user = current_user()
+    current_app.projekt_service.add_vorlage(
+        filename, data,
+        org_id=projekt.org_id,
+        projekt_id=projekt.id,
+        uploaded_by=getattr(user, "email", None),
+    )
+    return jsonify({"ok": True})
+
+
+@bp.post("/projekt/<int:projekt_id>/methoden-vorlage")
+@permission_required("write")
+def methoden_vorlage_upload(projekt_id):
+    """Lädt eine projektspezifische Word-Vorlage (.docx/.dotx) hoch – sie
+    ÜBERSTEUERT die PMO-Vorlage der Organisationseinheit für dieses Projekt.
+    Aus ihrer Kapitelstruktur leitet HERMES PIA das Interview ab."""
+    projekt = _load_projekt(projekt_id)
+    filename, data = _json_upload((".docx", ".dotx"))
+    if filename is None:
+        return jsonify({"error": data}), 400
+    user = current_user()
+    current_app.projekt_service.add_methoden_vorlage(
+        filename, data,
+        org_id=projekt.org_id,
+        projekt_id=projekt.id,
+        uploaded_by=getattr(user, "email", None),
+    )
+    return jsonify({"ok": True})
+
+
+@bp.post("/projekt/<int:projekt_id>/methoden-vorlage/zuordnung")
+@permission_required("write")
+def methoden_mapping(projekt_id):
+    """Speichert die bestätigte Kapitel-Zuordnung der Projekt-Wortvorlage."""
+    projekt = _load_projekt(projekt_id)
+    vorlage = current_app.projekt_service.projekt_methoden_vorlage(projekt.id)
+    if vorlage is None:
+        abort(404)
+    _save_mapping_from_form(vorlage.id)
+    return redirect(url_for("ui.projekt_detail", projekt_id=projekt.id))
+
+
+# ---- PMO: organisationsweite Vorgaben ---------------------------------- #
+
+@bp.get("/pmo")
+@permission_required("read")
+def pmo():
+    """PMO-Bereich: organisationsweite Präsentationsvorlage für alle Projekte.
+    Aktuell für alle Benutzer der Organisationseinheit zugänglich; eine eigene
+    PMO-Rolle kann später darauf aufsetzen."""
+    user = current_user()
+    svc = current_app.projekt_service
+    vorlage = svc.org_vorlage(user.org_id)
+    methoden_vorlage = svc.org_methoden_vorlage(user.org_id)
+    methoden_report = _methoden_vorlage_report(methoden_vorlage)
+    return render_template("pmo.html", vorlage=vorlage,
+                           methoden_vorlage=methoden_vorlage,
+                           methoden_report=methoden_report,
+                           methoden_editor=_methoden_editor(methoden_vorlage),
+                           methoden_mapping_url=url_for("ui.pmo_methoden_mapping"),
+                           kostensatz=svc.org_kostensatz(user.org_id))
+
+
+@bp.post("/pmo/kostensatz")
+@permission_required("write")
+def pmo_kostensatz():
+    """Speichert die organisationsweiten Kostensätze (Standard für alle Projekte)."""
+    user = current_user()
+    current_app.projekt_service.set_kostensatz(
+        satz_intern=request.form.get("satz_intern"),
+        satz_extern=request.form.get("satz_extern"),
+        einheit=request.form.get("einheit", "tag"),
+        stunden_pro_tag=request.form.get("stunden_pro_tag") or 8,
+        org_id=user.org_id,
+    )
+    return redirect(url_for("ui.pmo"))
+
+
+@bp.post("/pmo/branding")
+@permission_required("write")
+def pmo_branding_farben():
+    """Speichert die UI-Farben der Organisationseinheit (Hex #RRGGBB)."""
+    user = current_user()
+    try:
+        current_app.auth_service.set_branding_farben(
+            user.org_id,
+            kopfleiste=request.form.get("kopfleiste_farbe"),
+            akzent=request.form.get("akzent_farbe"),
+            primaer=request.form.get("primaer_farbe"),
+        )
+    except ValueError:
+        abort(400)
+    return redirect(url_for("ui.pmo"))
+
+
+@bp.post("/pmo/branding/logo")
+@permission_required("write")
+def pmo_branding_logo():
+    """Lädt das Logo der Organisationseinheit hoch (PNG/JPG, Base64-JSON)."""
+    payload = request.get_json(silent=True) or {}
+    filename = (payload.get("filename") or "").strip()
+    if not filename.lower().endswith((".png", ".jpg", ".jpeg")):
+        return jsonify({"error": "Nur PNG- oder JPG-Dateien sind erlaubt."}), 400
+    try:
+        data = base64.b64decode(payload.get("data") or "")
+    except Exception:  # noqa: BLE001 – kaputtes Base64 wie "keine Daten" behandeln
+        data = b""
+    if not data:
+        return jsonify({"error": "Keine Dateidaten empfangen."}), 400
+    if len(data) > 2 * 1024 * 1024:
+        return jsonify({"error": "Logo zu gross (max. 2 MB)."}), 400
+    if data.startswith(b"\x89PNG"):
+        mimetype = "image/png"
+    elif data.startswith(b"\xff\xd8\xff"):
+        mimetype = "image/jpeg"
+    else:
+        return jsonify({"error": "Die Datei ist kein gültiges PNG-/JPG-Bild."}), 400
+    user = current_user()
+    current_app.auth_service.set_branding_logo(user.org_id, filename, data, mimetype)
+    return jsonify({"ok": True})
+
+
+@bp.post("/pmo/branding/reset")
+@permission_required("write")
+def pmo_branding_reset():
+    """Setzt Logo und Farben auf das Standard-Erscheinungsbild zurück."""
+    current_app.auth_service.reset_branding(current_user().org_id)
+    return redirect(url_for("ui.pmo"))
+
+
+@bp.get("/branding/logo")
+@login_required
+def branding_logo():
+    """Liefert das Logo der eigenen Organisationseinheit (mandantengetrennt)."""
+    user = current_user()
+    branding = (current_app.auth_service.get_branding(user.org_id)
+                if user.org_id else None)
+    if not branding or not branding.logo_filename:
+        abort(404)
+    return send_file(io.BytesIO(branding.logo_data),
+                     mimetype=branding.logo_mimetype or "image/png")
+
+
+@bp.post("/pmo/vorlage")
+@permission_required("write")
+def pmo_vorlage_upload():
+    """Lädt die PMO-Präsentationsvorlage der Organisationseinheit hoch
+    (gilt für alle Projekte ohne eigene Projekt-Vorlage)."""
+    filename, data = _json_upload(".pptx")
+    if filename is None:
+        return jsonify({"error": data}), 400
+    user = current_user()
+    current_app.projekt_service.add_vorlage(
+        filename, data,
+        org_id=user.org_id,
+        projekt_id=None,
+        uploaded_by=getattr(user, "email", None),
+    )
+    return jsonify({"ok": True})
+
+
+@bp.post("/pmo/methoden-vorlage")
+@permission_required("write")
+def pmo_methoden_vorlage_upload():
+    """Lädt die organisationsweite Word-Vorlage (.docx/.dotx) hoch. Aus ihrer
+    Kapitelstruktur leitet HERMES PIA das Interview ab; einzelne Projekte können
+    sie mit einer eigenen Vorlage übersteuern."""
+    filename, data = _json_upload((".docx", ".dotx"))
+    if filename is None:
+        return jsonify({"error": data}), 400
+    user = current_user()
+    current_app.projekt_service.add_methoden_vorlage(
+        filename, data,
+        org_id=user.org_id,
+        projekt_id=None,
+        uploaded_by=getattr(user, "email", None),
+    )
+    return jsonify({"ok": True})
+
+
+@bp.post("/pmo/methoden-vorlage/zuordnung")
+@permission_required("write")
+def pmo_methoden_mapping():
+    """Speichert die bestätigte Kapitel-Zuordnung der organisationsweiten Wortvorlage."""
+    vorlage = current_app.projekt_service.org_methoden_vorlage(current_user().org_id)
+    if vorlage is None:
+        abort(404)
+    _save_mapping_from_form(vorlage.id)
+    return redirect(url_for("ui.pmo"))
+
+
+@bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/praesentation/<path:filename>")
+@permission_required("read")
+def ergebnis_praesentation(projekt_id, ergebnis_id, filename):
+    """Generiert die Präsentation für Auftraggeber/Projektausschuss aus dem
+    zuletzt hochgeladenen freigabebereiten PIA (auf Basis der Vorlage).
+    Dateiname in der URL (Proxy verschluckt Content-Disposition)."""
+    projekt = _load_ergebnis(projekt_id, ergebnis_id)
+    svc = current_app.projekt_service
+    dok = svc.latest_dokument(ergebnis_id, art="freigabe")
+    if not dok:
+        return ("Bitte zuerst den freigabebereiten PIA (.docx) hochladen – "
+                "die Präsentation wird aus dessen Inhalt erstellt."), 400
+    vorlage = svc.resolve_vorlage(projekt)
+    buf = current_app.praesentation_service.generate_from_docx(
+        dok.data,
+        template_bytes=vorlage.data if vorlage else None,
+        fallback_name=projekt.name,
+        datum=date.today().strftime("%d.%m.%Y"),
+    )
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@bp.get("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/projektplan/<fmt>/<path:filename>")
+@permission_required("read")
+def ergebnis_projektplan(projekt_id, ergebnis_id, fmt, filename):
+    """Projektplan aus dem hochgeladenen PIA – als MS-Project-XML oder Excel.
+    Dateiname in der URL (Proxy verschluckt Content-Disposition)."""
+    if fmt not in ("msproject", "excel"):
+        abort(404)
+    projekt = _load_ergebnis(projekt_id, ergebnis_id)
+    dok = current_app.projekt_service.latest_dokument(ergebnis_id, art="freigabe")
+    if not dok:
+        return ("Bitte zuerst den freigabebereiten PIA (.docx) hochladen – "
+                "der Projektplan wird aus dessen Terminen erstellt."), 400
+    from app.domains.praesentation import projektplan
+    from app.domains.praesentation.parser import parse_pia
+    eintraege = projektplan.plan_eintraege(parse_pia(dok.data).get("termine"))
+    if not eintraege:
+        return ("Der hochgeladene PIA enthält keine datierten Termine – "
+                "bitte Kapitel «Ergebnisse und Termine» prüfen."), 400
+    name = projekt.name or "Projekt"
+    if fmt == "excel":
+        # Zeiteinheit wählbar (?einheit=tag|woche|monat|quartal|semester|jahr);
+        # ohne bzw. bei ungültiger Angabe gilt der Vorschlag von HERMES PIA.
+        einheit = request.args.get("einheit") or None
+        data = projektplan.build_excel(eintraege, name, einheit=einheit)
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        data = projektplan.build_msproject_xml(eintraege, name)
+        mimetype = "application/xml"
+    return send_file(io.BytesIO(data), mimetype=mimetype, as_attachment=True,
+                     download_name=filename)
 
 
 @bp.post("/projekt/<int:projekt_id>/delete")
@@ -301,7 +790,7 @@ def interview_edit(session_id, section_id):
     """Bearbeiten: Freitext mit vorgeladenem Inhalt; Tabellen werden zurückgesetzt."""
     svc = current_app.interview_service
     session = _load_session(session_id)
-    section = svc._section_by_id(session.method_id, section_id)
+    section = svc._section_by_id(svc._effective_method(session), section_id)
     if not section:
         return "Abschnitt nicht gefunden", 404
     if section.get("type") == "free_text":
@@ -369,25 +858,30 @@ def interview_download(session_id, filename):
     name_part = session.project_name or "Projekt"
     name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
 
-    pl_weiblich = ag_weiblich = False
+    pl_g = ag_g = "u"
     if getattr(svc, "llm", None):
         from app.domains.interview.extraction import detect_gender
-        pl_weiblich = detect_gender(svc.llm, session.created_by or "") == "w"
-        ag_weiblich = detect_gender(svc.llm, session.auftraggeber or "") == "w"
+        pl_g = detect_gender(svc.llm, session.created_by or "")
+        ag_g = detect_gender(svc.llm, session.auftraggeber or "")
 
     metadata = {
         "projektname":        name_display,
         "projektleiter":      session.created_by or "",
         "auftraggeber":       session.auftraggeber or "",
-        "projektleiter_weiblich": pl_weiblich,
-        "auftraggeber_weiblich":  ag_weiblich,
+        "projektleiter_weiblich": pl_g == "w",
+        "auftraggeber_weiblich":  ag_g == "w",
+        # Volle Geschlechtsangabe (w/m/u) für die geschlechtergerechten Deckblatt-Labels;
+        # Autor = erfassende Person = Projektleiter/in.
+        "projektleiter_geschlecht": pl_g,
+        "auftraggeber_geschlecht":  ag_g,
+        "autor_geschlecht":         pl_g,
         "autor":              session.created_by or "",
         "verwaltungseinheit": session.verwaltungseinheit or "",
         "geschaeftsbereich":  session.geschaeftsbereich or "",
         "innenauftragsnummer": session.innenauftragsnummer or "",
         "projektnummer":      session.projektnummer or "",
         "datum":              date.today().strftime("%d.%m.%Y"),
-        "version":            session.doc_version or "0.1",
+        "version":            session.doc_version or "0.0",
         "status":             "in Arbeit",
         "klassifizierung":    "Nicht klassifiziert",
     }
@@ -401,7 +895,22 @@ def interview_download(session_id, filename):
             extracted["text"] = svc.composed_ausgangslage(answers)
 
     nachweis = svc.build_nachweis(session, answers)
-    buf = gen.generate(session.method_id, answers, metadata, changelog=changelog, nachweis=nachweis)
+
+    # Hat das Projekt eine eigene Word-Vorlage? Dann im Format DIESER Vorlage
+    # erzeugen (gleiche abgeleitete Struktur wie das Interview), sonst kanonisch.
+    methoden_vorlage = None
+    projekt = (current_app.projekt_service.projekt_for_ergebnis(session.ergebnis_id)
+               if session.ergebnis_id else None)
+    if projekt is not None:
+        methoden_vorlage = current_app.projekt_service.resolve_methoden_vorlage(projekt)
+    if methoden_vorlage is not None:
+        method = svc._effective_method(session)
+        buf = gen.generate_into_template(
+            methoden_vorlage.data, method, answers, metadata,
+            changelog=changelog, nachweis=nachweis)
+    else:
+        buf = gen.generate(session.method_id, answers, metadata,
+                           changelog=changelog, nachweis=nachweis)
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

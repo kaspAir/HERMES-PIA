@@ -5,7 +5,10 @@ granular pro Person vergeben (Lesen / Schreiben / Löschen).
 """
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import (
+    Boolean, Column, DateTime, ForeignKey, Integer, LargeBinary, String,
+)
+from sqlalchemy.orm import deferred
 
 from app.shared.database import Base
 
@@ -21,6 +24,25 @@ class Organisation(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(200), nullable=False, unique=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class OrgBranding(Base):
+    """Erscheinungsbild einer Organisationseinheit (CI/CD): eigenes Logo und
+    Farben für die Oberfläche. Gepflegt im PMO-Bereich; ohne Eintrag gilt das
+    Standard-Erscheinungsbild."""
+    __tablename__ = "org_branding"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organisation.id"), nullable=False, unique=True)
+    # Hex-Farben (#RRGGBB) für die zentralen CSS-Variablen der Oberfläche.
+    kopfleiste_farbe = Column(String(9), nullable=True)   # --color-brand
+    akzent_farbe = Column(String(9), nullable=True)       # --color-accent (Titel/Links)
+    primaer_farbe = Column(String(9), nullable=True)      # --color-primary (Buttons)
+    logo_filename = Column(String(255), nullable=True)
+    logo_mimetype = Column(String(60), nullable=True)
+    # deferred: das Logo wird nicht bei jedem Seitenaufbau mitgeladen.
+    logo_data = deferred(Column(LargeBinary, nullable=True))
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class User(Base):

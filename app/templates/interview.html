@@ -119,8 +119,10 @@
         <div class="followup-label">
           {% if state.followup.type == 'catalog' %}Typisches Risiko nicht erwähnt
           {% elif state.followup.type == 'offer' %}HERMES PIA denkt mit
+          {% elif state.followup.type == 'ergaenzung' %}HERMES PIA denkt mit &ndash; Vollständigkeit
           {% elif state.followup.type == 'decision' %}HERMES PIA empfiehlt &ndash; Sie entscheiden
           {% elif state.followup.type == 'complexity' %}Komplexität &ndash; bestätigen, ergänzen oder widerlegen
+          {% elif state.followup.type == 'expertise' %}HERMES PIA fragt nach &ndash; Thema der externen Expertise
           {% else %}HERMES PIA hat eine Rückfrage{% endif %}
         </div>
         <p class="followup-question">{{ state.followup.frage }}</p>
@@ -134,7 +136,7 @@
       <form method="post"
             action="{{ url_for('ui.interview_followup', session_id=session.id) }}">
         <input type="hidden" name="risk_id" value="{{ state.followup.risk_id }}">
-        {% if state.followup.type not in ['offer', 'decision'] %}
+        {% if state.followup.type not in ['offer', 'decision', 'ergaenzung'] %}
         <div class="answer-area">
           <textarea name="raw_text"
                     id="answer-text"
@@ -160,6 +162,13 @@
           </button>
           <button type="submit" name="accepted" value="0" class="btn-secondary">
             Nein danke
+          </button>
+          {% elif state.followup.type == 'ergaenzung' %}
+          <button type="submit" name="accepted" value="1" class="btn-primary">
+            Ja, bitte ergänzen
+          </button>
+          <button type="submit" name="accepted" value="0" class="btn-secondary">
+            Nein, bewusst nicht
           </button>
           {% elif state.followup.type == 'decision' %}
           <button type="submit" name="accepted" value="1" class="btn-primary">
@@ -199,6 +208,13 @@
            class="btn-primary btn-large">
           &#8595; PIA herunterladen (.docx)
         </a>
+        <form method="post"
+              action="{{ url_for('ui.interview_reprocess', session_id=session.id) }}"
+              style="margin-top:16px">
+          <button type="submit" class="btn-secondary" title="Wendet die HERMES-Korrekturen (Rollen, Kosten, Termine/Dauer) erneut auf die bestehenden Antworten an – ohne neues Interview.">
+            &#8635; Neu verarbeiten
+          </button>
+        </form>
         <a href="{{ url_for('ui.index') }}" class="btn-link" style="display:block;margin-top:16px">
           Zur Übersicht
         </a>
@@ -211,7 +227,7 @@
   <aside class="preview-panel">
     <div class="preview-header">
       <span class="preview-title">PIA-Vorschau</span>
-      <span class="preview-version">v{{ session.doc_version or '0.1' }}</span>
+      <span class="preview-version">v{{ session.doc_version or '0.0' }}</span>
     </div>
 
     {% if preview %}
@@ -300,7 +316,7 @@
       }
       micSel.addEventListener('change', function () {
         try { localStorage.setItem('hp-mic-id', micSel.value); } catch (e) {}
-        if (running) { stopAll(); startRecording(); }   // laufend aufs neue Gerät wechseln
+        if (running) { stopRecording(); startRecording(); }   // laufend aufs neue Gerät wechseln
       });
     }
 
@@ -351,7 +367,12 @@
     }
 
     function pump() {
-      if (sending || !sendQueue.length) return;
+      if (sending || !sendQueue.length) {
+        if (!sending && !sendQueue.length && !running) {
+          setStatus('Transkription abgeschlossen – der Text steht im Antwortfeld.');
+        }
+        return;
+      }
       sending = true;
       var blob = sendQueue.shift();
       toB64(blob).then(function (b64) {
@@ -407,20 +428,50 @@
       });
     }
 
-    function stopAll() {
+    function stopRecording() {
+      // Sanft stoppen: das letzte Segment wird noch enqueued und die
+      // Warteschlange fertig transkribiert – kein Textverlust.
       running = false;
-      sendQueue = [];
       if (timer) clearTimeout(timer);
       if (recorder && recorder.state !== 'inactive') recorder.stop();
       if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-      stream = null; recorder = null;
+      stream = null;
       setUiRecording(false);
+      if (sending || sendQueue.length) {
+        setStatus('Aufnahme gestoppt – die Transkription wird abgeschlossen …');
+      } else {
+        setStatus('');
+      }
+    }
+
+    function stopAll() {
+      // Hart stoppen (z.B. Mikrofon weggefallen): Backlog verwerfen.
+      sendQueue = [];
+      stopRecording();
       setStatus('');
     }
 
     btn.addEventListener('click', function () {
-      if (running) { stopAll(); } else { startRecording(); }
+      if (running) { stopRecording(); } else { startRecording(); }
     });
+
+    // „Weiter" während Aufnahme/Transkription: NICHT abschicken, sondern sauber
+    // stoppen bzw. auf die letzten Segmente warten – sonst geht die Antwort mit
+    // halbem Text ab und der Abschnitt gilt als beantwortet.
+    var form = textarea.form;
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        if (running) {
+          e.preventDefault();
+          stopRecording();
+          setStatus('Aufnahme gestoppt – bitte kurz warten, bis der Text im Feld steht, '
+                    + 'und dann erneut auf «Weiter» klicken.');
+        } else if (sending || sendQueue.length) {
+          e.preventDefault();
+          setStatus('Die Transkription läuft noch – bitte gleich erneut auf «Weiter» klicken.');
+        }
+      });
+    }
   }
 
   // ---- Variante B: Browser-Spracherkennung (Fallback) ------------------ //
@@ -484,11 +535,17 @@
 (function () {
   var forms = document.querySelectorAll('main form[method="post"]');
   forms.forEach(function (form) {
-    form.addEventListener('submit', function () {
-      var buttons = form.querySelectorAll('button[type="submit"]');
-      buttons.forEach(function (b) { b.disabled = true; });
-      var first = buttons[0];
-      if (first) { first.dataset.label = first.textContent; first.textContent = 'Wird verarbeitet …'; }
+    form.addEventListener('submit', function (e) {
+      if (e.defaultPrevented) return;   // z.B. Aufnahme-Guard hat den Submit gestoppt
+      // WICHTIG: erst NACH der Konstruktion der Formulardaten sperren (setTimeout).
+      // Ein im submit-Event deaktivierter Submit-Button wird von Chromium NICHT
+      // mitgesendet - dann fehlt z.B. "accepted" und jede Antwort wirkt wie "Nein".
+      setTimeout(function () {
+        var buttons = form.querySelectorAll('button[type="submit"]');
+        buttons.forEach(function (b) { b.disabled = true; });
+        var first = buttons[0];
+        if (first) { first.dataset.label = first.textContent; first.textContent = 'Wird verarbeitet …'; }
+      }, 0);
     });
   });
 }());

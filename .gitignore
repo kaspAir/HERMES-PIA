@@ -22,3 +22,11 @@ pias_original/
 
 # Claude Code lokale Einstellungen
 .claude/
+
+# E2E-Audio-Fixtures NIE ins (oeffentliche!) Repo committen – nur Transkripte/Server
+tests/e2e/fixtures/*.m4a
+tests/e2e/fixtures/*.wav
+tests/e2e/fixtures/*.mp3
+tests/e2e/fixtures/*.webm
+tests/e2e/fixtures/*.ogg
+tests/e2e/fixtures/*.flac

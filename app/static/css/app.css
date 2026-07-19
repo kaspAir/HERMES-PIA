@@ -1,22 +1,28 @@
 /* ===== HERMES PIA UI ===== */
+/* Designsprache lt. UI-Styleguide v1.0: „Navy trägt, Grün handelt“. */
 :root {
-  --color-bg:        #f8f9fb;
-  --color-surface:   #ffffff;
-  --color-brand:     #16213e;
-  --color-accent:    #0f3460;
-  --color-primary:   #e94560;
-  --color-text:      #1a1a2e;
-  --color-muted:     #6b7280;
-  --color-border:    #e5e7eb;
-  --color-done:      #10b981;
+  --color-bg:        #f8f9fb;  /* Grund */
+  --color-surface:   #ffffff;  /* Karte */
+  --color-brand:     #16213e;  /* Navy – Banner, Sidebar, Titel */
+  --color-accent:    #0f3460;  /* Tiefblau – Rollen-Badges, Akzente */
+  --color-primary:   #439458;  /* Aktionsgrün – Buttons, Links, aktiv */
+  --color-text:      #1f2733;  /* Text dunkel */
+  --color-muted:     #6b7684;  /* Text grau */
+  --color-border:    #e5e7eb;  /* Linie */
+  --color-done:      #10b981;  /* Erfolg-Grün – Häkchen, Abschluss */
+  --color-required:  #e0912f;  /* Pflicht-Amber – nur das Sternchen */
   --color-followup:  #f59e0b;
+  --color-focus-ring: rgba(67, 148, 88, .18);  /* weicher Fokusring in Grün */
   --radius:          8px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+               sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
-  font-family: Arial, sans-serif;
+  font-family: var(--font-sans);
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
@@ -30,6 +36,10 @@ body {
   font-size: 13px;
   font-weight: bold;
   letter-spacing: .02em;
+}
+.env-banner--dev {
+  background: #16a34a;
+  color: #ffffff;
 }
 .env-banner--test {
   background: #f59e0b;
@@ -93,8 +103,17 @@ body {
   font-size: 13px;
   cursor: pointer;
 }
-.user-link:hover { text-decoration: underline; }
+.user-link:hover { color: var(--color-primary); text-decoration: none; }
 .user-email { color: var(--color-muted); }
+.user-org {
+  color: var(--color-accent);
+  font-weight: 600;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+}
+.user-org:empty { display: none; }
 .user-logout { color: var(--color-primary); }
 .brand-logo {
   display: block;
@@ -132,8 +151,8 @@ header strong { color: #e2e8f0; }
 .btn-secondary {
   display: inline-block;
   background: var(--color-surface);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
   border-radius: var(--radius);
   padding: 10px 22px;
   font-size: 15px;
@@ -141,7 +160,7 @@ header strong { color: #e2e8f0; }
   text-decoration: none;
   transition: background .15s;
 }
-.btn-secondary:hover { background: var(--color-bg); }
+.btn-secondary:hover { background: color-mix(in srgb, var(--color-primary) 8%, #fff); }
 
 .btn-link {
   color: var(--color-primary);
@@ -205,6 +224,7 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
   outline: none;
   border-color: var(--color-primary);
   background: var(--color-surface);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
 
 .start-form-card input[type="text"]::placeholder {
@@ -212,7 +232,7 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
   font-size: 13px;
 }
 
-.required { color: var(--color-primary); margin-left: 1px; }
+.required { color: var(--color-required); margin-left: 1px; }
 
 .sessions-section h2 { font-size: 17px; margin-bottom: 12px; }
 .sessions-table {
@@ -616,7 +636,7 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
   cursor: pointer;
   transition: border-color .15s, background .15s;
 }
-.vb-bump-option:hover { border-color: var(--color-primary); background: #fff5f5; }
+.vb-bump-option:hover { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 7%, #fff); }
 .vb-bump-option input[type="radio"]:checked + .vb-bump-label { color: var(--color-primary); }
 
 .vb-changed-list {
@@ -795,7 +815,11 @@ input[type="text"], input[type="email"], input[type="password"], input[type="dat
   font-size: 14px;
   font-family: inherit;
 }
-input:focus { outline: none; border-color: var(--color-accent); }
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
 
 .chk {
   display: inline-flex;
@@ -898,3 +922,90 @@ input:focus { outline: none; border-color: var(--color-accent); }
 .ergebnis-aufgabe { font-size: .82rem; margin-top: 2px; }
 .ergebnis-actions { margin-top: 6px; }
 .badge-rolle { background: #0f3460; color: #93c5fd; white-space: nowrap; }
+
+/* ---- Freigabe-Upload + Präsentationsvorlage ------------------------- */
+.ergebnis-freigabe {
+  margin-top: 10px; padding-top: 8px;
+  border-top: 1px dashed var(--color-border);
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.freigabe-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .88rem; }
+.badge-freigabe { background: #f59e0b; color: #1a1a2e; }
+.upload-label { cursor: pointer; }
+.upload-label input[type="file"] { display: none; }
+.vorlage-block {
+  margin-top: 28px; padding: 16px 18px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.vorlage-title { margin: 0 0 8px; font-size: 1rem; color: var(--color-text); }
+.vorlage-status { margin: 0 0 10px; font-size: .88rem; }
+.vorlage-actions { display: flex; flex-wrap: wrap; gap: 18px; }
+.upload-status { margin-top: 10px; min-height: 18px; font-size: .88rem; }
+
+/* Erkennungs-Vorschau der Wortvorlage */
+.vorlage-erkennung {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 12px; margin: 6px 0 12px;
+}
+
+/* Drag-&-Drop-Zone für die Wortvorlage */
+.dropzone {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 70px; padding: 14px 18px; margin-top: 4px;
+  border: 2px dashed var(--color-border); border-radius: var(--radius);
+  color: var(--color-muted); text-align: center; cursor: pointer;
+  transition: border-color .12s, background .12s, color .12s;
+}
+.dropzone:hover { border-color: var(--color-accent); color: var(--color-text); }
+.dropzone--over {
+  border-color: var(--color-accent); border-style: solid;
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: var(--color-text);
+}
+.dropzone-text { pointer-events: none; font-size: .9rem; }
+
+/* Kapitel-Zuordnungs-Editor */
+.zuordnung { margin-top: 14px; }
+.zuordnung-status { margin: 0 0 10px; font-size: .88rem; }
+.zuordnung-scroll { overflow-x: auto; }
+.zuordnung-tabelle { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.zuordnung-tabelle th, .zuordnung-tabelle td {
+  text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.zuordnung-tabelle th { color: var(--color-muted); font-weight: 600; }
+.zt-kapitel { min-width: 220px; }
+.zt-ziel { width: 100%; max-width: 320px; }
+.zt-bemerkung-wrap { display: flex; align-items: center; gap: 6px; }
+.zt-bemerkung { flex: 1; min-width: 120px; }
+.diktat-btn {
+  flex: none; border: 1px solid var(--color-border); background: var(--color-surface);
+  border-radius: 6px; padding: 4px 8px; cursor: pointer; line-height: 1;
+  font-size: 14px; transition: border-color .12s, background .12s;
+}
+.diktat-btn:hover:not(:disabled) { border-color: var(--color-primary); }
+.diktat-btn:disabled { opacity: .4; cursor: not-allowed; }
+.diktat-btn.recording {
+  border-color: var(--color-primary); background: var(--color-primary); color: #fff;
+  animation: pulse 1s infinite;
+}
+.diktat-status { margin-top: 8px; min-height: 16px; font-size: .82rem; }
+.zuordnung form > button { margin-top: 12px; }
+
+/* Erscheinungsbild (Org-Branding) im PMO-Bereich */
+.branding-zeile {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  margin: 0 0 12px;
+}
+.branding-label { font-weight: 600; min-width: 56px; }
+.branding-logo-vorschau {
+  max-height: 32px; width: auto;
+  border: 1px solid var(--color-border); border-radius: 4px;
+  background: #fff; padding: 2px 6px;
+}
+.branding-zeile .chk { display: inline-flex; align-items: center; gap: 6px; }
+.branding-zeile input[type="color"] {
+  width: 44px; height: 26px; padding: 0; border: 1px solid var(--color-border);
+  border-radius: 4px; background: none; cursor: pointer;
+}

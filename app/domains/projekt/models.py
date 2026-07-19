@@ -14,7 +14,9 @@ Das eigentliche PIA-Artefakt bleibt die `InterviewSession`; sie verweist über
 """
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import (
+    Column, DateTime, ForeignKey, Integer, LargeBinary, String, Text,
+)
 
 from app.shared.database import Base
 from app.shared.model_mixins import GovernanceMixin
@@ -82,6 +84,86 @@ class Meilenstein(Base):
     ist_start = Column(Integer, default=0)            # 1 = Phasenstart (= Projektstart)
     reihenfolge = Column(Integer, default=0)
     status = Column(String(40), default="offen")
+
+
+class ErgebnisDokument(Base):
+    """Hochgeladene Datei zu einem Ergebnis (z.B. der freigabebereite PIA als .docx).
+
+    Ablage als BLOB in der Datenbank: deploy-sicher (git reset --hard räumt keine
+    Dateien weg), Backup = DB-Datei, Mandantentrennung über die Projektstruktur.
+    Mehrere Uploads bleiben als Versionen erhalten; der neueste zählt.
+    """
+    __tablename__ = "ergebnis_dokument"
+
+    id = Column(Integer, primary_key=True)
+    ergebnis_id = Column(Integer, ForeignKey("ergebnis.id"), nullable=False, index=True)
+    art = Column(String(30), nullable=False, default="freigabe")  # freigabe | ...
+    filename = Column(String(255), nullable=False)
+    mimetype = Column(String(120), nullable=True)
+    size = Column(Integer, default=0)
+    data = Column(LargeBinary, nullable=False)
+    uploaded_by = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PraesentationsVorlage(Base):
+    """PPTX-Vorlage für generierte Präsentationen.
+
+    Gilt pro Organisationseinheit (projekt_id NULL) oder pro Projekt; die
+    Projekt-Vorlage hat Vorrang. Auch eine leere Präsentation ist eine gültige
+    Vorlage (dann zählen Folienmaster/Theme). Neuester Upload je Geltungsbereich zählt.
+    """
+    __tablename__ = "praesentations_vorlage"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, nullable=True, index=True)
+    projekt_id = Column(Integer, ForeignKey("projekt.id"), nullable=True, index=True)
+    filename = Column(String(255), nullable=False)
+    size = Column(Integer, default=0)
+    data = Column(LargeBinary, nullable=False)
+    uploaded_by = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MethodenVorlage(Base):
+    """Word-Vorlage (.docx/.dotx), aus deren Kapitelstruktur HERMES PIA das
+    Interview ableitet.
+
+    Gilt pro Organisationseinheit (projekt_id NULL) oder pro Projekt; die
+    Projekt-Vorlage hat Vorrang. Neuester Upload je Geltungsbereich zählt –
+    gleiche Mechanik wie die Präsentationsvorlage.
+    """
+    __tablename__ = "methoden_vorlage"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, nullable=True, index=True)
+    projekt_id = Column(Integer, ForeignKey("projekt.id"), nullable=True, index=True)
+    filename = Column(String(255), nullable=False)
+    size = Column(Integer, default=0)
+    data = Column(LargeBinary, nullable=False)
+    uploaded_by = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    # Vom Benutzer bestätigte Kapitel-Zuordnung (JSON-Liste). NULL = noch nicht
+    # bestätigt → es gilt die automatische Erkennung.
+    mapping_json = Column(Text, nullable=True)
+
+
+class Kostensatz(Base):
+    """Kostensätze (intern/extern) für die Personalkosten-Berechnung im PIA.
+
+    Gilt pro Organisationseinheit (projekt_id NULL) oder pro Projekt; das Projekt
+    übersteuert die PMO-Vorgabe – gleiche Mechanik wie die Vorlagen. Die Einheit ist
+    wählbar: Stunden- oder Tagessatz (Stundensatz × stunden_pro_tag = Tagessatz)."""
+    __tablename__ = "kostensatz"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, nullable=True, index=True)
+    projekt_id = Column(Integer, ForeignKey("projekt.id"), nullable=True, index=True)
+    satz_intern = Column(Integer, nullable=True)      # CHF (je Einheit)
+    satz_extern = Column(Integer, nullable=True)      # CHF (je Einheit)
+    einheit = Column(String(10), default="tag")       # 'tag' | 'stunde'
+    stunden_pro_tag = Column(Integer, default=8)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class MigrationFlag(Base):

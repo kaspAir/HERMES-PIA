@@ -5,7 +5,17 @@ den Referenz-Katalog. Bewusst ohne Kenntnis der Interview-/PIA-Domäne – die
 Verknüpfung der `InterviewSession` an ihren Ergebnis-Knoten setzt der Aufrufer
 (über `ergebnis_id`). So bleibt die Container-Domäne von ihren Inhalten entkoppelt.
 """
-from app.domains.projekt.models import Ergebnis, Meilenstein, Modul, Phase, Projekt
+from app.domains.projekt.models import (
+    Ergebnis,
+    ErgebnisDokument,
+    Kostensatz,
+    Meilenstein,
+    MethodenVorlage,
+    Modul,
+    Phase,
+    PraesentationsVorlage,
+    Projekt,
+)
 from app.domains.projekt.reference import (
     ERG_PIA,
     ERGEBNISTYPEN,
@@ -50,6 +60,12 @@ class ProjektService:
             modul_ids = [m.id for m in db.query(Modul).filter(
                 Modul.phase_id.in_(phase_ids)).all()]
             if modul_ids:
+                ergebnis_ids = [e.id for e in db.query(Ergebnis).filter(
+                    Ergebnis.modul_id.in_(modul_ids)).all()]
+                if ergebnis_ids:
+                    db.query(ErgebnisDokument).filter(
+                        ErgebnisDokument.ergebnis_id.in_(ergebnis_ids)).delete(
+                        synchronize_session=False)
                 db.query(Ergebnis).filter(Ergebnis.modul_id.in_(modul_ids)).delete(
                     synchronize_session=False)
                 db.query(Modul).filter(Modul.id.in_(modul_ids)).delete(
@@ -58,6 +74,12 @@ class ProjektService:
                 synchronize_session=False)
             db.query(Phase).filter(Phase.id.in_(phase_ids)).delete(
                 synchronize_session=False)
+        db.query(PraesentationsVorlage).filter(
+            PraesentationsVorlage.projekt_id == projekt.id).delete(
+            synchronize_session=False)
+        db.query(MethodenVorlage).filter(
+            MethodenVorlage.projekt_id == projekt.id).delete(
+            synchronize_session=False)
         db.delete(projekt)
         db.commit()
         return True
@@ -158,6 +180,185 @@ class ProjektService:
         ).join(Modul, Modul.phase_id == Phase.id).join(
             Ergebnis, Ergebnis.modul_id == Modul.id
         ).filter(Ergebnis.id == int(ergebnis_id)).first()
+
+    # ------------------------------------------------------------------ #
+    # Dokumente am Ergebnis (z.B. freigabebereiter PIA)                    #
+    # ------------------------------------------------------------------ #
+
+    def add_dokument(self, ergebnis_id, filename, data, mimetype=None,
+                     art="freigabe", uploaded_by=None):
+        """Hängt eine hochgeladene Datei an ein Ergebnis. Bei art='freigabe'
+        wechselt der Ergebnis-Status auf 'zur Freigabe'."""
+        db = SessionLocal()
+        ergebnis = db.get(Ergebnis, int(ergebnis_id))
+        if ergebnis is None:
+            return None
+        dok = ErgebnisDokument(
+            ergebnis_id=ergebnis.id, art=art, filename=filename,
+            mimetype=mimetype, size=len(data or b""), data=data,
+            uploaded_by=uploaded_by,
+        )
+        db.add(dok)
+        if art == "freigabe":
+            ergebnis.status = "zur Freigabe"
+        db.commit()
+        db.refresh(dok)
+        return dok
+
+    def get_dokument(self, dokument_id):
+        return SessionLocal().get(ErgebnisDokument, int(dokument_id))
+
+    def dokumente_for_ergebnis(self, ergebnis_id, art=None):
+        q = SessionLocal().query(ErgebnisDokument).filter(
+            ErgebnisDokument.ergebnis_id == int(ergebnis_id))
+        if art:
+            q = q.filter(ErgebnisDokument.art == art)
+        return q.order_by(ErgebnisDokument.created_at.desc()).all()
+
+    def latest_dokument(self, ergebnis_id, art="freigabe"):
+        docs = self.dokumente_for_ergebnis(ergebnis_id, art=art)
+        return docs[0] if docs else None
+
+    # ------------------------------------------------------------------ #
+    # Präsentationsvorlagen (Projekt-Vorlage schlägt Org-Vorlage)          #
+    # ------------------------------------------------------------------ #
+
+    def add_vorlage(self, filename, data, org_id=None, projekt_id=None, uploaded_by=None):
+        db = SessionLocal()
+        v = PraesentationsVorlage(
+            org_id=org_id, projekt_id=projekt_id, filename=filename,
+            size=len(data or b""), data=data, uploaded_by=uploaded_by,
+        )
+        db.add(v)
+        db.commit()
+        db.refresh(v)
+        return v
+
+    def org_vorlage(self, org_id):
+        """Neueste PMO-Vorlage der Organisationseinheit (projektunabhängig)."""
+        return SessionLocal().query(PraesentationsVorlage).filter(
+            PraesentationsVorlage.org_id == org_id,
+            PraesentationsVorlage.projekt_id.is_(None),
+        ).order_by(PraesentationsVorlage.created_at.desc()).first()
+
+    def projekt_vorlage(self, projekt_id):
+        """Neueste projektspezifische Vorlage (übersteuert die PMO-Vorlage)."""
+        return SessionLocal().query(PraesentationsVorlage).filter(
+            PraesentationsVorlage.projekt_id == int(projekt_id)
+        ).order_by(PraesentationsVorlage.created_at.desc()).first()
+
+    def resolve_vorlage(self, projekt):
+        """Massgebliche Vorlage: Projekt-Vorlage übersteuert die PMO-Vorlage der
+        Organisationseinheit; sonst None (dann leere Standard-Präsentation)."""
+        return self.projekt_vorlage(projekt.id) or self.org_vorlage(projekt.org_id)
+
+    # ------------------------------------------------------------------ #
+    # Methoden-/Word-Vorlagen (Projekt-Vorlage schlägt Org-Vorlage)        #
+    # ------------------------------------------------------------------ #
+
+    def add_methoden_vorlage(self, filename, data, org_id=None, projekt_id=None,
+                             uploaded_by=None):
+        db = SessionLocal()
+        v = MethodenVorlage(
+            org_id=org_id, projekt_id=projekt_id, filename=filename,
+            size=len(data or b""), data=data, uploaded_by=uploaded_by,
+        )
+        db.add(v)
+        db.commit()
+        db.refresh(v)
+        return v
+
+    def org_methoden_vorlage(self, org_id):
+        """Neueste PMO-Wortvorlage der Organisationseinheit (projektunabhängig)."""
+        if not org_id:
+            return None
+        return SessionLocal().query(MethodenVorlage).filter(
+            MethodenVorlage.org_id == org_id,
+            MethodenVorlage.projekt_id.is_(None),
+        ).order_by(MethodenVorlage.created_at.desc()).first()
+
+    def projekt_methoden_vorlage(self, projekt_id):
+        """Neueste projektspezifische Wortvorlage (übersteuert die PMO-Vorlage)."""
+        return SessionLocal().query(MethodenVorlage).filter(
+            MethodenVorlage.projekt_id == int(projekt_id)
+        ).order_by(MethodenVorlage.created_at.desc()).first()
+
+    def resolve_methoden_vorlage(self, projekt):
+        """Massgebliche Wortvorlage: Projekt übersteuert Org; sonst None
+        (dann treibt die kanonische HERMES-Struktur das Interview)."""
+        return (self.projekt_methoden_vorlage(projekt.id)
+                or self.org_methoden_vorlage(projekt.org_id))
+
+    # ------------------------------------------------------------------ #
+    # Kostensätze (Projekt übersteuert Org; Einheit Stunde/Tag)            #
+    # ------------------------------------------------------------------ #
+
+    # Standard-Tagessätze (CHF/PT), wenn nichts hinterlegt ist – extern teurer.
+    DEFAULT_TARIFE = {"intern": 1200, "extern": 1800}
+
+    def set_kostensatz(self, satz_intern, satz_extern, einheit="tag",
+                       stunden_pro_tag=8, org_id=None, projekt_id=None):
+        """Legt den Kostensatz einer Ebene an oder aktualisiert ihn (ein Eintrag je
+        Org bzw. Projekt)."""
+        db = SessionLocal()
+        pid = int(projekt_id) if projekt_id else None
+        q = db.query(Kostensatz)
+        q = q.filter(Kostensatz.projekt_id == pid) if pid else \
+            q.filter(Kostensatz.org_id == org_id, Kostensatz.projekt_id.is_(None))
+        row = q.first()
+        if row is None:
+            row = Kostensatz(org_id=org_id, projekt_id=pid)
+            db.add(row)
+        row.satz_intern = int(satz_intern) if satz_intern not in (None, "") else None
+        row.satz_extern = int(satz_extern) if satz_extern not in (None, "") else None
+        row.einheit = "stunde" if str(einheit).lower().startswith("stund") else "tag"
+        row.stunden_pro_tag = int(stunden_pro_tag) if stunden_pro_tag else 8
+        db.commit()
+        db.refresh(row)
+        return row
+
+    def org_kostensatz(self, org_id):
+        if not org_id:
+            return None
+        return SessionLocal().query(Kostensatz).filter(
+            Kostensatz.org_id == org_id, Kostensatz.projekt_id.is_(None),
+        ).order_by(Kostensatz.updated_at.desc()).first()
+
+    def projekt_kostensatz(self, projekt_id):
+        if not projekt_id:
+            return None
+        return SessionLocal().query(Kostensatz).filter(
+            Kostensatz.projekt_id == int(projekt_id)
+        ).order_by(Kostensatz.updated_at.desc()).first()
+
+    def effective_tarife(self, org_id=None, projekt_id=None):
+        """Massgebliche Tagessätze (CHF/PT) für die Kostenberechnung: Projekt
+        übersteuert Org, sonst Standard. Stundensätze werden auf den Tag umgerechnet."""
+        row = self.projekt_kostensatz(projekt_id) or self.org_kostensatz(org_id)
+        if not row or not (row.satz_intern or row.satz_extern):
+            return dict(self.DEFAULT_TARIFE)
+        faktor = (row.stunden_pro_tag or 8) if row.einheit == "stunde" else 1
+
+        def tag(v, fallback):
+            return int(v) * faktor if v else fallback
+        return {
+            "intern": tag(row.satz_intern, self.DEFAULT_TARIFE["intern"]),
+            "extern": tag(row.satz_extern, self.DEFAULT_TARIFE["extern"]),
+        }
+
+    def get_methoden_vorlage(self, vorlage_id):
+        return SessionLocal().get(MethodenVorlage, int(vorlage_id))
+
+    def set_methoden_mapping(self, vorlage_id, mapping):
+        """Speichert die bestätigte Kapitel-Zuordnung (Liste) als JSON."""
+        import json
+        db = SessionLocal()
+        v = db.get(MethodenVorlage, int(vorlage_id))
+        if v is None:
+            return None
+        v.mapping_json = json.dumps(mapping, ensure_ascii=False)
+        db.commit()
+        return v
 
     def structure(self, projekt):
         """Verschachtelte Sicht für die UI: Phase -> Module(+Ergebnisse) + Meilensteine."""
