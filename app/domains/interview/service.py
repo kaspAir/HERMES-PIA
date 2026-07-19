@@ -14,6 +14,7 @@ Klare Aufgabentrennung:
   - Diese Klasse   steuert den Dialog                   (Zustand + Logik)
 """
 import json
+import re
 
 from app.domains.interview.extraction import (
     COMPLEXITY_DIMENSIONS,
@@ -302,7 +303,8 @@ class InterviewService:
         if section["id"] == "termine" and self._is_empty(extracted):
             catalog = self._catalog_suggestion(session.project_type_id, section)
             if catalog:
-                _assign_termine_dates(catalog, session.start_datum, self._complexity_factor(answers))
+                _assign_termine_dates(catalog, session.start_datum, self._complexity_factor(answers),
+                                      ziel_wochen=self._phase_dauer_wochen(answers))
                 extracted = catalog
 
         entry = {
@@ -411,7 +413,8 @@ class InterviewService:
 
         # Ergebnisse/Termine: Liefertermine nach Abhängigkeitsrang × Komplexität.
         if section.get("id") == "termine" and isinstance(suggestion, list):
-            _assign_termine_dates(suggestion, session.start_datum, self._complexity_factor(answers))
+            _assign_termine_dates(suggestion, session.start_datum, self._complexity_factor(answers),
+                                  ziel_wochen=self._phase_dauer_wochen(answers))
 
         # Anhängen statt ersetzen: vorhandene Einträge dürfen nie verloren gehen,
         # auch wenn der Vorschlag versehentlich für einen gefüllten Abschnitt käme.
@@ -1352,6 +1355,16 @@ class InterviewService:
         # gering -> 1.0, mittel -> 1.4, hoch -> 1.8
         return round(1.0 + (avg - 1) * 0.4, 2)
 
+    def _phase_dauer_wochen(self, answers):
+        """Vom PL genannte Phasendauer (in Wochen) aus Ausgangslage/Terminen – oder
+        None. Ist sie gesetzt, ist sie für die Terminierung massgebend."""
+        text = " ".join(filter(None, (
+            self.composed_ausgangslage(answers),
+            (answers.get("ausgangslage") or {}).get("raw_text"),
+            (answers.get("termine") or {}).get("raw_text"),
+        )))
+        return _parse_dauer_wochen(text)
+
     def _decision_followups(self, opts, start_datum, factor=1.0):
         """Baut die Entscheidungs-Followups für Beschaffungsanalyse / Prototyp.
 
@@ -1464,6 +1477,44 @@ class InterviewService:
 # Modul-Hilfsfunktionen                                                #
 # ------------------------------------------------------------------ #
 
+# Vom PL genannte Phasendauer aus dem Diktat erkennen ("neun Monate", "6 Wochen").
+_ZAHLWORT = {
+    "ein": 1, "eine": 1, "eins": 1, "zwei": 2, "drei": 3, "vier": 4, "fünf": 5,
+    "fuenf": 5, "sechs": 6, "sieben": 7, "acht": 8, "neun": 9, "zehn": 10, "elf": 11,
+    "zwölf": 12, "zwoelf": 12, "achtzehn": 18, "zwanzig": 20, "vierundzwanzig": 24,
+}
+_DAUER_RE = re.compile(r"(\d{1,2}|[a-zäöü]+)\s*(monat|woche)", re.IGNORECASE)
+_DAUER_KONTEXT = ("phase", "initialisier", "dauer", "eingeplant", "geplant", "vorgesehen")
+_WOCHEN_PRO_MONAT = 4.345
+_MAX_TERMIN_RANG = 9  # Rang der Durchführungsfreigabe = Phasenende
+
+
+def _parse_dauer_wochen(text):
+    """Erste plausible Phasendauer als Wochen aus Freitext (oder None).
+
+    Bevorzugt eine Angabe im Umfeld von 'Phase/Initialisierung/Dauer/geplant';
+    sonst die erste Monats-, sonst die erste Wochenangabe. Monate → Wochen.
+    """
+    t = (text or "").lower()
+    treffer = []
+    for m in _DAUER_RE.finditer(t):
+        num_s, unit = m.group(1), m.group(2)
+        n = int(num_s) if num_s.isdigit() else _ZAHLWORT.get(num_s)
+        if not n or n <= 0:
+            continue
+        wochen = n * _WOCHEN_PRO_MONAT if unit.startswith("monat") else float(n)
+        if not (1 <= wochen <= 156):        # plausibel: bis ~3 Jahre
+            continue
+        fenster = t[max(0, m.start() - 40):m.end() + 20]
+        nah = any(k in fenster for k in _DAUER_KONTEXT)
+        treffer.append((nah, unit.startswith("monat"), wochen))
+    if not treffer:
+        return None
+    # Priorität: Kontextnähe, dann Monatsangabe, dann Reihenfolge.
+    treffer.sort(key=lambda x: (not x[0], not x[1]))
+    return treffer[0][2]
+
+
 def _termin_woche(ergebnis, default=5):
     """Wochen-Rang eines Initialisierungs-Ergebnisses nach HERMES-Abhängigkeiten.
 
@@ -1533,13 +1584,17 @@ def _single_termin(start_datum_str, ergebnis, factor=1.0):
     return _termin_datum(start_datum_str, _termin_woche(ergebnis) * factor)
 
 
-def _assign_termine_dates(rows, start_datum_str, factor=1.0):
-    """Setzt je Ergebnis Liefertermin (nach HERMES-Abhängigkeitsrang × Komplexitäts-
-    faktor) und Prüfmethode, und sortiert die Zeilen in Abhängigkeitsreihenfolge.
+def _assign_termine_dates(rows, start_datum_str, factor=1.0, ziel_wochen=None):
+    """Setzt je Ergebnis Liefertermin (nach HERMES-Abhängigkeitsrang) und Prüfmethode
+    und sortiert die Zeilen in Abhängigkeitsreihenfolge.
 
-    `factor` >= 1 streckt die Dauern bei höherer Komplexität (die Phase Initialisierung
-    wird erfahrungsgemäss zu kurz geplant).
+    Hat der PL eine **Phasendauer** genannt (`ziel_wochen`), landet das letzte
+    Ergebnis (Durchführungsfreigabe) genau am Phasenende, die übrigen anteilig davor –
+    seine Planung ist massgebend. Sonst streckt `factor` (>=1) die Dauern nach
+    Komplexität (die Phase Initialisierung wird erfahrungsgemäss zu kurz geplant).
     """
+    if ziel_wochen and ziel_wochen > 0:
+        factor = ziel_wochen / _MAX_TERMIN_RANG
     for r in rows:
         if not isinstance(r, dict):
             continue
