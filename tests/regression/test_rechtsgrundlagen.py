@@ -44,7 +44,7 @@ class _FakeFedlex:
 # ---- Modul-Logik (kein DB, kein echter LLM) ------------------------------- #
 
 def test_seeding_ohne_llm_uebernimmt_pia_gesetze():
-    wissen = Projektwissen(_PIA, ebene="kanton", kanton="ZH")
+    wissen = Projektwissen(_PIA, ebene="kanton")   # ohne konkreten Kanton -> kein Sammlungslink
     svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=_FakeFedlex())
     answers = svc.build_answers(wissen)
     namen = [r["rechtsgrundlage"] for r in answers["bestehende_rechtsgrundlagen"]["extracted"]]
@@ -255,3 +255,30 @@ def test_hermes_guardrails_im_prompt():
     s = SYSTEM.lower()
     assert "schutzbedarfsanalyse" in s and "isds" in s
     assert "weiteres vorgehen" in s and "klassisch/agil" in s
+
+
+def test_kantonaler_sammlungslink_fuer_ungegroundete_gesetze():
+    from app.domains.rechtsquellen.kantone import sammlung_link
+    assert "zh.ch" in sammlung_link("ZH").lower()
+    pia = {"referenzierte_dokumente": {"extracted": [
+        {"name": "Kantonales Justizvollzugsgesetz", "link": ""},
+        {"name": "Schweizerische Strafprozessordnung (StPO)", "link": ""}]}}
+    fake = _FakeFedlex({"StPO": [{"sr": "312.0",
+        "titel": "Schweizerische Strafprozessordnung (StPO)",
+        "url": "https://www.fedlex.admin.ch/eli/cc/2010/267/de"}]})
+    svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=fake)
+    answers = svc.build_answers(Projektwissen(pia, ebene="bund,kanton", kanton="ZH"))
+    ref = {r["name"]: r["link"] for r in answers["referenzierte_dokumente"]["extracted"]}
+    # Bundesgesetz -> Fedlex-SR; kantonales Gesetz -> Link zur ZH-Sammlung
+    assert "SR 312.0" in ref["Schweizerische Strafprozessordnung (StPO)"]
+    assert "Kantonale Sammlung ZH" in ref["Kantonales Justizvollzugsgesetz"]
+
+
+def test_kein_kantonslink_ohne_kantonsebene():
+    pia = {"referenzierte_dokumente": {"extracted": [
+        {"name": "Kantonales Polizeigesetz", "link": ""}]}}
+    svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=_FakeFedlex())
+    answers = svc.build_answers(Projektwissen(pia, ebene="bund", kanton="ZH"))  # nur Bund
+    # Kein Kantonslink, wenn Kantonsebene nicht gewählt (kantonales Gesetz zudem gefiltert)
+    ref = answers["referenzierte_dokumente"]["extracted"]
+    assert all("Kantonale Sammlung" not in r["link"] for r in ref)
