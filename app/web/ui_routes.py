@@ -789,7 +789,7 @@ def interview_edit(session_id, section_id):
     """Bearbeiten: Freitext mit vorgeladenem Inhalt; Tabellen werden zurückgesetzt."""
     svc = current_app.interview_service
     session = _load_session(session_id)
-    section = svc._section_by_id(session.method_id, section_id)
+    section = svc._section_by_id(svc._effective_method(session), section_id)
     if not section:
         return "Abschnitt nicht gefunden", 404
     if section.get("type") == "free_text":
