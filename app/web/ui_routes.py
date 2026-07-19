@@ -208,6 +208,14 @@ def interview_answer(session_id):
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
+@bp.post("/interview/<int:session_id>/reprocess")
+@permission_required("write")
+def interview_reprocess(session_id):
+    _load_session(session_id)
+    current_app.interview_service.reprocess(session_id)
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
 @bp.post("/interview/<int:session_id>/followup")
 @permission_required("write")
 def interview_followup(session_id):
