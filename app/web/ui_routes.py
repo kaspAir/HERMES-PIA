@@ -815,18 +815,23 @@ def interview_download(session_id, filename):
     name_part = session.project_name or "Projekt"
     name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
 
-    pl_weiblich = ag_weiblich = False
+    pl_g = ag_g = "u"
     if getattr(svc, "llm", None):
         from app.domains.interview.extraction import detect_gender
-        pl_weiblich = detect_gender(svc.llm, session.created_by or "") == "w"
-        ag_weiblich = detect_gender(svc.llm, session.auftraggeber or "") == "w"
+        pl_g = detect_gender(svc.llm, session.created_by or "")
+        ag_g = detect_gender(svc.llm, session.auftraggeber or "")
 
     metadata = {
         "projektname":        name_display,
         "projektleiter":      session.created_by or "",
         "auftraggeber":       session.auftraggeber or "",
-        "projektleiter_weiblich": pl_weiblich,
-        "auftraggeber_weiblich":  ag_weiblich,
+        "projektleiter_weiblich": pl_g == "w",
+        "auftraggeber_weiblich":  ag_g == "w",
+        # Volle Geschlechtsangabe (w/m/u) für die geschlechtergerechten Deckblatt-Labels;
+        # Autor = erfassende Person = Projektleiter/in.
+        "projektleiter_geschlecht": pl_g,
+        "auftraggeber_geschlecht":  ag_g,
+        "autor_geschlecht":         pl_g,
         "autor":              session.created_by or "",
         "verwaltungseinheit": session.verwaltungseinheit or "",
         "geschaeftsbereich":  session.geschaeftsbereich or "",
