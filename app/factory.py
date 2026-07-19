@@ -129,6 +129,10 @@ def create_app(config_class=None):
     app.rechtsgrundlagen_service = RechtsgrundlagenService(
         app.interview_service, app.projekt_service, app.generation_service, llm=llm_client,
     )
+    from app.domains.ergebnisse.schutzbedarf.service import SchutzbedarfService
+    app.schutzbedarf_service = SchutzbedarfService(
+        app.interview_service, app.projekt_service, app.config["METHODS_DIR"], llm=llm_client,
+    )
     app.praesentation_service = PraesentationService(llm_client)
     app.auth_service = AuthService()
     app.transcriber = Transcriber(

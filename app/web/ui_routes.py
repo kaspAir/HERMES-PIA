@@ -413,6 +413,38 @@ def rechtsgrundlagen_download(projekt_id, filename):
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
+# ---- Schutzbedarfsanalyse (BACS-Excel, Formeln unberührt) --------------- #
+
+@bp.get("/projekt/<int:projekt_id>/schutzbedarf")
+@permission_required("read")
+def schutzbedarf(projekt_id):
+    projekt = _load_projekt(projekt_id)
+    svc = current_app.schutzbedarf_service
+    _, session = svc.projektwissen(projekt)
+    stamp = _safe_filename(projekt.name or "Projekt")
+    return render_template(
+        "schutzbedarf.html", projekt=projekt, entwurf=svc.get_entwurf(projekt.id),
+        hat_pia=session is not None, download_name=f"{stamp}_Schutzbedarfsanalyse.xlsx")
+
+
+@bp.post("/projekt/<int:projekt_id>/schutzbedarf/erzeugen")
+@permission_required("write")
+def schutzbedarf_erzeugen(projekt_id):
+    projekt = _load_projekt(projekt_id)
+    current_app.schutzbedarf_service.erzeuge_entwurf(projekt)
+    return redirect(url_for("ui.schutzbedarf", projekt_id=projekt.id))
+
+
+@bp.get("/projekt/<int:projekt_id>/schutzbedarf/download/<path:filename>")
+@permission_required("read")
+def schutzbedarf_download(projekt_id, filename):
+    projekt = _load_projekt(projekt_id)
+    buf = current_app.schutzbedarf_service.generate_xlsx(projekt)
+    return send_file(
+        buf, as_attachment=True, download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 # ---- Dokumente & Präsentation am Ergebnis ------------------------------ #
 
 _UPLOAD_LIMIT = 15 * 1024 * 1024   # 15 MB (decodiert)
