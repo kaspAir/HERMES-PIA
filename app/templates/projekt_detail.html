@@ -172,6 +172,14 @@
     {% endif %}
   </section>
 
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Kostensätze (projektspezifisch)</h3>
+    <p class="muted vorlage-status">Übersteuert die PMO-Vorgabe für dieses Projekt.
+      Leer lassen = PMO-Standard gilt.</p>
+    {% set kostensatz_action = url_for('ui.projekt_kostensatz', projekt_id=projekt.id) %}
+    {% include "_kostensatz_form.html" with context %}
+  </section>
+
   <div id="upload-status" class="muted upload-status"></div>
 
 </div>

@@ -114,6 +114,15 @@
     {% endif %}
   </section>
 
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Kostensätze (organisationsweit)</h3>
+    <p class="muted vorlage-status">Basis für die Personalkosten im PIA (Kap. 3.3).
+      Ein Projekt kann diese Vorgabe übersteuern. Ohne Eintrag gelten CHF 1'200/Tag
+      intern und CHF 1'800/Tag extern.</p>
+    {% set kostensatz_action = url_for('ui.pmo_kostensatz') %}
+    {% include "_kostensatz_form.html" with context %}
+  </section>
+
   <div id="upload-status" class="muted upload-status"></div>
 </div>
 

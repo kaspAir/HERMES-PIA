@@ -14,6 +14,7 @@ Klare Aufgabentrennung:
   - Diese Klasse   steuert den Dialog                   (Zustand + Logik)
 """
 import json
+import re
 
 from app.domains.interview.extraction import (
     COMPLEXITY_DIMENSIONS,
@@ -280,7 +281,7 @@ class InterviewService:
     # Antwortverarbeitung                                                  #
     # ------------------------------------------------------------------ #
 
-    def submit_answer(self, session_id, raw_text):
+    def submit_answer(self, session_id, raw_text, tarife=None):
         """Verarbeitet die Antwort des Projektleiters auf die aktuelle Frage."""
         session = self.get_session(session_id)
         answers = self._answers(session)
@@ -302,7 +303,8 @@ class InterviewService:
         if section["id"] == "termine" and self._is_empty(extracted):
             catalog = self._catalog_suggestion(session.project_type_id, section)
             if catalog:
-                _assign_termine_dates(catalog, session.start_datum, self._complexity_factor(answers))
+                _assign_termine_dates(catalog, session.start_datum, self._complexity_factor(answers),
+                                      ziel_wochen=self._phase_dauer_wochen(answers))
                 extracted = catalog
 
         entry = {
@@ -314,7 +316,7 @@ class InterviewService:
         # Deterministische HERMES-Korrekturen (Kosten nur Initialisierung,
         # Pflichtrollen im Personalaufwand) auch bei direkt diktierten Angaben.
         if not self._is_empty(extracted):
-            self._postprocess_section(section, entry, answers)
+            self._postprocess_section(section, entry, answers, tarife)
             entry["complete"] = self._is_complete(section, entry["extracted"])
 
         # Nach der Ausgangslage: Projekttyp ableiten – aus dem bereinigten Text
@@ -344,7 +346,53 @@ class InterviewService:
         self._persist_answers(session, answers)
         return self.current_state(session)
 
-    def answer_followup(self, session_id, risk_id, accepted, raw_text=None):
+    def reprocess(self, session_id, tarife=None):
+        """Wendet die deterministischen HERMES-Korrekturen erneut auf die bereits
+        gespeicherten Antworten an – ohne neues Interview.
+
+        Damit wirken Verbesserungen an der Aufbereitung (Pflicht-/Ergebnisrollen,
+        externe Expertise, Kosten, Termine samt genannter Phasendauer, Projekt-
+        organisation) sofort auf eine bestehende Session, statt erst beim nächsten
+        kompletten Durchlauf. Kein LLM-Aufruf für bereits gefüllte Felder.
+        Gibt die Liste der berührten Abschnitts-IDs zurück.
+        """
+        session = self.get_session(session_id)
+        answers = self._answers(session)
+        method = self._effective_method(session)
+        changed = []
+
+        for section in self._interviewable_sections(method):
+            sid = section.get("id")
+            entry = answers.get(sid)
+            if not isinstance(entry, dict) or self._is_empty(entry.get("extracted")):
+                continue
+            # Termine: Datteln verwerfen und mit Dauer/Komplexität neu setzen –
+            # sonst greift die genannte Phasendauer nicht auf bestehende Termine.
+            if sid == "termine" and isinstance(entry.get("extracted"), list):
+                for r in entry["extracted"]:
+                    if isinstance(r, dict):
+                        r.pop("termin", None)
+                _assign_termine_dates(entry["extracted"], session.start_datum,
+                                      self._complexity_factor(answers),
+                                      ziel_wochen=self._phase_dauer_wochen(answers))
+            self._postprocess_section(section, entry, answers, tarife)
+            entry["complete"] = self._is_complete(section, entry["extracted"])
+            changed.append(sid)
+
+        # Projektorganisation (Kap. 6) aus dem korrigierten Personalaufwand neu ableiten.
+        org_entry = answers.get("projektorganisation")
+        if isinstance(org_entry, dict) and not self._is_empty(
+                (answers.get("personalaufwand") or {}).get("extracted")):
+            org = self._build_projektorganisation(answers, session.start_datum)
+            if org:
+                org_entry["extracted"] = org
+                if "projektorganisation" not in changed:
+                    changed.append("projektorganisation")
+
+        self._persist_answers(session, answers)
+        return changed
+
+    def answer_followup(self, session_id, risk_id, accepted, raw_text=None, tarife=None):
         """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen.
 
         Beim Aufnehmen ('accepted') wird der Vorschlag – oder die vom
@@ -367,6 +415,18 @@ class InterviewService:
                     elif followup.get("type") == "expertise":
                         # Thema der externen Fachexpertise bei der Rolle festhalten.
                         self._apply_expertise_thema(answers, raw_text if accepted else None)
+                    elif followup.get("type") == "rag_dauer":
+                        # Vergleichs-Dauer übernehmen (oder eigene diktierte Dauer) und
+                        # Termine/PT/Kosten deterministisch neu ableiten.
+                        wochen = None
+                        if accepted:
+                            wochen = ((_parse_dauer_wochen(raw_text) if raw_text else None)
+                                      or followup.get("dauer_wochen"))
+                        if wochen:
+                            answers["_dauer_wochen"] = wochen
+                            self._persist_answers(session, answers)
+                            self.reprocess(session_id, tarife)
+                            return self.current_state(session)
                     elif accepted:
                         section = self._section_by_id(self._effective_method(session), sid)
                         if section and followup.get("type") == "offer":
@@ -411,7 +471,8 @@ class InterviewService:
 
         # Ergebnisse/Termine: Liefertermine nach Abhängigkeitsrang × Komplexität.
         if section.get("id") == "termine" and isinstance(suggestion, list):
-            _assign_termine_dates(suggestion, session.start_datum, self._complexity_factor(answers))
+            _assign_termine_dates(suggestion, session.start_datum, self._complexity_factor(answers),
+                                  ziel_wochen=self._phase_dauer_wochen(answers))
 
         # Anhängen statt ersetzen: vorhandene Einträge dürfen nie verloren gehen,
         # auch wenn der Vorschlag versehentlich für einen gefüllten Abschnitt käme.
@@ -468,7 +529,7 @@ class InterviewService:
             + "\n".join(lines)
         )
 
-    def _postprocess_section(self, section, section_answer, answers):
+    def _postprocess_section(self, section, section_answer, answers, tarife=None):
         """Deterministische HERMES-Korrekturen nach dem Befüllen eines Abschnitts.
 
         - Kosten: nur die Phase Initialisierung behalten (nie Konzept/Realisierung/…).
@@ -489,11 +550,13 @@ class InterviewService:
         elif sid == "rahmenbedingungen":
             section_answer["extracted"] = self._strip_duration_caps(rows)
         elif sid == "kosten":
-            section_answer["extracted"] = self._kosten_breakdown(rows, answers)
+            section_answer["extracted"] = self._kosten_breakdown(rows, answers, tarife)
         elif sid == "personalaufwand":
+            self._ensure_base_roles(rows)
             self._ensure_deliverable_roles(rows, answers)
             self._ensure_external_experts(rows, answers,
                                           section_answer.get("raw_text", ""))
+            self._ensure_role_pt(rows, answers)
         elif sid == "risiken":
             for r in rows:
                 if not isinstance(r, dict):
@@ -532,7 +595,7 @@ class InterviewService:
         return out
 
     @staticmethod
-    def _kosten_breakdown(rows, answers):
+    def _kosten_breakdown(rows, answers, tarife=None):
         """Leitet die Initialisierungskosten KONSISTENT aus dem Personalaufwand (Kap. 3.1)
         ab – dieser ist die einzige Quelle für die intern/extern-Zuordnung. So kann das
         Kostenblatt nicht mehr externe Posten ausweisen, die im Personalaufwand fehlen.
@@ -544,8 +607,11 @@ class InterviewService:
         Total werden deterministisch ergänzt.
         """
         import re as _re
-        # Anpassbare Standard-Tagessätze (CHF/PT); externe Fachleute teurer als interne.
-        TAGESSATZ_INTERN, TAGESSATZ_EXTERN = 1200, 1800
+        # Massgebliche Tagessätze (CHF/PT): aus den hinterlegten Kostensätzen (Projekt
+        # übersteuert Org), sonst Standard. Externe Fachleute teurer als interne.
+        tarife = tarife or {}
+        TAGESSATZ_INTERN = int(tarife.get("intern") or 1200)
+        TAGESSATZ_EXTERN = int(tarife.get("extern") or 1800)
         later = ("konzept", "realisierung", "einführung", "einfuehrung", "abschluss", "umsetzung")
         personal_kw = ("personal", "fachexpert", "experte", "beratung", "tagessatz",
                        "projektleiter", "auftraggeber", "isds", "entwickler", "anwendervertreter")
@@ -624,25 +690,63 @@ class InterviewService:
         return out
 
     @staticmethod
+    def _ensure_base_roles(rows):
+        """Projektleiter und Auftraggeber sind in der Phase Initialisierung IMMER
+        besetzt – auch wenn das LLM sie nicht aus dem Diktat extrahiert hat. Sonst
+        bliebe im Extremfall nur eine ergänzte Rolle (z.B. externe Fachexpertise)
+        übrig. Sie führen die Tabelle an (vor abgeleiteten/externen Rollen)."""
+        def has(*keys):
+            return any(any(k in str(r.get("rolle", "")).lower() for k in keys)
+                       for r in rows if isinstance(r, dict))
+        fehlend = []
+        if not has("projektleiter", "projektleitung"):
+            fehlend.append({"rolle": "Projektleiter", "name": "", "aufwand": ""})
+        if not has("auftraggeber"):
+            fehlend.append({"rolle": "Auftraggeber", "name": "", "aufwand": ""})
+        rows[:0] = fehlend
+
+    @staticmethod
     def _ensure_deliverable_roles(rows, answers):
-        """Stellt sicher, dass Anwendervertreter (bei Beschaffungsanalyse) und
-        Entwickler (bei Prototyp) im Personalaufwand vertreten sind."""
+        """Stellt die für die geplanten Lieferergebnisse zuständigen Rollen sicher:
+        Schutzbedarfsanalyse → ISDS-Verantwortliche/r, Beschaffungsanalyse →
+        Anwendervertreter, Prototyp → Entwickler. Nur, wenn das Ergebnis geplant ist."""
         termine = (answers.get("termine") or {}).get("extracted") or []
         text = " ".join(
             f"{r.get('ergebnis','')} {r.get('abnahme','')}"
             for r in termine if isinstance(r, dict)
         ).lower()
 
-        def has_role(key):
-            return any(key in str(r.get("rolle", "")).lower()
+        def has_role(*keys):
+            return any(any(k in str(r.get("rolle", "")).lower() for k in keys)
                        for r in rows if isinstance(r, dict))
 
-        if "anwendervertreter" in text or "beschaffungsanalyse" in text:
-            if not has_role("anwendervertreter"):
-                rows.append({"rolle": "Anwendervertreter", "name": "", "aufwand": ""})
-        if "entwickler" in text or "prototyp" in text:
-            if not has_role("entwickler"):
-                rows.append({"rolle": "Entwickler", "name": "", "aufwand": ""})
+        # (Auslöser im Ergebnis-Text, Rolle, Erkennungs-Stichwort der Rolle)
+        for ausloeser, rolle, rollen_kw in (
+            (("schutzbedarf",),                 "ISDS-Verantwortliche/r", ("isds",)),
+            (("beschaffungsanalyse", "anwendervertreter"), "Anwendervertreter", ("anwendervertreter",)),
+            (("prototyp", "entwickler"),        "Entwickler",             ("entwickler",)),
+        ):
+            if any(a in text for a in ausloeser) and not has_role(*rollen_kw):
+                rows.append({"rolle": rolle, "name": "", "aufwand": ""})
+
+    def _ensure_role_pt(self, rows, answers):
+        """Schätzt fehlende PT je Rolle: FTE-Last × Arbeitstage/Monat × Dauer × Komplexität.
+        Je komplexer/länger die Phase, desto grösser der Aufwand (vom PL genannte Werte
+        bleiben unangetastet). Diese PT sind die einzige Quelle für die Monatsverteilung
+        in Kap. 5 und die Personalkosten in Kap. 3.3 – so sind 3.1/4.1/5 konsistent."""
+        monate = self._phase_monate(answers)
+        faktor = self._complexity_factor(answers)
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            # Vom PL genannte PT bleiben; automatisch geschätzte (Marke _pt_auto) werden
+            # bei geänderter Dauer/Komplexität neu skaliert – so bleibt 3.1 konsistent.
+            if str(r.get("aufwand", "")).strip() and not r.get("_pt_auto"):
+                continue
+            pt = round(_rollen_last(r.get("rolle", "")) * _ARBEITSTAGE_PRO_MONAT * monate * faktor)
+            if pt > 0:
+                r["aufwand"] = str(pt)
+                r["_pt_auto"] = True
 
     def _externe_expertise_signal(self, answers, extra_text=""):
         """True, wenn Ausgangslage/Komplexität ODER der Personalschritt selbst den
@@ -694,7 +798,7 @@ class InterviewService:
         personal = (answers.get("personalaufwand") or {}).get("extracted")
         if not isinstance(personal, list) or not personal:
             return None
-        months = self._initialisierung_monate(answers, start_datum)
+        months = self._phase_monate(answers, start_datum)
         rows = []
         for p in personal:
             if not isinstance(p, dict):
@@ -715,6 +819,15 @@ class InterviewService:
         import re as _re
         m = _re.search(r"\d+", str(value or ""))
         return int(m.group()) if m else 0
+
+    def _phase_monate(self, answers, start_datum=None, cap=9):
+        """Monate der Phase Initialisierung – bevorzugt die vom PL genannte Dauer,
+        sonst die Termin-Spanne. Gemeinsame Basis für PT-Schätzung (Kap. 3.1) und die
+        Monatsverteilung (Kap. 5), damit beide dieselbe Phasenlänge verwenden."""
+        w = self._phase_dauer_wochen(answers)
+        if w and w > 0:
+            return min(max(1, round(w / _WOCHEN_PRO_MONAT)), cap)
+        return self._initialisierung_monate(answers, start_datum, cap)
 
     @staticmethod
     def _initialisierung_monate(answers, start_datum, cap=9):
@@ -1261,6 +1374,23 @@ class InterviewService:
             factor = self._complexity_factor(answers)
             followups.extend(self._decision_followups(opts, session.start_datum, factor))
 
+        # Beratender Dauer-Vorschlag aus vergleichbaren Projekten (RAG): nur wenn der
+        # PL keine Dauer genannt hat und der Korpus einen Vergleichswert liefert.
+        if section["id"] == "termine":
+            vgl = self._rag_dauer_vorschlag(session, answers)
+            if vgl:
+                monate = max(1, round(vgl["median_wochen"] / _WOCHEN_PRO_MONAT))
+                followups.append({
+                    "risk_id": "rag_dauer",
+                    "frage": f"Sie haben keine Phasendauer genannt. Vergleichbare Projekte "
+                             f"planten im Median {monate} Monate für die Initialisierung "
+                             f"(aus {vgl['n_projekte']} Projekt(en)). Übernehmen, eigene "
+                             f"Dauer nennen (sprechen) oder ignorieren?",
+                    "type": "rag_dauer",
+                    "status": "pending",
+                    "dauer_wochen": vgl["median_wochen"],
+                })
+
         # "Haben Sie auch an ... gedacht?": hat der PL selbst Inhalte geliefert,
         # prüft HERMES PIA gegen die typischen Positionen des Abschnitts und bietet
         # die fehlenden EINMAL gesammelt zur Ergänzung an – statt sie still wegzulassen.
@@ -1331,6 +1461,38 @@ class InterviewService:
         avg = sum(vals) / len(vals) if vals else 2
         # gering -> 1.0, mittel -> 1.4, hoch -> 1.8
         return round(1.0 + (avg - 1) * 0.4, 2)
+
+    def _phase_dauer_wochen(self, answers):
+        """Massgebliche Phasendauer (Wochen) oder None. Priorität: explizit bestätigter
+        Wert (z.B. aus dem RAG-Dauer-Vorschlag) vor der aus Ausgangslage/Terminen
+        erkannten, vom PL genannten Dauer."""
+        explizit = (answers or {}).get("_dauer_wochen")
+        if explizit:
+            try:
+                return float(explizit)
+            except (TypeError, ValueError):
+                pass
+        text = " ".join(filter(None, (
+            self.composed_ausgangslage(answers),
+            (answers.get("ausgangslage") or {}).get("raw_text"),
+            (answers.get("termine") or {}).get("raw_text"),
+        )))
+        return _parse_dauer_wochen(text)
+
+    def _rag_dauer_vorschlag(self, session, answers):
+        """Beratender Dauer-Vorschlag aus vergleichbaren Projekten (RAG): nur wenn der
+        PL keine Dauer genannt hat UND der Korpus vergleichbare Projekte mit
+        hinterlegter Initialisierungs-Dauer liefert. Sonst None."""
+        if not (self.rag and getattr(self.rag, "available", False)):
+            return None
+        if self._phase_dauer_wochen(answers):
+            return None  # PL-Angabe hat Vorrang – nicht nachfragen
+        query = self.composed_ausgangslage(answers) or \
+            (answers.get("ausgangslage") or {}).get("raw_text") or ""
+        if not query.strip():
+            return None
+        return self.rag.vergleichbare_dauer_wochen(
+            query, org_id=getattr(session, "org_id", None))
 
     def _decision_followups(self, opts, start_datum, factor=1.0):
         """Baut die Entscheidungs-Followups für Beschaffungsanalyse / Prototyp.
@@ -1444,6 +1606,65 @@ class InterviewService:
 # Modul-Hilfsfunktionen                                                #
 # ------------------------------------------------------------------ #
 
+# Vom PL genannte Phasendauer aus dem Diktat erkennen ("neun Monate", "6 Wochen").
+_ZAHLWORT = {
+    "ein": 1, "eine": 1, "eins": 1, "zwei": 2, "drei": 3, "vier": 4, "fünf": 5,
+    "fuenf": 5, "sechs": 6, "sieben": 7, "acht": 8, "neun": 9, "zehn": 10, "elf": 11,
+    "zwölf": 12, "zwoelf": 12, "achtzehn": 18, "zwanzig": 20, "vierundzwanzig": 24,
+}
+_DAUER_RE = re.compile(r"(\d{1,2}|[a-zäöü]+)\s*(monat|woche)", re.IGNORECASE)
+_DAUER_KONTEXT = ("phase", "initialisier", "dauer", "eingeplant", "geplant", "vorgesehen")
+_WOCHEN_PRO_MONAT = 4.345
+_MAX_TERMIN_RANG = 9  # Rang der Durchführungsfreigabe = Phasenende
+
+# PT-Schätzung: FTE-Anteil je Rolle während der Phase Initialisierung. Der Aufwand
+# skaliert mit Dauer (Monate) und Komplexität – je komplexer/länger, desto grösser.
+_ARBEITSTAGE_PRO_MONAT = 20
+_ROLLEN_LAST = (
+    ("projektleiter", 0.40),
+    ("auftraggeber", 0.05),
+    ("extern", 0.35),
+    ("isds", 0.15),
+    ("anwendervertreter", 0.15),
+    ("entwickler", 0.25),
+)
+_ROLLEN_LAST_DEFAULT = 0.15
+
+
+def _rollen_last(rolle):
+    r = (rolle or "").lower()
+    for kw, load in _ROLLEN_LAST:
+        if kw in r:
+            return load
+    return _ROLLEN_LAST_DEFAULT
+
+
+def _parse_dauer_wochen(text):
+    """Erste plausible Phasendauer als Wochen aus Freitext (oder None).
+
+    Bevorzugt eine Angabe im Umfeld von 'Phase/Initialisierung/Dauer/geplant';
+    sonst die erste Monats-, sonst die erste Wochenangabe. Monate → Wochen.
+    """
+    t = (text or "").lower()
+    treffer = []
+    for m in _DAUER_RE.finditer(t):
+        num_s, unit = m.group(1), m.group(2)
+        n = int(num_s) if num_s.isdigit() else _ZAHLWORT.get(num_s)
+        if not n or n <= 0:
+            continue
+        wochen = n * _WOCHEN_PRO_MONAT if unit.startswith("monat") else float(n)
+        if not (1 <= wochen <= 156):        # plausibel: bis ~3 Jahre
+            continue
+        fenster = t[max(0, m.start() - 40):m.end() + 20]
+        nah = any(k in fenster for k in _DAUER_KONTEXT)
+        treffer.append((nah, unit.startswith("monat"), wochen))
+    if not treffer:
+        return None
+    # Priorität: Kontextnähe, dann Monatsangabe, dann Reihenfolge.
+    treffer.sort(key=lambda x: (not x[0], not x[1]))
+    return treffer[0][2]
+
+
 def _termin_woche(ergebnis, default=5):
     """Wochen-Rang eines Initialisierungs-Ergebnisses nach HERMES-Abhängigkeiten.
 
@@ -1513,13 +1734,17 @@ def _single_termin(start_datum_str, ergebnis, factor=1.0):
     return _termin_datum(start_datum_str, _termin_woche(ergebnis) * factor)
 
 
-def _assign_termine_dates(rows, start_datum_str, factor=1.0):
-    """Setzt je Ergebnis Liefertermin (nach HERMES-Abhängigkeitsrang × Komplexitäts-
-    faktor) und Prüfmethode, und sortiert die Zeilen in Abhängigkeitsreihenfolge.
+def _assign_termine_dates(rows, start_datum_str, factor=1.0, ziel_wochen=None):
+    """Setzt je Ergebnis Liefertermin (nach HERMES-Abhängigkeitsrang) und Prüfmethode
+    und sortiert die Zeilen in Abhängigkeitsreihenfolge.
 
-    `factor` >= 1 streckt die Dauern bei höherer Komplexität (die Phase Initialisierung
-    wird erfahrungsgemäss zu kurz geplant).
+    Hat der PL eine **Phasendauer** genannt (`ziel_wochen`), landet das letzte
+    Ergebnis (Durchführungsfreigabe) genau am Phasenende, die übrigen anteilig davor –
+    seine Planung ist massgebend. Sonst streckt `factor` (>=1) die Dauern nach
+    Komplexität (die Phase Initialisierung wird erfahrungsgemäss zu kurz geplant).
     """
+    if ziel_wochen and ziel_wochen > 0:
+        factor = ziel_wochen / _MAX_TERMIN_RANG
     for r in rows:
         if not isinstance(r, dict):
             continue

@@ -624,10 +624,18 @@ def _suggest_table(llm_client, section, context, vocabularies=None):
         "Antworte ausschliesslich mit einem validen JSON-Array, keine Erklaerungen.\n\n"
         + HERMES_RULES
     )
+    # Vollstaendigkeitskriterien aus der method.yaml an das LLM weitergeben, damit
+    # der Vorschlag sie erfuellt (z.B. Ziele: mind. ein Systemziel UND ein Vorgehensziel).
+    completeness = (section.get("interview") or {}).get("completeness") or []
+    krit = ""
+    if completeness:
+        krit = ("Der Vorschlag MUSS diese Vollstaendigkeitskriterien erfuellen:\n"
+                + "\n".join(f"  - {c}" for c in completeness) + "\n\n")
     user = (
         f"PIA-Abschnitt: \"{section['title']}\"\n\n"
         f"Projektkontext:\n{context}\n\n"
         f"Felder je Eintrag:\n{col_desc}\n\n"
+        f"{krit}"
         f"Erzeuge 3-6 plausible Eintraege fuer diesen Abschnitt, abgestimmt auf den "
         f"Projektkontext. Felder ohne Information mit leerem String befuellen.\n\n"
         f"Rueckgabe als JSON-Array. Leeres Array, wenn kein sinnvoller Vorschlag moeglich ist."

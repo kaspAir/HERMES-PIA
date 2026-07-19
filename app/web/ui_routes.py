@@ -196,27 +196,45 @@ def interview_workspace(session_id):
     )
 
 
+def _tarife_for_session(session):
+    """Massgebliche Kostensätze (CHF/PT) für eine Session: Projekt übersteuert Org."""
+    ps = current_app.projekt_service
+    projekt = ps.projekt_for_ergebnis(session.ergebnis_id) if session.ergebnis_id else None
+    return ps.effective_tarife(org_id=session.org_id,
+                               projekt_id=projekt.id if projekt else None)
+
+
 @bp.post("/interview/<int:session_id>/answer")
 @permission_required("write")
 def interview_answer(session_id):
-    _load_session(session_id)
+    session = _load_session(session_id)
     raw_text = request.form.get("raw_text", "").strip()
     try:
-        current_app.interview_service.submit_answer(session_id, raw_text)
+        current_app.interview_service.submit_answer(
+            session_id, raw_text, tarife=_tarife_for_session(session))
     except ValueError as e:
         return str(e), 400
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
+@bp.post("/interview/<int:session_id>/reprocess")
+@permission_required("write")
+def interview_reprocess(session_id):
+    session = _load_session(session_id)
+    current_app.interview_service.reprocess(session_id, tarife=_tarife_for_session(session))
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
 
 @bp.post("/interview/<int:session_id>/followup")
 @permission_required("write")
 def interview_followup(session_id):
-    _load_session(session_id)
+    session = _load_session(session_id)
     risk_id = request.form.get("risk_id", "")
     accepted = request.form.get("accepted", "0") == "1"
     raw_text = request.form.get("raw_text", "").strip() or None
     try:
-        current_app.interview_service.answer_followup(session_id, risk_id, accepted, raw_text)
+        current_app.interview_service.answer_followup(
+            session_id, risk_id, accepted, raw_text, tarife=_tarife_for_session(session))
     except ValueError as e:
         return str(e), 400
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
@@ -323,7 +341,24 @@ def projekt_detail(projekt_id):
                            methoden_editor=_methoden_editor(methoden_vorlage),
                            methoden_mapping_url=url_for(
                                "ui.methoden_mapping", projekt_id=projekt.id),
+                           kostensatz=svc.projekt_kostensatz(projekt.id),
+                           org_kostensatz=svc.org_kostensatz(projekt.org_id),
                            downloads=downloads)
+
+
+@bp.post("/projekt/<int:projekt_id>/kostensatz")
+@permission_required("write")
+def projekt_kostensatz(projekt_id):
+    """Speichert den projektspezifischen Kostensatz (übersteuert die PMO-Vorgabe)."""
+    projekt = _load_projekt(projekt_id)
+    current_app.projekt_service.set_kostensatz(
+        satz_intern=request.form.get("satz_intern"),
+        satz_extern=request.form.get("satz_extern"),
+        einheit=request.form.get("einheit", "tag"),
+        stunden_pro_tag=request.form.get("stunden_pro_tag") or 8,
+        org_id=projekt.org_id, projekt_id=projekt.id,
+    )
+    return redirect(url_for("ui.projekt_detail", projekt_id=projekt.id))
 
 
 # ---- Dokumente & Präsentation am Ergebnis ------------------------------ #
@@ -544,7 +579,23 @@ def pmo():
                            methoden_vorlage=methoden_vorlage,
                            methoden_report=methoden_report,
                            methoden_editor=_methoden_editor(methoden_vorlage),
-                           methoden_mapping_url=url_for("ui.pmo_methoden_mapping"))
+                           methoden_mapping_url=url_for("ui.pmo_methoden_mapping"),
+                           kostensatz=svc.org_kostensatz(user.org_id))
+
+
+@bp.post("/pmo/kostensatz")
+@permission_required("write")
+def pmo_kostensatz():
+    """Speichert die organisationsweiten Kostensätze (Standard für alle Projekte)."""
+    user = current_user()
+    current_app.projekt_service.set_kostensatz(
+        satz_intern=request.form.get("satz_intern"),
+        satz_extern=request.form.get("satz_extern"),
+        einheit=request.form.get("einheit", "tag"),
+        stunden_pro_tag=request.form.get("stunden_pro_tag") or 8,
+        org_id=user.org_id,
+    )
+    return redirect(url_for("ui.pmo"))
 
 
 @bp.post("/pmo/branding")
@@ -739,7 +790,7 @@ def interview_edit(session_id, section_id):
     """Bearbeiten: Freitext mit vorgeladenem Inhalt; Tabellen werden zurückgesetzt."""
     svc = current_app.interview_service
     session = _load_session(session_id)
-    section = svc._section_by_id(session.method_id, section_id)
+    section = svc._section_by_id(svc._effective_method(session), section_id)
     if not section:
         return "Abschnitt nicht gefunden", 404
     if section.get("type") == "free_text":
@@ -807,18 +858,23 @@ def interview_download(session_id, filename):
     name_part = session.project_name or "Projekt"
     name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
 
-    pl_weiblich = ag_weiblich = False
+    pl_g = ag_g = "u"
     if getattr(svc, "llm", None):
         from app.domains.interview.extraction import detect_gender
-        pl_weiblich = detect_gender(svc.llm, session.created_by or "") == "w"
-        ag_weiblich = detect_gender(svc.llm, session.auftraggeber or "") == "w"
+        pl_g = detect_gender(svc.llm, session.created_by or "")
+        ag_g = detect_gender(svc.llm, session.auftraggeber or "")
 
     metadata = {
         "projektname":        name_display,
         "projektleiter":      session.created_by or "",
         "auftraggeber":       session.auftraggeber or "",
-        "projektleiter_weiblich": pl_weiblich,
-        "auftraggeber_weiblich":  ag_weiblich,
+        "projektleiter_weiblich": pl_g == "w",
+        "auftraggeber_weiblich":  ag_g == "w",
+        # Volle Geschlechtsangabe (w/m/u) für die geschlechtergerechten Deckblatt-Labels;
+        # Autor = erfassende Person = Projektleiter/in.
+        "projektleiter_geschlecht": pl_g,
+        "auftraggeber_geschlecht":  ag_g,
+        "autor_geschlecht":         pl_g,
         "autor":              session.created_by or "",
         "verwaltungseinheit": session.verwaltungseinheit or "",
         "geschaeftsbereich":  session.geschaeftsbereich or "",

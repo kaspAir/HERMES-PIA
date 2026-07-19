@@ -8,6 +8,7 @@ Verknüpfung der `InterviewSession` an ihren Ergebnis-Knoten setzt der Aufrufer
 from app.domains.projekt.models import (
     Ergebnis,
     ErgebnisDokument,
+    Kostensatz,
     Meilenstein,
     MethodenVorlage,
     Modul,
@@ -287,6 +288,63 @@ class ProjektService:
         (dann treibt die kanonische HERMES-Struktur das Interview)."""
         return (self.projekt_methoden_vorlage(projekt.id)
                 or self.org_methoden_vorlage(projekt.org_id))
+
+    # ------------------------------------------------------------------ #
+    # Kostensätze (Projekt übersteuert Org; Einheit Stunde/Tag)            #
+    # ------------------------------------------------------------------ #
+
+    # Standard-Tagessätze (CHF/PT), wenn nichts hinterlegt ist – extern teurer.
+    DEFAULT_TARIFE = {"intern": 1200, "extern": 1800}
+
+    def set_kostensatz(self, satz_intern, satz_extern, einheit="tag",
+                       stunden_pro_tag=8, org_id=None, projekt_id=None):
+        """Legt den Kostensatz einer Ebene an oder aktualisiert ihn (ein Eintrag je
+        Org bzw. Projekt)."""
+        db = SessionLocal()
+        pid = int(projekt_id) if projekt_id else None
+        q = db.query(Kostensatz)
+        q = q.filter(Kostensatz.projekt_id == pid) if pid else \
+            q.filter(Kostensatz.org_id == org_id, Kostensatz.projekt_id.is_(None))
+        row = q.first()
+        if row is None:
+            row = Kostensatz(org_id=org_id, projekt_id=pid)
+            db.add(row)
+        row.satz_intern = int(satz_intern) if satz_intern not in (None, "") else None
+        row.satz_extern = int(satz_extern) if satz_extern not in (None, "") else None
+        row.einheit = "stunde" if str(einheit).lower().startswith("stund") else "tag"
+        row.stunden_pro_tag = int(stunden_pro_tag) if stunden_pro_tag else 8
+        db.commit()
+        db.refresh(row)
+        return row
+
+    def org_kostensatz(self, org_id):
+        if not org_id:
+            return None
+        return SessionLocal().query(Kostensatz).filter(
+            Kostensatz.org_id == org_id, Kostensatz.projekt_id.is_(None),
+        ).order_by(Kostensatz.updated_at.desc()).first()
+
+    def projekt_kostensatz(self, projekt_id):
+        if not projekt_id:
+            return None
+        return SessionLocal().query(Kostensatz).filter(
+            Kostensatz.projekt_id == int(projekt_id)
+        ).order_by(Kostensatz.updated_at.desc()).first()
+
+    def effective_tarife(self, org_id=None, projekt_id=None):
+        """Massgebliche Tagessätze (CHF/PT) für die Kostenberechnung: Projekt
+        übersteuert Org, sonst Standard. Stundensätze werden auf den Tag umgerechnet."""
+        row = self.projekt_kostensatz(projekt_id) or self.org_kostensatz(org_id)
+        if not row or not (row.satz_intern or row.satz_extern):
+            return dict(self.DEFAULT_TARIFE)
+        faktor = (row.stunden_pro_tag or 8) if row.einheit == "stunde" else 1
+
+        def tag(v, fallback):
+            return int(v) * faktor if v else fallback
+        return {
+            "intern": tag(row.satz_intern, self.DEFAULT_TARIFE["intern"]),
+            "extern": tag(row.satz_extern, self.DEFAULT_TARIFE["extern"]),
+        }
 
     def get_methoden_vorlage(self, vorlage_id):
         return SessionLocal().get(MethodenVorlage, int(vorlage_id))
