@@ -74,6 +74,14 @@ class RechtsgrundlagenService:
         rows = self._bereinige(rows)
         return rows if rows else [{k: "" for k in spalten}]
 
+    def _ohne_datenschutz(self, rows):
+        """Datenschutz-/Informationssicherheits-Einträge entfernen – sie gehören in die
+        Schutzbedarfsanalyse, nicht in die Rechtsgrundlagenanalyse (HERMES-Methodengrenze).
+        Deterministisches Sicherheitsnetz zusätzlich zum LLM-Guardrail."""
+        return [r for r in (rows or [])
+                if not (isinstance(r, dict)
+                        and self._ist_datenschutz(" ".join(str(v) for v in r.values())))]
+
     def _grounding(self, wissen):
         """Verifizierte Bundes-Fundstellen (Fedlex) zu ALLEN genannten Gesetzen – für die
         Links in 0.2/0.3 und die Beschreibung in Kap. 1. {} bei Störung."""
@@ -206,7 +214,7 @@ class RechtsgrundlagenService:
             "vorschlaege_deckung": {"extracted": self._rows_or_blank(
                 v.get("vorschlaege"), _TABELLEN["vorschlaege_deckung"])},
             "product_compliance": {"extracted": self._rows_or_blank(
-                v.get("compliance"), _TABELLEN["product_compliance"])},
+                self._ohne_datenschutz(v.get("compliance")), _TABELLEN["product_compliance"])},
             "konsequenzen": {"extracted": {"text": (v.get("konsequenzen") or "").strip()}},
             "empfehlung": {"extracted": {"text": (v.get("empfehlung") or "").strip()}},
         }

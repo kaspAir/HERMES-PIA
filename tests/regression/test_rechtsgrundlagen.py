@@ -233,3 +233,25 @@ def test_betriebskonzept_ist_keine_rechtsgrundlage():
              ["bestehende_rechtsgrundlagen"]["extracted"]]
     assert "Schweizerische Strafprozessordnung (StPO)" in namen
     assert not any("Betriebskonzept" in n for n in namen)   # kein Gesetz -> raus aus Kap.1
+
+
+def test_product_compliance_ohne_datenschutz_infosec():
+    wissen = Projektwissen(_PIA, ebene="bund")
+    svc = RechtsgrundlagenService(None, None, None, fedlex=_FakeFedlex(), llm=_FakeLLM({
+        "compliance": [
+            {"compliance": "Ausschreibungspflicht (BöB/VöB)", "beschreibung": "Beschaffung ..."},
+            {"compliance": "Datenschutz (DSG/VDSG)", "beschreibung": "besonders schützenswerte Daten"},
+            {"compliance": "Informationssicherheit (ISG/ISV)", "beschreibung": "klassifizierte Daten"},
+        ],
+    }))
+    comp = [r["compliance"] for r in svc.build_answers(wissen)["product_compliance"]["extracted"]]
+    assert any("Ausschreibungspflicht" in c for c in comp)
+    # Datenschutz/Infosec gehören in die Schutzbedarfsanalyse -> hier raus
+    assert not any("Datenschutz" in c or "Informationssicherheit" in c for c in comp)
+
+
+def test_hermes_guardrails_im_prompt():
+    from app.domains.ergebnisse.rechtsgrundlagen.proposals import SYSTEM
+    s = SYSTEM.lower()
+    assert "schutzbedarfsanalyse" in s and "isds" in s
+    assert "weiteres vorgehen" in s and "klassisch/agil" in s
