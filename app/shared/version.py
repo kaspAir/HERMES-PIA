@@ -10,6 +10,10 @@ startet Gunicorn neu, also ist der Wert immer aktuell.
 import subprocess
 from pathlib import Path
 
+# Sichtbare Produktversion (Release-Marker). Wird unten rechts angezeigt und bei der
+# Promotion als Git-Tag (v<PRODUCT_VERSION>) gesetzt – bleibt auch auf Produktion sichtbar.
+PRODUCT_VERSION = "0.6"
+
 _ROOT = Path(__file__).resolve().parents[2]
 _cache = None
 
@@ -31,6 +35,7 @@ def get_version():
     global _cache
     if _cache is None:
         _cache = {
+            "product": PRODUCT_VERSION,
             "sha": _git("rev-parse", "--short", "HEAD") or "unbekannt",
             "date": _git("log", "-1", "--format=%cd", "--date=format:%Y-%m-%d %H:%M"),
             "subject": _git("log", "-1", "--format=%s"),
