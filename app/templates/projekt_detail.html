@@ -95,8 +95,23 @@
           </li>
           {% endfor %}
         </ul>
-        {% else %}
+        {% elif block.modul.code != 'projektgrundlagen' %}
         <p class="modul-empty muted">Noch keine Ergebnisse erfasst.</p>
+        {% endif %}
+        {% if block.modul.code == 'projektgrundlagen' %}
+        <ul class="ergebnis-list">
+          <li class="ergebnis-item">
+            <div class="ergebnis-head">
+              <span class="ergebnis-titel">Rechtsgrundlagenanalyse</span>
+              <span class="badge badge-rolle">Projektleiter</span>
+            </div>
+            <div class="ergebnis-aufgabe muted">Aus dem PIA abgeleitet (Draft-first).</div>
+            <div class="ergebnis-actions">
+              <a href="{{ url_for('ui.rechtsgrundlagen', projekt_id=projekt.id) }}"
+                 class="btn-link">{{ 'Bearbeiten' if current_user.can_write else 'Ansehen' }}</a>
+            </div>
+          </li>
+        </ul>
         {% endif %}
       </div>
       {% endfor %}

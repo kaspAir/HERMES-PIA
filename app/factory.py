@@ -13,6 +13,7 @@ import app.domains.auth.models      # noqa: F401 – Tabellen registrieren
 import app.domains.interview.models  # noqa: F401 – ensures models are registered before create_all
 import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registrieren
 import app.domains.projekt.models     # noqa: F401 – Projektstruktur-Tabellen registrieren
+import app.domains.ergebnisse.models   # noqa: F401 – Ergebnis-Entwuerfe-Tabelle registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
 from app.domains.praesentation.service import PraesentationService
@@ -123,6 +124,11 @@ def create_app(config_class=None):
         projekt_service=app.projekt_service,
     )
     app.generation_service = GenerationService(app.method_service)
+    # Abgeleitete Initialisierungs-Ergebnisse (eigene Module, PIA unberührt).
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    app.rechtsgrundlagen_service = RechtsgrundlagenService(
+        app.interview_service, app.projekt_service, app.generation_service, llm=llm_client,
+    )
     app.praesentation_service = PraesentationService(llm_client)
     app.auth_service = AuthService()
     app.transcriber = Transcriber(
