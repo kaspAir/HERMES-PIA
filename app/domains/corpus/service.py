@@ -77,11 +77,13 @@ class RagService:
     # ---- Ingest ---------------------------------------------------------- #
 
     def ingest_document(self, raw_text, projekt, org_id=None, ergebnistyp="PIA",
-                        skip_if_exists=True):
+                        skip_if_exists=True, init_dauer_wochen=None):
         """Bettet ein Ergebnis-Dokument als Chunks ein und legt sie ab.
 
         org_id=None -> geteilter Basiskorpus; sonst Korpus dieser Organisation.
-        Rückgabe: Anzahl gespeicherter Chunks (0 wenn kein Embedder / leer / Dublette).
+        `init_dauer_wochen`: geplante Dauer der Phase Initialisierung (Wochen) dieses
+        Projekts – wird strukturiert je Chunk abgelegt und dient neuen Projekten als
+        Vergleichswert. Rückgabe: Anzahl gespeicherter Chunks (0 bei leer/Dublette).
         """
         if not self.available:
             return 0
@@ -93,15 +95,34 @@ class RagService:
         vectors = self.embedder.embed([c[1] for c in chunks], input_type="document")
         if not vectors or len(vectors) != len(chunks):
             return 0
+        dauer = int(init_dauer_wochen) if init_dauer_wochen else None
         db = SessionLocal()
         for (section, ctext), vec in zip(chunks, vectors):
             db.add(CorpusChunk(
                 ergebnistyp=ergebnistyp, projekt=projekt, abschnitt=section,
                 org_id=org_id, text=ctext, embedding_json=json.dumps(vec),
-                model=self.embedder.model,
+                model=self.embedder.model, init_dauer_wochen=dauer,
             ))
         db.commit()
         return len(chunks)
+
+    def vergleichbare_dauer_wochen(self, query, org_id=None, top_k=8, min_score=0.35):
+        """Median der Initialisierungs-Dauer (Wochen) ähnlicher Projekte, oder None.
+
+        Aggregiert je Projekt (nicht je Chunk), damit ein Projekt mit vielen Treffern
+        nicht überzählt. Grundlage für einen beratenden Dauer-Vorschlag."""
+        treffer = self.search(query, org_id=org_id, top_k=top_k, min_score=min_score)
+        je_projekt = {}
+        for t in treffer:
+            w = t.get("init_dauer_wochen")
+            if w and w > 0:
+                je_projekt.setdefault(t.get("projekt") or f"_{len(je_projekt)}", int(w))
+        werte = sorted(je_projekt.values())
+        if not werte:
+            return None
+        n = len(werte)
+        median = werte[n // 2] if n % 2 else (werte[n // 2 - 1] + werte[n // 2]) / 2
+        return {"median_wochen": round(median), "n_projekte": n}
 
     def _exists(self, projekt, org_id, ergebnistyp):
         db = SessionLocal()
@@ -147,6 +168,7 @@ class RagService:
             "ergebnistyp": r.ergebnistyp,
             "org_id": r.org_id,
             "text": r.text,
+            "init_dauer_wochen": r.init_dauer_wochen,
         } for score, r in scored[:top_k]]
 
     def count(self, org_id="__all__", ergebnistyp=None):

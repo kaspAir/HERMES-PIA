@@ -228,12 +228,13 @@ def interview_reprocess(session_id):
 @bp.post("/interview/<int:session_id>/followup")
 @permission_required("write")
 def interview_followup(session_id):
-    _load_session(session_id)
+    session = _load_session(session_id)
     risk_id = request.form.get("risk_id", "")
     accepted = request.form.get("accepted", "0") == "1"
     raw_text = request.form.get("raw_text", "").strip() or None
     try:
-        current_app.interview_service.answer_followup(session_id, risk_id, accepted, raw_text)
+        current_app.interview_service.answer_followup(
+            session_id, risk_id, accepted, raw_text, tarife=_tarife_for_session(session))
     except ValueError as e:
         return str(e), 400
     return redirect(url_for("ui.interview_workspace", session_id=session_id))

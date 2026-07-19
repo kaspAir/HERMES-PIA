@@ -28,4 +28,8 @@ class CorpusChunk(Base):
     text = Column(Text, nullable=False)
     embedding_json = Column(Text, nullable=True)       # JSON-Liste von Floats
     model = Column(String(80), nullable=True)          # verwendetes Embedding-Modell
+    # Strukturierte Kennzahl: geplante Dauer der Phase Initialisierung (Wochen).
+    # Wird beim Ingest je Dokument gesetzt und dient als Vergleichswert für neue
+    # Projekte (beratender Dauer-Vorschlag), statt sie später aus Freitext zu raten.
+    init_dauer_wochen = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
