@@ -228,3 +228,38 @@ def test_postprocess_personalaufwand_garantiert_basis_und_abgeleitete_rollen():
     for erwartet in ("projektleiter", "auftraggeber", "isds", "anwendervertreter", "entwickler"):
         assert erwartet in rollen, f"Rolle fehlt: {erwartet}"
     assert sa["extracted"][0]["rolle"] == "Projektleiter"  # Basisrollen zuerst
+
+
+# --- Phasendauer (#3): genannte Dauer bestimmt Enddatum/Termine ------------ #
+
+def test_parse_dauer_erkennt_monate_und_wochen():
+    from app.domains.interview.service import _parse_dauer_wochen
+    w = _parse_dauer_wochen("Für die Phase Initialisierung haben wir neun Monate eingeplant.")
+    assert w and abs(w - 9 * 4.345) < 1.0            # ~39 Wochen
+    assert abs(_parse_dauer_wochen("wir planen 6 Wochen dafür") - 6) < 0.01
+    assert _parse_dauer_wochen("9 Monate") and _parse_dauer_wochen("9 Monate") > 30
+    assert _parse_dauer_wochen("Noch kein Zeitplan vorhanden.") is None
+
+
+def test_phasendauer_bestimmt_enddatum():
+    from datetime import date
+    rows = [
+        {"ergebnis": "Stakeholder-Liste"},
+        {"ergebnis": "Studie"},
+        {"ergebnis": "Meilenstein Durchführungsfreigabe"},
+    ]
+    _assign_termine_dates(rows, "2026-01-05", factor=1.0, ziel_wochen=9 * 4.345)
+    last = max(rows, key=lambda r: date(*map(int, reversed(r["termin"].split(".")))))["termin"]
+    d, m, y = map(int, last.split("."))
+    tage = (date(y, m, d) - date(2026, 1, 5)).days
+    assert 250 <= tage <= 290, f"Phasenende ~9 Monate erwartet, war {tage} Tage"
+
+
+def test_ohne_dauer_greift_komplexitaetsfaktor():
+    # Ohne ziel_wochen bleibt das bisherige Verhalten (Faktor).
+    from datetime import date
+    rows = [{"ergebnis": "Meilenstein Durchführungsfreigabe"}]
+    _assign_termine_dates(rows, "2026-01-05", factor=1.0)  # Rang 9 * 1.0 = 9 Wochen
+    d, m, y = map(int, rows[0]["termin"].split("."))
+    tage = (date(y, m, d) - date(2026, 1, 5)).days
+    assert 55 <= tage <= 70                            # ~9 Wochen
