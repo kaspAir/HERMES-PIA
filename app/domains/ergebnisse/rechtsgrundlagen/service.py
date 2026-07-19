@@ -5,6 +5,7 @@ speichert sie als ErgebnisEntwurf und erzeugt das Dokument über die generische
 Generierung. Der PIA bleibt unangetastet.
 """
 import json
+import re
 
 from app.domains.ergebnisse.models import ErgebnisEntwurf
 from app.domains.ergebnisse.projektwissen import Projektwissen
@@ -15,6 +16,11 @@ from app.domains.rechtsquellen.fedlex import FedlexClient
 from app.shared.database import SessionLocal
 
 METHOD_ID = "rechtsgrundlagenanalyse"
+
+# Datenschutz/Informationssicherheit gehören in die Schutzbedarfsanalyse, NICHT hierher.
+_DATENSCHUTZ_KW = ("datenschutz", "isds", "informationssicherheit", "datensicherheit")
+# Kantonale/kommunale Erlasse (bei reiner Bundes-Analyse ausblenden).
+_KANTONAL_KW = ("kantonal", "kommunal", "submissionsgesetz", "kant.")
 
 # Tabellen-Abschnitte mit ihren Spalten-Schlüsseln (für Leerzeilen-Fallback).
 _TABELLEN = {
@@ -63,15 +69,38 @@ class RechtsgrundlagenService:
         return rows if rows else [{k: "" for k in spalten}]
 
     def _grounding(self, wissen):
-        """Verifizierte Bundes-Fundstellen (Fedlex) zu den genannten Gesetzen – oder {}."""
+        """Verifizierte Bundes-Fundstellen (Fedlex) zu ALLEN genannten Gesetzen – für die
+        Links in 0.2/0.3 und die Beschreibung in Kap. 1. {} bei Störung."""
         try:
             return ground_federal(wissen.genannte_rechtsgrundlagen(), wissen.ebene, self.fedlex)
         except Exception:  # noqa: BLE001 – Grounding-Störung darf den Entwurf nicht kippen
             return {}
 
     @staticmethod
+    def _ist_datenschutz(name):
+        return any(k in (name or "").lower() for k in _DATENSCHUTZ_KW)
+
+    @staticmethod
+    def _ist_kantonal(name):
+        return any(k in (name or "").lower() for k in _KANTONAL_KW)
+
+    def _relevante_gesetze(self, wissen):
+        """Genannte Gesetze, gefiltert für Kap. 1: Datenschutz/Infosec raus (Schutzbedarfs-
+        analyse); bei reiner Bundes-Analyse keine kantonalen/kommunalen Erlasse."""
+        ebenen = (wissen.ebene or "").lower()
+        nur_bund = "bund" in ebenen and "kanton" not in ebenen and "kommun" not in ebenen
+        out = []
+        for name in wissen.genannte_rechtsgrundlagen():
+            if self._ist_datenschutz(name):
+                continue
+            if nur_bund and self._ist_kantonal(name):
+                continue
+            out.append(name)
+        return out
+
+    @staticmethod
     def _dokumente(rows, grounded):
-        """Referenzierte/Mitgeltende übernehmen; bei Bundes-Treffer Link/SR ergänzen."""
+        """Referenzierte/Mitgeltende übernehmen; bei Bundes-Treffer SR + Fedlex-Link."""
         out = []
         for r in rows:
             name = str(r.get("name", "")).strip()
@@ -80,31 +109,53 @@ class RechtsgrundlagenService:
                         "link": f"SR {g['sr']} – {g['url']}" if g else ""})
         return out or [{"name": "", "link": ""}]
 
-    def _bestehende(self, wissen, vorschlag, grounded):
-        """Genannte Gesetze aus dem PIA garantiert aufführen. Bei Bundes-Treffer die
-        VERIFIZIERTE Fundstelle (offizieller Titel + SR) als Beschreibung; sonst die
-        allgemeine LLM-Beschreibung. Nie eine Fundstelle erfinden."""
+    def _definitionen(self, wissen):
+        """Definitionen/Abkürzungen aus dem PIA übernehmen, ergänzt um die Kürzel der
+        genannten Gesetze (z.B. StPO, PrHG). Fallback: Standard-Abkürzungen."""
+        rows, seen = [], set()
+
+        def add(abk, bedeutung):
+            k = abk.lower()
+            if abk and k not in seen:
+                seen.add(k)
+                rows.append({"abkuerzung": abk, "bedeutung": bedeutung})
+
+        for r in wissen.definitionen():
+            add(str(r.get("abkuerzung", "")).strip(), str(r.get("bedeutung", "")).strip())
+        for abk, bed in (("CHF", "Schweizer Franken"), ("PT", "Personentage"),
+                         ("AG", "Auftraggeber"), ("PL", "Projektleiter")):
+            add(abk, bed)
+        for name in wissen.genannte_rechtsgrundlagen():
+            for abk in re.findall(r"\(([A-ZÄÖÜ][A-Za-zÄÖÜäöü./-]{1,12})\)", name):
+                add(abk, re.sub(r"\s*\([^)]*\)", "", name).strip())
+        return rows or [{"abkuerzung": "", "bedeutung": ""}]
+
+    def _bestehende(self, namen, vorschlag, grounded):
+        """Die (gefilterten) relevanten Gesetze aufführen. Bei Bundes-Treffer die
+        VERIFIZIERTE Fundstelle (offizieller Titel + SR + Fedlex-Link) als Beschreibung;
+        sonst die allgemeine LLM-Beschreibung. Nie eine Fundstelle erfinden."""
         vorschlag = self._bereinige(vorschlag)
         by_name = {r.get("rechtsgrundlage", "").lower(): r for r in vorschlag}
         rows = []
-        for name in wissen.genannte_rechtsgrundlagen():
+        for name in namen:
             llm_row = by_name.pop(name.lower(), None)
             g = grounded.get(name)
             if g:
-                beschreibung = f"{g['titel']} (SR {g['sr']})"
+                beschreibung = f"{g['titel']} (SR {g['sr']}) – {g['url']}"
             else:
                 beschreibung = (llm_row or {}).get("beschreibung", "")
             rows.append({"rechtsgrundlage": name, "beschreibung": beschreibung})
-        rows.extend(by_name.values())          # zusätzliche LLM-Vorschläge anhängen
         return rows or [{"rechtsgrundlage": "", "beschreibung": ""}]
 
     def build_answers(self, wissen):
         grounded = self._grounding(wissen)
-        v = analysiere(wissen, self.llm, grounding=grounded)
+        relevante = self._relevante_gesetze(wissen)
+        v = analysiere(wissen, self.llm, grounding=grounded, bestehende_namen=relevante)
         return {
             "referenzierte_dokumente": {"extracted": self._dokumente(wissen.referenzierte(), grounded)},
             "mitgeltende_unterlagen": {"extracted": self._dokumente(wissen.mitgeltende(), grounded)},
-            "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(wissen, v.get("bestehende"), grounded)},
+            "definitionen": {"extracted": self._definitionen(wissen)},
+            "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(relevante, v.get("bestehende"), grounded)},
             "bevorstehende_aenderungen": {"extracted": self._rows_or_blank(
                 v.get("bevorstehende"), _TABELLEN["bevorstehende_aenderungen"])},
             "identifizierte_luecken": {"extracted": self._rows_or_blank(

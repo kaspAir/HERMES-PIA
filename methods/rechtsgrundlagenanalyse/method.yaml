@@ -63,6 +63,15 @@ sections:
       - { id: name, label: "Name" }
       - { id: link, label: "Nummer / Link" }
 
+  - id: definitionen
+    number: "0.4"
+    title: "Definitionen und Abkuerzungen"
+    type: table
+    quelle: pia            # aus dem PIA + Kuerzel der genannten Gesetze
+    columns:
+      - { id: abkuerzung, label: "Abkuerzung" }
+      - { id: bedeutung,  label: "Bedeutung" }
+
   # --- Kern: die eigentliche Rechtsgrundlagenanalyse ------------------
   - id: bestehende_rechtsgrundlagen
     number: "1"
