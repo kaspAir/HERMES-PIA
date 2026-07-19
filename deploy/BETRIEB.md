@@ -54,3 +54,18 @@ bash ~/bin/hermes/hermes_ctl.sh watchdog       # alle Umgebungen prüfen/heilen 
 - Nie blind `kill $(cat PID)`, nie `pkill -f` (würde die SSH-Deploy-Sitzung
   treffen). `fuser -k <port>/tcp` nur als zweites Netz.
 - Promotion bleibt streng sequenziell; test ist Kunden-Umgebung.
+
+## Rechtsquellen aktualisieren (Fedlex-SR-Index)
+
+Das Grounding der Rechtsgrundlagenanalyse nutzt einen OFFLINE mitgelieferten
+Fedlex-Index (`app/domains/rechtsquellen/data/fedlex_sr_de.json.gz`), weil der
+Deploy-Host `fedlex.data.admin.ch` NICHT erreicht.
+
+Aktualisieren (= der "Update-Button"): Jenkins-Job **"Rechtsquellen aktualisieren"**
+(Pipeline aus `Jenkinsfile.rechtsquellen`, "Build Now"). Laeuft auf dem Build-Agent
+(hat Internet), holt den Index neu (`scripts/refresh_fedlex_index.py`), committet ihn
+nach `develop`. Job braucht eine Git-Credential mit Push-Recht.
+
+Die kantonalen Gesetzessammlungen sind eine statische Linksammlung
+(`app/domains/rechtsquellen/kantone.py`) – kein Abruf noetig; bei URL-Aenderung
+eines Kantons dort anpassen.

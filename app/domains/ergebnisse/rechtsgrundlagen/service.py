@@ -13,6 +13,7 @@ from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
 from app.domains.ergebnisse.rechtsgrundlagen.proposals import analysiere
 from app.domains.projekt.reference import ERG_PIA
 from app.domains.rechtsquellen.fedlex import FedlexClient
+from app.domains.rechtsquellen.kantone import sammlung_link
 from app.shared.database import SessionLocal
 
 METHOD_ID = "rechtsgrundlagenanalyse"
@@ -128,15 +129,31 @@ class RechtsgrundlagenService:
         return [n for n in wissen.genannte_rechtsgrundlagen()
                 if self._kap1_geeignet(n, wissen.ebene)]
 
-    @staticmethod
-    def _dokumente(rows, grounded):
-        """Referenzierte/Mitgeltende übernehmen; bei Bundes-Treffer SR + Fedlex-Link."""
+    def _kantonslink(self, wissen):
+        """Link zur kantonalen Gesetzessammlung, falls Kantonsebene + Kanton gewählt."""
+        if "kanton" in (wissen.ebene or "").lower() and wissen.kanton:
+            url = sammlung_link(wissen.kanton)
+            if url:
+                return f"Kantonale Sammlung {wissen.kanton}: {url}"
+        return ""
+
+    def _fundstelle(self, name, grounded, kantonslink):
+        """Fedlex-Fundstelle (Bund) bevorzugt; sonst kantonaler Sammlungs-Link für
+        kantonale Gesetze; sonst leer. Nie eine Nummer erfinden."""
+        g = grounded.get(name)
+        if g:
+            return f"SR {g['sr']} – {g['url']}"
+        if kantonslink and self._ist_rechtsgrundlage(name):
+            return kantonslink
+        return ""
+
+    def _dokumente(self, rows, grounded, kantonslink=""):
+        """Referenzierte/Mitgeltende übernehmen; Bundes-SR-Link bzw. kantonaler
+        Sammlungs-Link ergänzen (nur bei echten Rechtsgrundlagen)."""
         out = []
         for r in rows:
             name = str(r.get("name", "")).strip()
-            g = grounded.get(name)
-            out.append({"name": name,
-                        "link": f"SR {g['sr']} – {g['url']}" if g else ""})
+            out.append({"name": name, "link": self._fundstelle(name, grounded, kantonslink)})
         return out or [{"name": "", "link": ""}]
 
     def _definitionen(self, wissen):
@@ -160,10 +177,11 @@ class RechtsgrundlagenService:
                 add(abk, re.sub(r"\s*\([^)]*\)", "", name).strip())
         return rows or [{"abkuerzung": "", "bedeutung": ""}]
 
-    def _bestehende(self, namen, vorschlag, grounded):
+    def _bestehende(self, namen, vorschlag, grounded, kantonslink=""):
         """Die (gefilterten) relevanten Gesetze aufführen. Bei Bundes-Treffer die
-        VERIFIZIERTE Fundstelle (offizieller Titel + SR + Fedlex-Link) als Beschreibung;
-        sonst die allgemeine LLM-Beschreibung. Nie eine Fundstelle erfinden."""
+        VERIFIZIERTE Fundstelle (offizieller Titel + SR + Fedlex-Link); sonst die
+        LLM-Beschreibung, bei Kantonsebene ergänzt um den kantonalen Sammlungs-Link.
+        Nie eine Fundstelle erfinden."""
         vorschlag = self._bereinige(vorschlag)
         by_name = {r.get("rechtsgrundlage", "").lower(): r for r in vorschlag}
         rows = []
@@ -174,6 +192,8 @@ class RechtsgrundlagenService:
                 beschreibung = f"{g['titel']} (SR {g['sr']}) – {g['url']}"
             else:
                 beschreibung = (llm_row or {}).get("beschreibung", "")
+                if kantonslink:
+                    beschreibung = f"{beschreibung} [{kantonslink}]".strip()
             rows.append({"rechtsgrundlage": name, "beschreibung": beschreibung})
         return rows or [{"rechtsgrundlage": "", "beschreibung": ""}]
 
@@ -203,11 +223,12 @@ class RechtsgrundlagenService:
         # Alle Namen (PIA-Verweise für 0.2/0.3 + Kap.-1-Recht) einmal gegen Fedlex prüfen.
         alle_namen = list({*wissen.genannte_rechtsgrundlagen(), *kap1})
         grounded = self._grounding_names(alle_namen, wissen.ebene)
+        klink = self._kantonslink(wissen)
         return {
-            "referenzierte_dokumente": {"extracted": self._dokumente(wissen.referenzierte(), grounded)},
-            "mitgeltende_unterlagen": {"extracted": self._dokumente(wissen.mitgeltende(), grounded)},
+            "referenzierte_dokumente": {"extracted": self._dokumente(wissen.referenzierte(), grounded, klink)},
+            "mitgeltende_unterlagen": {"extracted": self._dokumente(wissen.mitgeltende(), grounded, klink)},
             "definitionen": {"extracted": self._definitionen(wissen)},
-            "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(kap1, v.get("bestehende"), grounded)},
+            "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(kap1, v.get("bestehende"), grounded, klink)},
             "bevorstehende_aenderungen": {"extracted": self._rows_or_blank(
                 v.get("bevorstehende"), _TABELLEN["bevorstehende_aenderungen"])},
             "identifizierte_luecken": {"extracted": self._luecken(v.get("luecken"))},

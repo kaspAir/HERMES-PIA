@@ -1,0 +1,45 @@
+// =====================================================================
+// Jenkins-Job "Rechtsquellen aktualisieren"
+// =====================================================================
+// Aktualisiert den mitgelieferten Fedlex-SR-Index (Bund). Laeuft auf dem
+// Build-Agent (der hat Internet – der Deploy-Host erreicht Fedlex NICHT).
+// "Build Now" = der Update-Button. Optional per cron monatlich.
+//
+// Einrichtung: Pipeline-Job -> "Pipeline script from SCM" -> dieses File,
+// mit einer Git-Credential, die PUSH-Recht auf 'develop' hat.
+//
+// Die kantonale Linksammlung ist statisch (app/domains/rechtsquellen/kantone.py)
+// und braucht keinen Abruf.
+pipeline {
+    agent any
+    triggers { cron('H 3 1 * *') }          // monatlich; jederzeit manuell ausloesbar
+    options { timeout(time: 15, unit: 'MINUTES') }
+    stages {
+        stage('Fedlex-Index holen') {
+            steps {
+                sh '''
+                    python3 -m venv .venv
+                    . .venv/bin/activate
+                    pip install -q requests
+                    python scripts/refresh_fedlex_index.py
+                '''
+            }
+        }
+        stage('Committen, wenn geaendert') {
+            steps {
+                sh '''
+                    if git status --porcelain app/domains/rechtsquellen/data/ | grep -q .; then
+                        git config user.email "jenkins@hermespia.ch"
+                        git config user.name  "HERMES PIA Jenkins"
+                        git add app/domains/rechtsquellen/data/
+                        git commit -m "chore(rechtsquellen): Fedlex-SR-Index aktualisiert (Jenkins)"
+                        git push origin HEAD:develop
+                        echo "Index aktualisiert und nach develop gepusht."
+                    else
+                        echo "Keine Aenderung am SR-Index."
+                    fi
+                '''
+            }
+        }
+    }
+}
