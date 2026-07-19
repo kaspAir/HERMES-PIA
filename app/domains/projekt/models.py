@@ -148,6 +148,24 @@ class MethodenVorlage(Base):
     mapping_json = Column(Text, nullable=True)
 
 
+class Kostensatz(Base):
+    """Kostensätze (intern/extern) für die Personalkosten-Berechnung im PIA.
+
+    Gilt pro Organisationseinheit (projekt_id NULL) oder pro Projekt; das Projekt
+    übersteuert die PMO-Vorgabe – gleiche Mechanik wie die Vorlagen. Die Einheit ist
+    wählbar: Stunden- oder Tagessatz (Stundensatz × stunden_pro_tag = Tagessatz)."""
+    __tablename__ = "kostensatz"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, nullable=True, index=True)
+    projekt_id = Column(Integer, ForeignKey("projekt.id"), nullable=True, index=True)
+    satz_intern = Column(Integer, nullable=True)      # CHF (je Einheit)
+    satz_extern = Column(Integer, nullable=True)      # CHF (je Einheit)
+    einheit = Column(String(10), default="tag")       # 'tag' | 'stunde'
+    stunden_pro_tag = Column(Integer, default=8)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class MigrationFlag(Base):
     """Einmal-Marker für Daten-Migrationen – verhindert Mehrfach-Ausführung
     über mehrere Gunicorn-Worker/Neustarts hinweg (atomar via Primärschlüssel)."""
