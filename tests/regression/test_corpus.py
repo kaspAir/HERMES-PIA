@@ -110,3 +110,37 @@ def test_ingest_idempotent(app):
         a = rag.ingest_document(doc, projekt="P", org_id=None)
         b = rag.ingest_document(doc, projekt="P", org_id=None)
         assert a >= 1 and b == 0  # zweiter Lauf überspringt
+
+
+# ---- Strukturierte Initialisierungs-Dauer (Vergleichswert) ---------------- #
+
+def test_ingest_speichert_init_dauer(app):
+    rag = app.rag_service
+    with app.app_context():
+        rag.ingest_document("Ausgangslage und Studie und Beschaffung und Prototyp im Vorhaben zur Migration.", projekt="D1",
+                            org_id=None, init_dauer_wochen=39)
+        t = rag.search("Ausgangslage Studie", org_id=None, min_score=-1.0)
+        assert t and t[0]["init_dauer_wochen"] == 39
+
+
+def test_vergleichbare_dauer_median_je_projekt(app):
+    rag = app.rag_service
+    with app.app_context():
+        # Drei vergleichbare Projekte mit 26 / 39 / 52 Wochen -> Median 39
+        rag.ingest_document("Ausgangslage Studie Prototyp Beschaffung Stakeholder Migration Budget Termin.", projekt="A",
+                            org_id=None, init_dauer_wochen=26)
+        rag.ingest_document("Ausgangslage Studie Prototyp Migration Stakeholder Beschaffung Budget Termin.", projekt="B",
+                            org_id=None, init_dauer_wochen=39)
+        rag.ingest_document("Ausgangslage Studie Prototyp Stakeholder Beschaffung Migration Budget Termin.", projekt="C",
+                            org_id=None, init_dauer_wochen=52)
+        res = rag.vergleichbare_dauer_wochen("Ausgangslage Studie Prototyp", org_id=None,
+                                             min_score=-1.0)
+        assert res and res["median_wochen"] == 39 and res["n_projekte"] == 3
+
+
+def test_vergleichbare_dauer_ohne_daten_none(app):
+    rag = app.rag_service
+    with app.app_context():
+        rag.ingest_document("Ausgangslage Studie Prototyp Beschaffung ohne jede Dauerangabe im Text.", projekt="X", org_id=None)
+        assert rag.vergleichbare_dauer_wochen("Ausgangslage", org_id=None,
+                                              min_score=-1.0) is None

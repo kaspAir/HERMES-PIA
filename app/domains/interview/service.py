@@ -392,7 +392,7 @@ class InterviewService:
         self._persist_answers(session, answers)
         return changed
 
-    def answer_followup(self, session_id, risk_id, accepted, raw_text=None):
+    def answer_followup(self, session_id, risk_id, accepted, raw_text=None, tarife=None):
         """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen.
 
         Beim Aufnehmen ('accepted') wird der Vorschlag – oder die vom
@@ -415,6 +415,18 @@ class InterviewService:
                     elif followup.get("type") == "expertise":
                         # Thema der externen Fachexpertise bei der Rolle festhalten.
                         self._apply_expertise_thema(answers, raw_text if accepted else None)
+                    elif followup.get("type") == "rag_dauer":
+                        # Vergleichs-Dauer übernehmen (oder eigene diktierte Dauer) und
+                        # Termine/PT/Kosten deterministisch neu ableiten.
+                        wochen = None
+                        if accepted:
+                            wochen = ((_parse_dauer_wochen(raw_text) if raw_text else None)
+                                      or followup.get("dauer_wochen"))
+                        if wochen:
+                            answers["_dauer_wochen"] = wochen
+                            self._persist_answers(session, answers)
+                            self.reprocess(session_id, tarife)
+                            return self.current_state(session)
                     elif accepted:
                         section = self._section_by_id(self._effective_method(session), sid)
                         if section and followup.get("type") == "offer":
@@ -725,11 +737,16 @@ class InterviewService:
         monate = self._phase_monate(answers)
         faktor = self._complexity_factor(answers)
         for r in rows:
-            if not isinstance(r, dict) or str(r.get("aufwand", "")).strip():
+            if not isinstance(r, dict):
+                continue
+            # Vom PL genannte PT bleiben; automatisch geschätzte (Marke _pt_auto) werden
+            # bei geänderter Dauer/Komplexität neu skaliert – so bleibt 3.1 konsistent.
+            if str(r.get("aufwand", "")).strip() and not r.get("_pt_auto"):
                 continue
             pt = round(_rollen_last(r.get("rolle", "")) * _ARBEITSTAGE_PRO_MONAT * monate * faktor)
             if pt > 0:
                 r["aufwand"] = str(pt)
+                r["_pt_auto"] = True
 
     def _externe_expertise_signal(self, answers, extra_text=""):
         """True, wenn Ausgangslage/Komplexität ODER der Personalschritt selbst den
@@ -1357,6 +1374,23 @@ class InterviewService:
             factor = self._complexity_factor(answers)
             followups.extend(self._decision_followups(opts, session.start_datum, factor))
 
+        # Beratender Dauer-Vorschlag aus vergleichbaren Projekten (RAG): nur wenn der
+        # PL keine Dauer genannt hat und der Korpus einen Vergleichswert liefert.
+        if section["id"] == "termine":
+            vgl = self._rag_dauer_vorschlag(session, answers)
+            if vgl:
+                monate = max(1, round(vgl["median_wochen"] / _WOCHEN_PRO_MONAT))
+                followups.append({
+                    "risk_id": "rag_dauer",
+                    "frage": f"Sie haben keine Phasendauer genannt. Vergleichbare Projekte "
+                             f"planten im Median {monate} Monate für die Initialisierung "
+                             f"(aus {vgl['n_projekte']} Projekt(en)). Übernehmen, eigene "
+                             f"Dauer nennen (sprechen) oder ignorieren?",
+                    "type": "rag_dauer",
+                    "status": "pending",
+                    "dauer_wochen": vgl["median_wochen"],
+                })
+
         # "Haben Sie auch an ... gedacht?": hat der PL selbst Inhalte geliefert,
         # prüft HERMES PIA gegen die typischen Positionen des Abschnitts und bietet
         # die fehlenden EINMAL gesammelt zur Ergänzung an – statt sie still wegzulassen.
@@ -1429,14 +1463,36 @@ class InterviewService:
         return round(1.0 + (avg - 1) * 0.4, 2)
 
     def _phase_dauer_wochen(self, answers):
-        """Vom PL genannte Phasendauer (in Wochen) aus Ausgangslage/Terminen – oder
-        None. Ist sie gesetzt, ist sie für die Terminierung massgebend."""
+        """Massgebliche Phasendauer (Wochen) oder None. Priorität: explizit bestätigter
+        Wert (z.B. aus dem RAG-Dauer-Vorschlag) vor der aus Ausgangslage/Terminen
+        erkannten, vom PL genannten Dauer."""
+        explizit = (answers or {}).get("_dauer_wochen")
+        if explizit:
+            try:
+                return float(explizit)
+            except (TypeError, ValueError):
+                pass
         text = " ".join(filter(None, (
             self.composed_ausgangslage(answers),
             (answers.get("ausgangslage") or {}).get("raw_text"),
             (answers.get("termine") or {}).get("raw_text"),
         )))
         return _parse_dauer_wochen(text)
+
+    def _rag_dauer_vorschlag(self, session, answers):
+        """Beratender Dauer-Vorschlag aus vergleichbaren Projekten (RAG): nur wenn der
+        PL keine Dauer genannt hat UND der Korpus vergleichbare Projekte mit
+        hinterlegter Initialisierungs-Dauer liefert. Sonst None."""
+        if not (self.rag and getattr(self.rag, "available", False)):
+            return None
+        if self._phase_dauer_wochen(answers):
+            return None  # PL-Angabe hat Vorrang – nicht nachfragen
+        query = self.composed_ausgangslage(answers) or \
+            (answers.get("ausgangslage") or {}).get("raw_text") or ""
+        if not query.strip():
+            return None
+        return self.rag.vergleichbare_dauer_wochen(
+            query, org_id=getattr(session, "org_id", None))
 
     def _decision_followups(self, opts, start_datum, factor=1.0):
         """Baut die Entscheidungs-Followups für Beschaffungsanalyse / Prototyp.

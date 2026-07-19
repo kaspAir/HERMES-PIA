@@ -59,6 +59,14 @@ def _migrate_db(engine):
                 conn.execute(text("ALTER TABLE methoden_vorlage ADD COLUMN mapping_json TEXT"))
                 conn.commit()
 
+    # corpus_chunks: strukturierte Initialisierungs-Dauer (nachträglich ergänzt).
+    if "corpus_chunks" in inspector.get_table_names():
+        cc_cols = {c["name"] for c in inspector.get_columns("corpus_chunks")}
+        if "init_dauer_wochen" not in cc_cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE corpus_chunks ADD COLUMN init_dauer_wochen INTEGER"))
+                conn.commit()
+
 
 def _backfill_projekte(app):
     """Wickelt bestehende PIAs einmalig in die Projektstruktur ein.
