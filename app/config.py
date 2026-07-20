@@ -47,15 +47,20 @@ class Config:
     # Sprache des Diktats. Leer lassen = Parameter NICHT senden (manche Anbieter
     # deuten 'language' als Ziel-/Uebersetzungssprache statt als Erkennungshilfe).
     STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "de")
-    # Vokabular-Hinweis fuer Whisper ("initial prompt"): hebt die Erkennung von
-    # Fachbegriffen deutlich (z.B. "Server/Services" statt "Saeure"). Anpassbar.
+    # Vokabular- UND Stil-Hinweis fuer Whisper ("initial prompt"). WICHTIG: bewusst
+    # als sauber geschriebener deutscher FLIESSTEXT (Grossschreibung, Satzzeichen) -
+    # Whisper uebernimmt den Stil des Prompts. Eine Stichwortliste wuerde zu
+    # kleingeschriebener, zerhackter Ausgabe fuehren. Enthaelt Fachbegriffe und
+    # Helvetismen (z.B. "zuegeln"), die sonst falsch erkannt werden. Per ENV anpassbar.
     STT_PROMPT = os.environ.get("STT_PROMPT", (
-        "Diktat zu einem HERMES-Projekt der oeffentlichen Verwaltung. Fachbegriffe: "
-        "Server, Serverraum, Services, Kunden, Cloud, Schnittstelle, Applikation, "
-        "Fachanwendung, HERMES, Projektinitialisierungsauftrag, Initialisierung, Studie, "
-        "Beschaffungsanalyse, Schutzbedarfsanalyse, Rechtsgrundlagenanalyse, ISDS, "
-        "Datenschutz, Informationssicherheit, Meilenstein, Auftraggeber, Projektleiter, "
-        "Stakeholder, Prototyp, Personentage, Durchfuehrungsauftrag."
+        "Wir diktieren zu einem HERMES-Projekt der öffentlichen Verwaltung in der "
+        "Schweiz. Es geht um unseren ungekühlten Serverraum, die Server und die "
+        "Services für unsere Kunden. Wir zügeln die Systeme in die Cloud. Themen sind "
+        "Schnittstellen, Datenschutz und Informationssicherheit (ISDS), Beschaffung "
+        "und ein Prototyp. Beteiligt sind Auftraggeber, Projektleiterin und "
+        "Stakeholder. Ergebnisse sind die Studie, die Schutzbedarfsanalyse, die "
+        "Rechtsgrundlagenanalyse, der Durchführungsauftrag, die Meilensteine und der "
+        "Aufwand in Personentagen."
     ))
 
 
