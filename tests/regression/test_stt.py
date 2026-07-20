@@ -1,4 +1,5 @@
 """Beweist: Speech-to-Text (Meeting mithören) – Transcriber + Route."""
+import re
 import pytest
 
 from app.config import Config
@@ -295,3 +296,30 @@ def test_kontext_wird_an_basis_prompt_angehaengt(monkeypatch):
     t = Transcriber(api_url="http://stt/x", api_key="k", prompt="Basis-Prompt.")
     t.transcribe(b"audio", kontext="Das Projekt heisst Juris Fiat.")
     assert gesehen["prompt"] == "Basis-Prompt. Das Projekt heisst Juris Fiat."
+
+
+# ---- Nachlauf beim Stoppen (Wortende nicht abschneiden) ------------------- #
+
+def _vorlage(*teile):
+    from pathlib import Path
+    from app.config import BASE_DIR
+    return Path(BASE_DIR, "app", "templates", *teile).read_text(encoding="utf-8")
+
+
+def test_diktat_nimmt_nach_dem_stopp_noch_stille_auf():
+    """Wer auf Stopp klickt, tut das direkt nach dem letzten Wort. Ohne Nachlauf
+    schneidet Whisper das Wortende ab – das darf nicht dem Mandanten aufgebuerdet
+    werden ('bitte kurz nachschweigen'), sondern muss die Anwendung leisten."""
+    interview = _vorlage("interview.html")
+    zuordnung = _vorlage("partials", "methoden_zuordnung.html")
+    # Der Nachlauf ist gross genug, dass ein ausklingendes Wort sicher drin ist.
+    for text in (interview, zuordnung):
+        assert int(re.search(r"NACHLAUF_MS\s*=\s*(\d+)", text).group(1)) >= 1000
+    # ... und das Schliessen des Recorders haengt tatsaechlich an diesem Timer.
+    assert "setTimeout(hardStop, NACHLAUF_MS)" in interview
+    assert "}, NACHLAUF_MS);" in zuordnung
+
+
+def test_weiter_wartet_auch_waehrend_des_nachlaufs():
+    """Sonst ginge die Antwort ab, bevor das letzte Segment ueberhaupt aufgenommen ist."""
+    assert "if (nachlauf || sending || sendQueue.length)" in _vorlage("interview.html")
