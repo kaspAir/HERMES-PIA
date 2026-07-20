@@ -139,6 +139,8 @@ def create_app(config_class=None):
         api_url=app.config.get("STT_API_URL"),
         api_key=app.config.get("STT_API_KEY"),
         model=app.config.get("STT_MODEL", "whisper-1"),
+        language=app.config.get("STT_LANGUAGE", "de"),
+        prompt=app.config.get("STT_PROMPT", ""),
     )
 
     # Betreiber-Account (Super-Admin) anlegen, falls per .env konfiguriert.

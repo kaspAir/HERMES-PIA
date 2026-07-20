@@ -20,9 +20,11 @@ log = logging.getLogger("hermes.stt")
 
 _FERTIG = {"done", "finished", "success", "succeeded", "completed", "complete", "ok"}
 _FEHLER = {"error", "failed", "failure", "canceled", "cancelled"}
-# Schlüssel, unter denen der erkannte Text stehen kann.
-_TEXT_KEYS = ("text", "transcription", "transcript", "output")
-# Werte, die nur Steuerinformation sind – nie der Transkript-Text.
+# Eindeutige Transkript-Felder: Inhalt wird IMMER als Text akzeptiert (ein Diktat
+# darf auch schlicht "ok" lauten).
+_TEXT_KEYS = ("text", "transcription", "transcript")
+# Mehrdeutige Felder: hier koennte auch Steuerinformation stehen -> filtern.
+_TEXT_KEYS_GENERISCH = ("output", "result")
 _KEIN_TEXT = _FERTIG | _FEHLER | {"pending", "processing", "running", "queued", "waiting"}
 
 
@@ -50,7 +52,11 @@ def _text_aus(d):
     for eintrag in kandidaten:
         if not isinstance(eintrag, dict):
             continue
-        for k in _TEXT_KEYS:
+        for k in _TEXT_KEYS:                     # eindeutig -> immer akzeptieren
+            v = eintrag.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        for k in _TEXT_KEYS_GENERISCH:           # mehrdeutig -> Steuerwoerter aussortieren
             v = eintrag.get(k)
             if isinstance(v, str) and v.strip() and v.strip().lower() not in _KEIN_TEXT:
                 return v.strip()
@@ -64,13 +70,17 @@ def _text_aus(d):
 
 class Transcriber:
     def __init__(self, api_url=None, api_key=None, model="whisper-1", timeout=45,
-                 poll_timeout=180, poll_intervall=2.0):
+                 poll_timeout=100, poll_intervall=2.0, language="de", prompt=""):
         self.api_url = api_url or "https://api.openai.com/v1/audio/transcriptions"
         self.api_key = api_key or ""
         self.model = model
         self.timeout = timeout
-        self.poll_timeout = poll_timeout        # Gesamtbudget fürs Warten (asynchron)
+        # Budget bewusst UNTER dem Gunicorn-Worker-Timeout (120 s): so kommt im
+        # Zweifel eine saubere leere Rueckgabe statt eines abgeschossenen Workers.
+        self.poll_timeout = poll_timeout
         self.poll_intervall = poll_intervall
+        self.language = language or ""          # leer -> Parameter nicht senden
+        self.prompt = prompt or ""              # Vokabular-Hinweis (Fachbegriffe)
 
     @property
     def available(self):
@@ -86,14 +96,17 @@ class Transcriber:
         return f"{basis}/results/{batch_id}"
 
     def transcribe(self, audio_bytes, filename="segment.webm", mimetype="audio/webm",
-                   language="de"):
+                   language=None):
         """Transkribiert ein (vollständiges) Audiosegment. Rückgabe: erkannter Text
         ('' wenn kein Key, leer oder Dienst nicht verfügbar)."""
         if not self.api_key or not audio_bytes:
             return ""
         data = {"model": self.model}
-        if language:
-            data["language"] = language
+        sprache = self.language if language is None else language
+        if sprache:
+            data["language"] = sprache
+        if self.prompt:                          # Fachvokabular vorspannen
+            data["prompt"] = self.prompt
         resp = requests.post(
             self.api_url, headers=self._headers,
             files={"file": (filename, audio_bytes, mimetype)},

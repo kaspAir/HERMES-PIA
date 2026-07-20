@@ -44,6 +44,19 @@ class Config:
     STT_API_URL = os.environ.get("STT_API_URL", "https://api.openai.com/v1/audio/transcriptions")
     STT_API_KEY = os.environ.get("STT_API_KEY", "")
     STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
+    # Sprache des Diktats. Leer lassen = Parameter NICHT senden (manche Anbieter
+    # deuten 'language' als Ziel-/Uebersetzungssprache statt als Erkennungshilfe).
+    STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "de")
+    # Vokabular-Hinweis fuer Whisper ("initial prompt"): hebt die Erkennung von
+    # Fachbegriffen deutlich (z.B. "Server/Services" statt "Saeure"). Anpassbar.
+    STT_PROMPT = os.environ.get("STT_PROMPT", (
+        "Diktat zu einem HERMES-Projekt der oeffentlichen Verwaltung. Fachbegriffe: "
+        "Server, Serverraum, Services, Kunden, Cloud, Schnittstelle, Applikation, "
+        "Fachanwendung, HERMES, Projektinitialisierungsauftrag, Initialisierung, Studie, "
+        "Beschaffungsanalyse, Schutzbedarfsanalyse, Rechtsgrundlagenanalyse, ISDS, "
+        "Datenschutz, Informationssicherheit, Meilenstein, Auftraggeber, Projektleiter, "
+        "Stakeholder, Prototyp, Personentage, Durchfuehrungsauftrag."
+    ))
 
 
 def get_config():
