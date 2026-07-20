@@ -26,6 +26,9 @@ _TEXT_KEYS = ("text", "transcription", "transcript")
 # Mehrdeutige Felder: hier koennte auch Steuerinformation stehen -> filtern.
 _TEXT_KEYS_GENERISCH = ("output", "result")
 _KEIN_TEXT = _FERTIG | _FEHLER | {"pending", "processing", "running", "queued", "waiting"}
+# Whisper wertet nur den Anfang des Prompts aus (~224 Tokens); alles darüber ist
+# wirkungslos. Konservativ begrenzen, damit der generische Teil nie verdrängt wird.
+_PROMPT_MAX = 900
 
 
 def _entpacke(d):
@@ -96,17 +99,21 @@ class Transcriber:
         return f"{basis}/results/{batch_id}"
 
     def transcribe(self, audio_bytes, filename="segment.webm", mimetype="audio/webm",
-                   language=None):
+                   language=None, kontext=""):
         """Transkribiert ein (vollständiges) Audiosegment. Rückgabe: erkannter Text
-        ('' wenn kein Key, leer oder Dienst nicht verfügbar)."""
+        ('' wenn kein Key, leer oder Dienst nicht verfügbar).
+
+        `kontext`: projektspezifischer Vokabular-Hinweis (z.B. aus der laufenden
+        Session). Wird an den generischen Basis-Prompt angehängt."""
         if not self.api_key or not audio_bytes:
             return ""
         data = {"model": self.model}
         sprache = self.language if language is None else language
         if sprache:
             data["language"] = sprache
-        if self.prompt:                          # Fachvokabular vorspannen
-            data["prompt"] = self.prompt
+        prompt = " ".join(p for p in (self.prompt, (kontext or "").strip()) if p).strip()
+        if prompt:                               # Vokabular/Stil vorspannen
+            data["prompt"] = prompt[:_PROMPT_MAX]
         resp = requests.post(
             self.api_url, headers=self._headers,
             files={"file": (filename, audio_bytes, mimetype)},

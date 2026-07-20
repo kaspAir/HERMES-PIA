@@ -47,20 +47,22 @@ class Config:
     # Sprache des Diktats. Leer lassen = Parameter NICHT senden (manche Anbieter
     # deuten 'language' als Ziel-/Uebersetzungssprache statt als Erkennungshilfe).
     STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "de")
-    # Vokabular- UND Stil-Hinweis fuer Whisper ("initial prompt"). WICHTIG: bewusst
-    # als sauber geschriebener deutscher FLIESSTEXT (Grossschreibung, Satzzeichen) -
-    # Whisper uebernimmt den Stil des Prompts. Eine Stichwortliste wuerde zu
-    # kleingeschriebener, zerhackter Ausgabe fuehren. Enthaelt Fachbegriffe und
-    # Helvetismen (z.B. "zuegeln"), die sonst falsch erkannt werden. Per ENV anpassbar.
+    # Vokabular- UND Stil-Hinweis fuer Whisper ("initial prompt").
+    # WICHTIG, zwei Punkte:
+    #  1. Bewusst sauber geschriebener deutscher FLIESSTEXT (Grossschreibung,
+    #     Satzzeichen, Schweizer "ss") - Whisper uebernimmt den STIL des Prompts.
+    #     Eine Stichwortliste fuehrt zu kleingeschriebener, zerhackter Ausgabe.
+    #  2. Bewusst NUR generische HERMES-Methodenbegriffe, KEIN Fachgebiet. Das
+    #     projektspezifische Vokabular kommt zur Laufzeit aus der Session dazu
+    #     (siehe app/domains/stt/kontext.py) - so passt es fuer jeden Mandanten.
     STT_PROMPT = os.environ.get("STT_PROMPT", (
-        "Wir diktieren zu einem HERMES-Projekt der öffentlichen Verwaltung in der "
-        "Schweiz. Es geht um unseren ungekühlten Serverraum, die Server und die "
-        "Services für unsere Kunden. Wir zügeln die Systeme in die Cloud. Themen sind "
-        "Schnittstellen, Datenschutz und Informationssicherheit (ISDS), Beschaffung "
-        "und ein Prototyp. Beteiligt sind Auftraggeber, Projektleiterin und "
-        "Stakeholder. Ergebnisse sind die Studie, die Schutzbedarfsanalyse, die "
-        "Rechtsgrundlagenanalyse, der Durchführungsauftrag, die Meilensteine und der "
-        "Aufwand in Personentagen."
+        "Dies ist ein Diktat zu einem Projekt der öffentlichen Verwaltung nach "
+        "HERMES 2022. Besprochen werden die Ausgangslage, die Ziele, die "
+        "Rahmenbedingungen, die Abgrenzungen, Risiken, Termine und der Aufwand in "
+        "Personentagen. Beteiligt sind der Auftraggeber, die Projektleiterin und "
+        "weitere Stakeholder. Ergebnisse der Phase Initialisierung sind unter anderem "
+        "die Studie, die Rechtsgrundlagenanalyse, die Schutzbedarfsanalyse, die "
+        "Beschaffungsanalyse und der Durchführungsauftrag."
     ))
 
 
