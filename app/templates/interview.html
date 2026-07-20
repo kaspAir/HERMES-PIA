@@ -306,7 +306,8 @@
   function initMicRecorder() {
     var endpoint = btn.dataset.endpoint;
     var SEG_MS = 12000;                       // Segmentlänge: echtzeitnah, kleine Bodies
-    var stream = null, recorder = null, timer = null, running = false;
+    var NACHLAUF_MS = 1500;                   // Stille nach dem Stopp (siehe stopRecording)
+    var stream = null, recorder = null, timer = null, nachlauf = null, running = false;
 
     if (micSel) {
       micSel.style.display = '';
@@ -409,6 +410,9 @@
     }
 
     function startRecording() {
+      // Laeuft noch ein Nachlauf vom letzten Stopp, jetzt sauber abschliessen –
+      // sonst wuerde dessen Timer gleich den frisch geoeffneten Stream schliessen.
+      if (nachlauf) hardStop();
       var id = savedMicId();
       var constraints = { audio: id ? { deviceId: { exact: id } } : true };
       navigator.mediaDevices.getUserMedia(constraints).catch(function () {
@@ -433,9 +437,12 @@
       // Warteschlange fertig transkribiert – kein Textverlust.
       running = false;
       if (timer) clearTimeout(timer);
-      if (recorder && recorder.state !== 'inactive') recorder.stop();
-      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-      stream = null;
+      // NACHLAUF: Wer auf "Stopp" klickt, tut das direkt nach dem letzten Wort.
+      // Die Spracherkennung braucht danach aber noch etwas Stille, sonst wird
+      // das Wortende abgeschnitten. Diese Stille nimmt die Anwendung selbst auf –
+      // niemand soll bewusst nachschweigen muessen.
+      if (nachlauf) clearTimeout(nachlauf);
+      nachlauf = setTimeout(hardStop, NACHLAUF_MS);
       setUiRecording(false);
       if (sending || sendQueue.length) {
         setStatus('Aufnahme gestoppt – die Transkription wird abgeschlossen …');
@@ -444,10 +451,23 @@
       }
     }
 
+    function hardStop() {
+      // Recorder und Mikrofon wirklich schliessen. Das laufende Segment landet
+      // ueber recorder.onstop noch in der Warteschlange – kein Textverlust.
+      if (nachlauf) { clearTimeout(nachlauf); nachlauf = null; }
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+
     function stopAll() {
-      // Hart stoppen (z.B. Mikrofon weggefallen): Backlog verwerfen.
+      // Hart stoppen (z.B. Mikrofon weggefallen): Backlog verwerfen. Ein Nachlauf
+      // brächte hier nichts, das Mikrofon liefert ohnehin nichts mehr.
       sendQueue = [];
-      stopRecording();
+      running = false;
+      if (timer) clearTimeout(timer);
+      hardStop();
+      setUiRecording(false);
       setStatus('');
     }
 
@@ -466,7 +486,7 @@
           stopRecording();
           setStatus('Aufnahme gestoppt – bitte kurz warten, bis der Text im Feld steht, '
                     + 'und dann erneut auf «Weiter» klicken.');
-        } else if (sending || sendQueue.length) {
+        } else if (nachlauf || sending || sendQueue.length) {
           e.preventDefault();
           setStatus('Die Transkription läuft noch – bitte gleich erneut auf «Weiter» klicken.');
         }
