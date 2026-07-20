@@ -87,3 +87,15 @@ automatisch; die Poll-URL wird aus STT_API_URL abgeleitet. Zeitbudget:
 `poll_timeout` (Default 180 s). Bei Stoerung/Timeout wird ehrlich "" geliefert.
 
 Zuerst auf dev testen (echtes Diktat), dann promoten.
+
+### STT-Qualitaet steuern (Fachvokabular)
+
+Whisper laesst sich mit einem Vokabular-Hinweis vorspannen – das behebt typische
+Fehler wie "Saeure" statt "Server/Services":
+
+    STT_PROMPT   = Diktat zu einem HERMES-Projekt ... Server, Services, Kunden, ISDS, ...
+    STT_LANGUAGE = de        # leer lassen, falls der Anbieter 'language' als
+                             # UEBERSETZUNGS-Ziel deutet (Infomaniak-Doku!)
+
+Beide sind optional; Defaults stehen in app/config.py. Das Warte-Budget des
+asynchronen Pfads liegt bei 100 s – bewusst UNTER dem Gunicorn-Worker-Timeout (120 s).

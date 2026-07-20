@@ -213,3 +213,30 @@ def test_transcriber_asynchron_fehlerstatus_liefert_leer(monkeypatch):
     t = Transcriber(api_url="https://api.infomaniak.com/1/ai/9/openai/audio/transcriptions",
                     api_key="k", poll_intervall=0)
     assert t.transcribe(b"audio") == ""       # ehrlich leer statt geraten
+
+
+def test_prompt_und_sprache_werden_gesendet(monkeypatch):
+    """Vokabular-Hinweis (prompt) + Sprache landen im Request – hebt die Erkennung
+    von Fachbegriffen (z.B. 'Server' statt 'Säure')."""
+    gesehen = {}
+    def fake_post(url, **kw):
+        gesehen.update(kw.get("data") or {})
+        return _Resp({"text": "ok"})
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.post", fake_post)
+    t = Transcriber(api_url="http://stt/x", api_key="k", model="whisper",
+                    language="de", prompt="Server, Services, HERMES")
+    assert t.transcribe(b"audio") == "ok"
+    assert gesehen["prompt"] == "Server, Services, HERMES"
+    assert gesehen["language"] == "de"
+
+
+def test_leere_sprache_wird_nicht_gesendet(monkeypatch):
+    """STT_LANGUAGE leer -> Parameter weglassen (manche Anbieter übersetzen sonst)."""
+    gesehen = {}
+    def fake_post(url, **kw):
+        gesehen.update(kw.get("data") or {})
+        return _Resp({"text": "ok"})
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.post", fake_post)
+    t = Transcriber(api_url="http://stt/x", api_key="k", language="", prompt="")
+    t.transcribe(b"audio")
+    assert "language" not in gesehen and "prompt" not in gesehen
