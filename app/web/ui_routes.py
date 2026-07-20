@@ -9,6 +9,7 @@ from flask import (
 )
 
 from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from app.domains.stt.kontext import kontext_fuer_diktat
 from app.domains.method.template_structure import (
     ZIEL_GENERISCH,
     ZIEL_UNVERAENDERT,
@@ -252,11 +253,13 @@ def interview_transcribe(session_id):
     Datenschutz: Das Audio wird an den konfigurierten externen STT-Dienst gesendet.
     Für Behördendaten einen CH/EU- oder self-hosted-Endpoint (STT_API_URL) verwenden.
     """
-    _load_session(session_id)
-    return _transcribe_request()
+    session = _load_session(session_id)
+    # Projektspezifisches Vokabular (Projektname + bereits Diktiertes) als Hinweis
+    # mitgeben – so passt die Erkennung sich je Mandant/Projekt selbst an.
+    return _transcribe_request(kontext_fuer_diktat(session))
 
 
-def _transcribe_request():
+def _transcribe_request(kontext=""):
     """Gemeinsame Diktat-Logik: Audio (Base64-JSON bevorzugt, Roh-Body als
     Fallback) an den STT-Dienst geben und den Text zurückgeben."""
     tr = current_app.transcriber
@@ -278,7 +281,8 @@ def _transcribe_request():
     if not audio:
         return jsonify({"text": "", "error": "Keine Audiodaten."}), 400
     try:
-        text = tr.transcribe(audio, filename="segment.webm", mimetype=mimetype)
+        text = tr.transcribe(audio, filename="segment.webm", mimetype=mimetype,
+                             kontext=kontext)
     except Exception as exc:  # noqa: BLE001 – Fehler an den Client melden, nicht crashen
         return jsonify({"text": "", "error": f"Transkription fehlgeschlagen: {exc}"}), 502
     return jsonify({"text": text})

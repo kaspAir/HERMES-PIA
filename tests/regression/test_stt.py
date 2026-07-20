@@ -72,7 +72,7 @@ def _setup_session(app):
 def test_transcribe_route_mit_fake(app):
     class _Fake:
         available = True
-        def transcribe(self, audio, filename="s", mimetype="m", language="de"):
+        def transcribe(self, audio, filename="s", mimetype="m", language="de", **kw):
             return "transkribierter text"
 
     app.transcriber = _Fake()
@@ -100,7 +100,7 @@ def test_transcribe_route_json_base64(app):
 
     class _Fake:
         available = True
-        def transcribe(self, audio, filename="s", mimetype="m"):
+        def transcribe(self, audio, filename="s", mimetype="m", **kw):
             captured["audio"] = audio
             captured["mimetype"] = mimetype
             return "diktierter text"
@@ -119,7 +119,7 @@ def test_transcribe_route_json_base64(app):
 def test_transcribe_route_json_ohne_audio(app):
     class _Fake:
         available = True
-        def transcribe(self, audio, filename="s", mimetype="m"):
+        def transcribe(self, audio, filename="s", mimetype="m", **kw):
             return "x"
 
     app.transcriber = _Fake()
@@ -138,7 +138,7 @@ def test_generische_transcribe_route(app):
 
     class _Fake:
         available = True
-        def transcribe(self, audio, filename="s", mimetype="m"):
+        def transcribe(self, audio, filename="s", mimetype="m", **kw):
             return "bemerkung diktiert"
 
     app.transcriber = _Fake()
@@ -242,12 +242,56 @@ def test_leere_sprache_wird_nicht_gesendet(monkeypatch):
     assert "language" not in gesehen and "prompt" not in gesehen
 
 
-def test_default_prompt_ist_fliesstext_mit_helvetismen():
-    """Der Standard-Prompt muss sauberer Fliesstext sein (Whisper übernimmt den Stil)
-    und die typischen Stolperwörter enthalten."""
+def test_default_prompt_ist_generischer_fliesstext():
+    """Der Standard-Prompt muss (a) sauberer Fliesstext sein – Whisper übernimmt den
+    Stil – und (b) GENERISCH bleiben: kein Fachgebiet eines einzelnen Mandanten."""
     from app.config import Config
     p = Config.STT_PROMPT
     assert p.endswith(".") and p.count(". ") >= 3      # echte Sätze, nicht Stichwortliste
     assert p[0].isupper()
-    for wort in ("Serverraum", "Services", "Cloud", "zügeln", "ungekühlten", "ISDS"):
-        assert wort in p, f"fehlt im Prompt: {wort}"
+    for wort in ("Ausgangslage", "Personentagen", "Durchführungsauftrag", "Stakeholder"):
+        assert wort in p, f"HERMES-Begriff fehlt: {wort}"
+    # Keine projektspezifischen Begriffe im globalen Default (kommen zur Laufzeit dazu)
+    for verboten in ("Serverraum", "Cloud", "zügeln", "Juris", "Strafregister"):
+        assert verboten not in p, f"zu spezifisch für den Default: {verboten}"
+
+
+# ---- Projektspezifischer Kontext (generisch je Mandant) ------------------- #
+
+class _FakeSession:
+    def __init__(self, name="", answers="{}"):
+        self.project_name = name; self.answers_json = answers
+
+
+def test_kontext_aus_session():
+    from app.domains.stt.kontext import kontext_fuer_diktat
+    import json as _j
+    s = _FakeSession("Juris Fiat Ablösung", _j.dumps({
+        "ausgangslage": {"extracted": {"text": "Die Staatsanwaltschaft nutzt VOSTRA."}}}))
+    k = kontext_fuer_diktat(s)
+    assert "Juris Fiat Ablösung" in k and "VOSTRA" in k
+
+
+def test_kontext_leer_ohne_session():
+    from app.domains.stt.kontext import kontext_fuer_diktat
+    assert kontext_fuer_diktat(None) == ""
+    assert kontext_fuer_diktat(_FakeSession()) == ""
+
+
+def test_kontext_wird_gekuerzt():
+    from app.domains.stt.kontext import kontext_fuer_diktat
+    import json as _j
+    lang = "Wort " * 500
+    k = kontext_fuer_diktat(_FakeSession("P", _j.dumps(
+        {"ausgangslage": {"raw_text": lang}})), max_zeichen=120)
+    assert len(k) <= 130 and k.endswith("…")
+
+
+def test_kontext_wird_an_basis_prompt_angehaengt(monkeypatch):
+    gesehen = {}
+    def fake_post(url, **kw):
+        gesehen.update(kw.get("data") or {}); return _Resp({"text": "ok"})
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.post", fake_post)
+    t = Transcriber(api_url="http://stt/x", api_key="k", prompt="Basis-Prompt.")
+    t.transcribe(b"audio", kontext="Das Projekt heisst Juris Fiat.")
+    assert gesehen["prompt"] == "Basis-Prompt. Das Projekt heisst Juris Fiat."
