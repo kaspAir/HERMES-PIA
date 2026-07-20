@@ -240,3 +240,14 @@ def test_leere_sprache_wird_nicht_gesendet(monkeypatch):
     t = Transcriber(api_url="http://stt/x", api_key="k", language="", prompt="")
     t.transcribe(b"audio")
     assert "language" not in gesehen and "prompt" not in gesehen
+
+
+def test_default_prompt_ist_fliesstext_mit_helvetismen():
+    """Der Standard-Prompt muss sauberer Fliesstext sein (Whisper übernimmt den Stil)
+    und die typischen Stolperwörter enthalten."""
+    from app.config import Config
+    p = Config.STT_PROMPT
+    assert p.endswith(".") and p.count(". ") >= 3      # echte Sätze, nicht Stichwortliste
+    assert p[0].isupper()
+    for wort in ("Serverraum", "Services", "Cloud", "zügeln", "ungekühlten", "ISDS"):
+        assert wort in p, f"fehlt im Prompt: {wort}"
