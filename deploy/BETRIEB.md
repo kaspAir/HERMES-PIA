@@ -69,3 +69,21 @@ nach `develop`. Job braucht eine Git-Credential mit Push-Recht.
 Die kantonalen Gesetzessammlungen sind eine statische Linksammlung
 (`app/domains/rechtsquellen/kantone.py`) – kein Abruf noetig; bei URL-Aenderung
 eines Kantons dort anpassen.
+
+## Transkription (STT) auf Schweizer Infrastruktur
+
+Der Transcriber ist anbieter-flexibel und erkennt SYNCHRONE (OpenAI & Co.) wie
+ASYNCHRONE Endpoints (Antwort mit `batch_id`) automatisch. Fuer Infomaniak
+AI Services (Whisper, Rechenzentren in der Schweiz, OpenAI-kompatibel) genuegt
+Konfiguration – kein Code:
+
+    STT_API_URL = https://api.infomaniak.com/1/ai/<PRODUCT_ID>/openai/audio/transcriptions
+    STT_API_KEY = <Infomaniak AI-Token>
+    STT_MODEL   = whisper
+
+PRODUCT_ID via `GET /1/ai` ermitteln. Der asynchrone Ablauf (POST -> batch_id ->
+Polling `/1/ai/<PRODUCT_ID>/results/<batch_id>` -> ggf. `/download`) laeuft
+automatisch; die Poll-URL wird aus STT_API_URL abgeleitet. Zeitbudget:
+`poll_timeout` (Default 180 s). Bei Stoerung/Timeout wird ehrlich "" geliefert.
+
+Zuerst auf dev testen (echtes Diktat), dann promoten.

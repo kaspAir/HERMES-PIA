@@ -157,3 +157,59 @@ def test_generische_transcribe_route(app):
     cr = app.test_client()
     cr.post("/login", data={"email": "r@o.ch", "password": "pw"})
     assert cr.post("/transcribe", json={"audio": "x"}).status_code == 403
+
+
+# ---- Asynchroner Anbieter (z.B. Infomaniak AI Services, CH) ---------------- #
+
+class _Resp:
+    def __init__(self, payload, status=200, text=""):
+        self._p = payload; self.status_code = status; self.text = text
+    def raise_for_status(self):
+        if self.status_code >= 400: raise AssertionError("HTTP %s" % self.status_code)
+    def json(self):
+        if self._p is None: raise ValueError("kein JSON")
+        return self._p
+
+
+def test_transcriber_asynchron_batch_id_polling(monkeypatch):
+    """POST liefert nur eine batch_id -> es wird gepollt, bis der Text da ist."""
+    gesehen = {}
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.post",
+                        lambda url, **kw: _Resp({"data": {"batch_id": "b-1"}}))
+    folge = [ _Resp({"data": {"status": "processing"}}),
+              _Resp({"data": {"status": "done", "text": "Diktierter Text."}}) ]
+    def fake_get(url, **kw):
+        gesehen["url"] = url
+        return folge.pop(0)
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.get", fake_get)
+    monkeypatch.setattr("app.domains.stt.transcriber.time.sleep", lambda s: None)
+    t = Transcriber(api_url="https://api.infomaniak.com/1/ai/76791/openai/audio/transcriptions",
+                    api_key="k", model="whisper", poll_intervall=0)
+    assert t.transcribe(b"audio") == "Diktierter Text."
+    assert gesehen["url"] == "https://api.infomaniak.com/1/ai/76791/results/b-1"
+
+
+def test_transcriber_asynchron_download_fallback(monkeypatch):
+    """Status 'done' ohne Text -> Text wird über /download geholt (auch als Klartext)."""
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.post",
+                        lambda url, **kw: _Resp({"batch_id": "b-2"}))
+    def fake_get(url, **kw):
+        if url.endswith("/download"):
+            return _Resp(None, text="Text aus dem Download.")
+        return _Resp({"data": {"status": "finished"}})
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.get", fake_get)
+    monkeypatch.setattr("app.domains.stt.transcriber.time.sleep", lambda s: None)
+    t = Transcriber(api_url="https://api.infomaniak.com/1/ai/9/openai/audio/transcriptions",
+                    api_key="k", poll_intervall=0)
+    assert t.transcribe(b"audio") == "Text aus dem Download."
+
+
+def test_transcriber_asynchron_fehlerstatus_liefert_leer(monkeypatch):
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.post",
+                        lambda url, **kw: _Resp({"batch_id": "b-3"}))
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.get",
+                        lambda url, **kw: _Resp({"data": {"status": "error"}}))
+    monkeypatch.setattr("app.domains.stt.transcriber.time.sleep", lambda s: None)
+    t = Transcriber(api_url="https://api.infomaniak.com/1/ai/9/openai/audio/transcriptions",
+                    api_key="k", poll_intervall=0)
+    assert t.transcribe(b"audio") == ""       # ehrlich leer statt geraten
