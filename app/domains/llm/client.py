@@ -16,6 +16,7 @@ import requests
 
 from app.domains.llm.kontext import aktueller_kontext
 from app.domains.llm.errors import (
+    PseudoAnbieterFehler,
     PseudoAntwortUnlesbar,
     PseudoUnerwarteteAntwort,
     PseudoKeinSchluessel,
@@ -162,6 +163,17 @@ class LLMClient:
             raise PseudoKontextFehlt(text)
         if resp.status_code == 503 or typ == "kein_anbieterschluessel":
             raise PseudoKeinSchluessel(text)
+        # Der Dienst hat gearbeitet, der ANBIETER hat abgelehnt (z.B. ungueltiger
+        # Schluessel im Dienst). Nicht als Pseudonymisierungsproblem darstellen --
+        # der Text war zu diesem Zeitpunkt bereits pseudonymisiert.
+        if typ == "anbieter_fehler" or resp.status_code == 401:
+            anbieter = fehler.get("anbieter_antwort", {}) or {}
+            innen = anbieter.get("error", {}) if isinstance(anbieter, dict) else {}
+            raise PseudoAnbieterFehler(
+                meldung=text,
+                anbieter_meldung=(innen.get("message", "") if isinstance(innen, dict) else ""),
+                status=resp.status_code,
+            )
         # Alles Uebrige (404, 401, 405, 500, 501 …) MUSS ebenfalls als PseudoFehler
         # herauskommen. Ein requests.HTTPError waere kein PseudoFehler und liefe
         # in den generischen Faenger der Extraktion -- still zurueck zum Rohtext.

@@ -12,6 +12,7 @@ from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMI
 from app.domains.llm.entscheid import entscheide
 from app.domains.llm.kontext import loese_kontext, projekt_schluessel, setze_kontext
 from app.domains.llm.errors import (
+    PseudoAnbieterFehler,
     PseudoAntwortUnlesbar,
     PseudoUnerwarteteAntwort,
     PseudoKeinSchluessel,
@@ -1258,6 +1259,15 @@ def _pseudo_weg(exc):
 @bp.app_errorhandler(PseudoKeinSchluessel)
 def _pseudo_konfiguration(exc):
     return render_template("pseudo_fehler.html", meldung=str(exc), art="konfiguration"), 500
+
+
+@bp.app_errorhandler(PseudoAnbieterFehler)
+def _pseudo_anbieter(exc):
+    """Kein Pseudonymisierungsproblem: der Text war bereits geschuetzt."""
+    current_app.logger.error("Anbieter hat abgelehnt (%s): %s",
+                             exc.status, exc.anbieter_meldung or exc)
+    return render_template("pseudo_fehler.html", art="anbieter", meldung=str(exc),
+                           anbieter_meldung=exc.anbieter_meldung), 502
 
 
 @bp.app_errorhandler(PseudoAntwortUnlesbar)

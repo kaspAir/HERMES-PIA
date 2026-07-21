@@ -653,3 +653,67 @@ def test_unerwarteter_status_zeigt_dem_nutzer_einen_fehler(app):
     r = c.post(f"/interview/{sid}/answer", data={"raw_text": "Ein Diktat."})
     assert r.status_code == 502
     assert "404" in r.get_data(as_text=True)
+
+
+# ---- Anbieter lehnt ab (401 invalid x-api-key) ---------------------------- #
+#
+# Echter Befund vom dev-Lauf: der Dienst arbeitete korrekt, reichte weiter, und
+# ANTHROPIC wies den im Dienst hinterlegten Schluessel zurueck. Das darf nicht als
+# Pseudonymisierungsproblem erscheinen - der Text war da bereits geschuetzt.
+
+_ANBIETER_401 = {
+    "error": {
+        "type": "anbieter_fehler",
+        "message": "Der Anbieter hat den Aufruf abgelehnt.",
+        "anbieter_antwort": {
+            "type": "error",
+            "request_id": "req_011CdFjqPwbT4vt1ASh5Eve2",
+            "error": {"type": "authentication_error", "message": "invalid x-api-key"},
+        },
+    },
+    "type": "error",
+}
+
+
+def test_anbieterfehler_bekommt_eine_eigene_klasse(monkeypatch):
+    from app.domains.llm.errors import PseudoAnbieterFehler
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp(_ANBIETER_401, status=401))
+    with pytest.raises(PseudoAnbieterFehler) as e:
+        LLMClient(basis_url="http://x/anthropic").complete("s", [])
+    # Die Meldung des Anbieters wird durchgereicht - sonst raet der Betrieb.
+    assert e.value.anbieter_meldung == "invalid x-api-key"
+    assert e.value.status == 401
+
+
+def test_anbieterfehler_wird_nicht_als_pseudonymisierungsproblem_dargestellt(app):
+    """Sonst sucht der Betrieb den Fehler in der Erkennung statt beim Schluessel."""
+    from app.domains.llm.errors import PseudoAnbieterFehler
+
+    class _Abgelehnt:
+        def complete(self, *a, **kw):
+            raise PseudoAnbieterFehler(anbieter_meldung="invalid x-api-key", status=401)
+
+    app.interview_service.llm = _Abgelehnt()
+    c, sid = _angemeldet(app)
+    r = c.post(f"/interview/{sid}/answer", data={"raw_text": "Ein Diktat."})
+    seite = r.get_data(as_text=True)
+    assert r.status_code == 502
+    assert "Anbieter hat den Aufruf abgelehnt" in seite
+    assert "invalid x-api-key" in seite
+    assert "kein Datenschutzvorfall" in seite
+    # Der Text war zu diesem Zeitpunkt bereits pseudonymisiert - das gehoert gesagt.
+    assert "bereits geschützt" in seite
+
+
+def test_anbieterfehler_bleibt_ein_pseudofehler(monkeypatch):
+    """Er darf also nicht im generischen Faenger der Extraktion verschwinden."""
+    from app.domains.interview.extraction import _extract_free_text
+    from app.domains.llm.errors import PseudoFehler
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp(_ANBIETER_401, status=401))
+    with pytest.raises(PseudoFehler):
+        _extract_free_text(LLMClient(basis_url="http://x/anthropic"),
+                           "Ausgangslage", "Wir haben einen Serverraum.")
