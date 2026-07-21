@@ -1,41 +1,121 @@
-"""Duenne Anbindung an die Anthropic Messages API (server-seitig, eigener Key).
+"""Anbindung an die Anthropic Messages API -- ueber die Pseudonymisierungsschicht.
 
-Hinweis: Bevor echte Projektinhalte an die API gehen, gehoeren sie durch die
-Pseudonymisierungsschicht. Fuer Demos mit synthetischen / handbereinigten Daten.
+HERMES PIA besitzt bewusst KEINEN eigenen Anbieterschluessel mehr. Der liegt im
+Pseudonymisierungsdienst; damit ist das Umgehen der Schicht nicht nur verboten,
+sondern unmoeglich (ANBINDUNG.md 6.4). Am JSON aendert sich nichts -- der Dienst
+spricht die Anbieter-API selbst, es wechselt nur die Basis-URL.
+
+Mandant und Projekt gehoeren je Aufruf mitgegeben. Der Client wird einmal beim
+App-Start erzeugt und kennt keinen Anfragekontext; deshalb bindet `fuer(...)`
+einen leichten, kurzlebigen Ableger je Session. Den Kontext auf dem gemeinsamen
+Client zu setzen waere falsch -- er wuerde zwischen parallelen Anfragen lecken.
 """
-import os
+import logging
 
 import requests
 
-API_URL = "https://api.anthropic.com/v1/messages"
+from app.domains.llm.kontext import aktueller_kontext
+from app.domains.llm.errors import (
+    PseudoKeinSchluessel,
+    PseudoKontextFehlt,
+    PseudoNichtErreichbar,
+    PseudonymisierungBlockiert,
+    RueckersetzungUnvollstaendig,
+)
+
+log = logging.getLogger("hermes.llm")
 
 
 class LLMClient:
-    def __init__(self, api_key=None, model=None):
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        self.model = (model
-                      or os.environ.get("HERMESPIA_LLM_MODEL")
-                      or os.environ.get("METHODOS_LLM_MODEL")
-                      or "claude-sonnet-4-6")
+    def __init__(self, basis_url=None, model=None, anwendung="hermes-pia",
+                 mandant="standard", projekt=None, timeout=90):
+        self.basis_url = (basis_url or "").rstrip("/")
+        self.model = model or "claude-sonnet-4-6"
+        self.anwendung = anwendung
+        self.mandant = mandant or ""
+        self.projekt = projekt or ""
+        # Grosszuegiger als frueher: der Aufruf durchlaeuft zusaetzlich die
+        # Erkennung und die Rueckersetzung.
+        self.timeout = timeout
+        # Wird je Aufruf gesetzt: 'aktiv' oder 'abgeschaltet' (ANBINDUNG.md 8).
+        self.letzter_status = ""
 
-    def complete(self, system, messages, max_tokens=1024):
-        if not self.api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY fehlt (.env zu Hause setzen).")
-        resp = requests.post(
-            API_URL,
-            headers={
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": self.model,
-                "max_tokens": max_tokens,
-                "system": system,
-                "messages": messages,
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
+    @property
+    def available(self):
+        return bool(self.basis_url)
+
+    def fuer(self, projekt=None, mandant=None):
+        """Kurzlebiger Ableger mit Anfragekontext -- pro Session, nie geteilt."""
+        kind = LLMClient(basis_url=self.basis_url, model=self.model,
+                         anwendung=self.anwendung,
+                         mandant=mandant or self.mandant,
+                         projekt=str(projekt) if projekt else self.projekt,
+                         timeout=self.timeout)
+        return kind
+
+    def complete(self, system, messages, max_tokens=1024, projekt=None, mandant=None):
+        if not self.basis_url:
+            raise RuntimeError("PSEUDO_BASIS_URL fehlt - ohne Pseudonymisierungsdienst "
+                               "werden keine Projektinhalte an ein LLM gesendet.")
+        # Reihenfolge: ausdruecklicher Parameter > Anfragekontext > Vorgabe.
+        k_projekt, k_mandant = aktueller_kontext()
+        kopf = {
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+            "X-Pseudo-Anwendung": self.anwendung,
+            "X-Pseudo-Mandant": str(mandant or k_mandant or self.mandant),
+            "X-Pseudo-Projekt": str(projekt or k_projekt or self.projekt),
+        }
+        try:
+            resp = requests.post(
+                f"{self.basis_url}/v1/messages",
+                headers=kopf,
+                json={
+                    "model": self.model,
+                    "max_tokens": max_tokens,
+                    "system": system,
+                    "messages": messages,
+                },
+                timeout=self.timeout,
+            )
+        except requests.RequestException as e:
+            # Kein stiller Ausweichweg zum Anbieter: lieber keine Extraktion als
+            # eine ungeschuetzte.
+            raise PseudoNichtErreichbar(
+                f"Pseudonymisierungsdienst nicht erreichbar ({e.__class__.__name__})."
+            ) from e
+
+        self.letzter_status = resp.headers.get("X-Pseudo-Status", "")
+        if resp.status_code != 200:
+            self._melde_fehler(resp)
         data = resp.json()
         return "".join(block.get("text", "") for block in data.get("content", []))
+
+    # ---- Fehlerabbildung -------------------------------------------------- #
+
+    @staticmethod
+    def _fehlerkoerper(resp):
+        try:
+            return (resp.json() or {}).get("error", {}) or {}
+        except ValueError:
+            return {}
+
+    def _melde_fehler(self, resp):
+        fehler = self._fehlerkoerper(resp)
+        typ = fehler.get("type", "")
+        text = fehler.get("message", "") or f"HTTP {resp.status_code}"
+
+        if resp.status_code == 409 or typ == "pseudonymisierung_blockiert":
+            pseudo = fehler.get("pseudo", {}) or {}
+            raise PseudonymisierungBlockiert(
+                befunde=pseudo.get("befunde", []),
+                vorgang_id=pseudo.get("vorgang_id", ""),
+                message=text,
+            )
+        if resp.status_code == 502 or typ == "rueckersetzung_unvollstaendig":
+            raise RueckersetzungUnvollstaendig(text)
+        if resp.status_code == 400 or typ == "kontext_fehlt":
+            raise PseudoKontextFehlt(text)
+        if resp.status_code == 503 or typ == "kein_anbieterschluessel":
+            raise PseudoKeinSchluessel(text)
+        resp.raise_for_status()

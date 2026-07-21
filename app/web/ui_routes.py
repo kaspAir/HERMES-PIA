@@ -9,6 +9,14 @@ from flask import (
 )
 
 from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from app.domains.llm.entscheid import entscheide
+from app.domains.llm.errors import (
+    PseudoKeinSchluessel,
+    PseudoKontextFehlt,
+    PseudoNichtErreichbar,
+    PseudonymisierungBlockiert,
+    RueckersetzungUnvollstaendig,
+)
 from app.domains.stt.kontext import kontext_fuer_diktat
 from app.domains.method.template_structure import (
     ZIEL_GENERISCH,
@@ -1154,3 +1162,86 @@ def admin_reset_password(user_id):
             auth.reset_password(user_id, new_password)
     return redirect(url_for("ui.admin_orgs") if actor.is_super_admin
                     else url_for("ui.admin_users"))
+
+
+# ---- Pseudonymisierungsschicht: Blockierfall ------------------------------ #
+#
+# Wird ein Aufruf angehalten (HTTP 409), MUSS der Nutzer das sehen. Wuerde der
+# Fehler still geschluckt, saehe er nur ein schlechteres Ergebnis und hielte es
+# fuer ein Qualitaetsproblem des Modells (ANBINDUNG.md 6.2).
+#
+# Der Dienst speichert den blockierten Text bewusst NICHT -- sonst legte er
+# ausgerechnet von den heikelsten Texten eine Halde an. Deshalb haelt die
+# Anwendung die Formularfelder und sendet sie nach dem Entscheid unveraendert
+# erneut (ANBINDUNG.md 5).
+
+def _blockiert_seite(exc, ziel, formfelder, fehler=""):
+    return render_template("pseudo_blockiert.html",
+                           befunde=exc.befunde, vorgang_id=exc.vorgang_id,
+                           ziel=ziel, formfelder=formfelder, fehler=fehler), 409
+
+
+@bp.app_errorhandler(PseudonymisierungBlockiert)
+def _pseudo_blockiert(exc):
+    # request.form ist auch hier noch verfuegbar: der Originalaufruf wird daraus
+    # spaeter Feld fuer Feld unveraendert wiederhergestellt.
+    felder = [(k, v) for k, v in request.form.items(multi=True)]
+    return _blockiert_seite(exc, request.path, felder)
+
+
+@bp.app_errorhandler(RueckersetzungUnvollstaendig)
+def _pseudo_rueckersetzung(exc):
+    """HTTP 502 ist eine Schutzabschaltung, kein Netzwerkfehler.
+
+    Es wird KEIN Text uebernommen und nicht stillschweigend wiederholt."""
+    return render_template("pseudo_fehler.html", meldung=str(exc), art="rueckersetzung"), 502
+
+
+@bp.app_errorhandler(PseudoNichtErreichbar)
+def _pseudo_weg(exc):
+    return render_template("pseudo_fehler.html", meldung=str(exc), art="nicht_erreichbar"), 503
+
+
+@bp.app_errorhandler(PseudoKontextFehlt)
+@bp.app_errorhandler(PseudoKeinSchluessel)
+def _pseudo_konfiguration(exc):
+    return render_template("pseudo_fehler.html", meldung=str(exc), art="konfiguration"), 500
+
+
+@bp.post("/pseudo/entscheide")
+@permission_required("write")
+def pseudo_entscheide():
+    """Nimmt die Entscheide entgegen und wiederholt danach den Originalaufruf."""
+    basis = current_app.config.get("PSEUDO_BASIS_URL", "")
+    ziel = request.form.get("ziel", "")
+    urheber = getattr(current_user(), "email", "") or ""
+
+    fehler = []
+    for befund_id in request.form.getlist("befund_id"):
+        entscheid = request.form.get(f"entscheid__{befund_id}", "")
+        muster = request.form.get(f"muster__{befund_id}", "")
+        if not entscheid:
+            fehler.append(f"Befund {befund_id}: keine Entscheidung getroffen.")
+            continue
+        ok, meldung = entscheide(
+            basis, befund_id, entscheid, muster,
+            begruendung=request.form.get(f"begruendung__{befund_id}", ""),
+            urheber=urheber,
+        )
+        if not ok:
+            fehler.append(f"Befund {befund_id}: {meldung}")
+
+    if fehler:
+        # Bleibt ein Befund unentschieden, bleibt der Aufruf blockiert.
+        # Es gibt bewusst kein "trotzdem senden".
+        return render_template("pseudo_fehler.html", art="entscheid",
+                               meldung=" ".join(fehler)), 400
+
+    # Originalaufruf UNVERAENDERT wiederholen. Bewusst als echtes Formular-Replay
+    # im Browser statt als interner Wiedereinstieg: so gelten Anmeldung, Rechte
+    # und Fehlerbehandlung genau wie beim ersten Versuch.
+    if not ziel.startswith("/"):
+        abort(400)                          # nur anwendungseigene Ziele
+    felder = [(k[len("orig__"):], v) for k, v in request.form.items(multi=True)
+              if k.startswith("orig__")]
+    return render_template("pseudo_wiederholen.html", ziel=ziel, felder=felder)

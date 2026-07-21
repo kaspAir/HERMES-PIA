@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Pseudonymisierung – Fehler{% endblock %}
+{% block content %}
+<h1>
+  {% if art == 'rueckersetzung' %}Antwort zurückgehalten
+  {% elif art == 'nicht_erreichbar' %}Pseudonymisierung nicht erreichbar
+  {% elif art == 'entscheid' %}Entscheid unvollständig
+  {% else %}Pseudonymisierung nicht einsatzbereit{% endif %}
+</h1>
+
+{% if art == 'rueckersetzung' %}
+<p class="hinweis">
+  Der Dienst konnte die Platzhalter in der Antwort nicht zweifelsfrei zurücksetzen
+  und hat sie deshalb <strong>nicht ausgeliefert</strong>. Das ist eine
+  Schutzabschaltung, kein Netzwerkfehler: es wurde <strong>kein Text übernommen</strong>.
+  Bitte melden Sie den Vorfall – ein blosses Wiederholen ist hier nicht der richtige Weg.
+</p>
+{% elif art == 'nicht_erreichbar' %}
+<p class="hinweis">
+  Es wurde <strong>nichts</strong> an ein Sprachmodell gesendet. HERMES PIA weicht
+  bewusst nicht auf einen Weg am Dienst vorbei aus – lieber keine Auswertung als
+  eine ungeschützte. Bitte den Dienst starten und den Schritt wiederholen.
+</p>
+{% elif art == 'entscheid' %}
+<p class="hinweis">
+  Solange eine Fundstelle unentschieden bleibt, bleibt der Aufruf blockiert.
+  Ein «trotzdem senden» gibt es bewusst nicht.
+</p>
+{% else %}
+<p class="hinweis">
+  Der Pseudonymisierungsdienst nimmt Aufrufe dieser Anwendung nicht an. Das ist ein
+  Konfigurationsfehler (Mandant, registrierte Anwendung oder hinterlegter
+  Anbieterschlüssel) und keine Nutzereingabe.
+</p>
+{% endif %}
+
+<p class="fehler">{{ meldung }}</p>
+<p><a href="{{ url_for('ui.index') }}">Zurück zur Übersicht</a></p>
+{% endblock %}

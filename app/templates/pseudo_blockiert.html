@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Entscheidung nötig – Pseudonymisierung{% endblock %}
+{% block content %}
+<h1>Der Aufruf wurde angehalten</h1>
+
+<p class="hinweis">
+  Die Pseudonymisierung ist bei {{ befunde|length }} Stelle{{ '' if befunde|length == 1 else 'n' }}
+  unsicher, ob es sich um eine Person handelt. Es wurde <strong>nichts</strong> an das
+  Sprachmodell gesendet. Bitte entscheiden Sie je Stelle – danach wird Ihre Eingabe
+  unverändert erneut verarbeitet.
+</p>
+
+{% if fehler %}<p class="fehler">{{ fehler }}</p>{% endif %}
+
+<form method="post" action="{{ url_for('ui.pseudo_entscheide') }}">
+  <input type="hidden" name="ziel" value="{{ ziel }}">
+  {% for name, wert in formfelder %}
+  <input type="hidden" name="orig__{{ name }}" value="{{ wert }}">
+  {% endfor %}
+
+  {% for b in befunde %}
+  <fieldset class="befund">
+    <legend>{{ loop.index }}. «{{ b.treffer }}»
+      <span class="kategorie">{{ b.kategorie }}</span></legend>
+
+    {% if b.auszug %}<p class="auszug">… {{ b.auszug }} …</p>{% endif %}
+    <p class="grund">Einschätzung des Dienstes: {{ b.band or '–' }}
+      {%- if b.sicherheit is not none %} ({{ (b.sicherheit * 100)|round|int }} %){% endif %}
+      {%- if b.grund %} · {{ b.grund }}{% endif %}</p>
+
+    <input type="hidden" name="befund_id" value="{{ b.befund_id }}">
+    <input type="hidden" name="muster__{{ b.befund_id }}" value="{{ b.treffer }}">
+
+    <label>
+      <input type="radio" name="entscheid__{{ b.befund_id }}" value="ersetzen"
+             {% if b.vorschlag == 'ersetzen' %}checked{% endif %} required>
+      Echter Personenbezug – ersetzen
+    </label>
+    <label>
+      <input type="radio" name="entscheid__{{ b.befund_id }}" value="freigeben"
+             {% if b.vorschlag == 'freigeben' %}checked{% endif %}>
+      Fehlalarm – das ist ein Firmen- oder Systemname
+    </label>
+    <label class="begruendung">Begründung (bei Fehlalarm)
+      <input type="text" name="begruendung__{{ b.befund_id }}"
+             placeholder="z.B. Bezeichnung der Fachanwendung">
+    </label>
+  </fieldset>
+  {% endfor %}
+
+  <button type="submit" class="primary">Entscheiden und erneut verarbeiten</button>
+</form>
+
+<p class="fussnote">
+  Ihre Entscheide gelten nur für Ihren Mandanten und sind widerrufbar.
+  Der Dienst leistet <strong>Pseudonymisierung, nicht Anonymisierung</strong>:
+  über den fachlichen Zusammenhang bleibt ein Vorhaben erkennbar.
+</p>
+{% endblock %}

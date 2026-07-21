@@ -1,0 +1,269 @@
+"""Beweist: alle KI-Aufrufe laufen durch die Pseudonymisierungsschicht.
+
+Die Abnahmekriterien stehen in docs/ANBINDUNG.md Abschnitt 9. Der wichtigste Test
+hier ist `test_blockiert_schlaegt_durch_generischen_except_faenger`: die Extraktion
+faengt jede Ausnahme ab, um bei LLM-Ausfaellen nicht zu blockieren. Wuerde der
+409-Fall dort mitgefangen, waere die Anbindung wertlos -- der Nutzer saehe ein
+stilles Ersatzergebnis statt der Rueckfrage.
+"""
+import pytest
+
+from app.domains.llm.client import LLMClient
+from app.domains.llm.errors import (
+    PseudoNichtErreichbar,
+    PseudonymisierungBlockiert,
+    RueckersetzungUnvollstaendig,
+)
+from app.domains.llm.kontext import aktueller_kontext, pseudo_kontext
+
+
+class _Resp:
+    def __init__(self, payload, status=200, headers=None):
+        self._p = payload
+        self.status_code = status
+        self.headers = headers or {}
+
+    def json(self):
+        return self._p
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise AssertionError(f"HTTP {self.status_code}")
+
+
+_BLOCK = {
+    "type": "error",
+    "error": {
+        "type": "pseudonymisierung_blockiert",
+        "message": "1 Fundstelle(n) erfordern eine Entscheidung.",
+        "pseudo": {
+            "vorgang_id": "vg_1",
+            "befunde": [{
+                "befund_id": "bf_1", "kategorie": "person_name",
+                "auszug": "Wir sprachen mit Vogt.", "treffer": "Vogt",
+                "ort": {"feld": "messages[0].content", "von": 17, "bis": 21},
+                "sicherheit": 0.61, "band": "unsicher",
+                "grund": "kein_kontextanker_anrede", "vorschlag": "ersetzen",
+                "moegliche_entscheide": ["ersetzen", "freigeben"],
+            }],
+        },
+    },
+}
+
+
+# ---- Kriterium 1: kein eigener Anbieterschluessel mehr -------------------- #
+
+def test_kein_anthropic_key_und_kein_direkter_anbieterpfad():
+    """Solange die Anwendung einen eigenen Schluessel besaesse, waere das Umgehen
+    der Schicht nur verboten, nicht unmoeglich."""
+    from pathlib import Path
+
+    from app.config import BASE_DIR, Config
+
+    assert not hasattr(Config, "ANTHROPIC_API_KEY")
+    assert not hasattr(Config, "VOYAGE_API_KEY")
+
+    for rel in ("app/domains/llm/client.py", "app/domains/corpus/embeddings.py"):
+        quelle = Path(BASE_DIR, rel).read_text(encoding="utf-8")
+        assert "api.anthropic.com" not in quelle
+        assert "api.voyageai.com" not in quelle
+        assert "x-api-key" not in quelle
+
+
+def test_ohne_dienst_kein_llm_client():
+    """Nicht konfiguriert heisst inaktiv - nicht 'localhost raten' und auch nicht
+    'ersatzweise direkt zum Anbieter'."""
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///:memory:"
+        SECRET_KEY = "x"
+        PSEUDO_BASIS_URL = ""
+
+    SessionLocal.remove()
+    app = create_app(_Cfg)
+    SessionLocal.remove()
+    assert app.interview_service.llm is None
+
+
+# ---- Pflicht-Kopfzeilen (Kriterium 5) ------------------------------------ #
+
+def test_pflichtkopfzeilen_werden_gesendet(monkeypatch):
+    gesehen = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        gesehen["url"] = url
+        gesehen["headers"] = headers
+        return _Resp({"content": [{"text": "ok"}]}, headers={"X-Pseudo-Status": "aktiv"})
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post", fake_post)
+    c = LLMClient(basis_url="http://127.0.0.1:8030/anthropic", mandant="42")
+    assert c.complete("sys", [{"role": "user", "content": "hi"}], projekt="session-137") == "ok"
+
+    assert gesehen["url"] == "http://127.0.0.1:8030/anthropic/v1/messages"
+    h = gesehen["headers"]
+    assert h["X-Pseudo-Anwendung"] == "hermes-pia"
+    assert h["X-Pseudo-Mandant"] == "42"
+    assert h["X-Pseudo-Projekt"] == "session-137"
+    assert "x-api-key" not in h            # der Schluessel liegt im Dienst
+    assert c.letzter_status == "aktiv"
+
+
+def test_projekt_kommt_aus_dem_anfragekontext(monkeypatch):
+    """Der Client ist ein App-weites Singleton; der Kontext haengt an der Anfrage."""
+    gesehen = {}
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda url, headers=None, json=None, timeout=None:
+                        (gesehen.update(headers), _Resp({"content": []}))[1])
+    c = LLMClient(basis_url="http://x/anthropic", mandant="vorgabe")
+    with pseudo_kontext(projekt=137, mandant="7"):
+        c.complete("s", [])
+    assert gesehen["X-Pseudo-Projekt"] == "137"
+    assert gesehen["X-Pseudo-Mandant"] == "7"
+
+
+def test_kontext_leckt_nicht_nach_aussen():
+    """Sonst truege eine Anfrage den Mandanten der vorherigen - Zuordnungen
+    landeten im falschen Topf."""
+    with pseudo_kontext(projekt=1, mandant="a"):
+        assert aktueller_kontext() == ("1", "a")
+    assert aktueller_kontext() == ("", "")
+
+
+# ---- Fehlerabbildung ------------------------------------------------------ #
+
+def test_409_wird_zu_blockiert(monkeypatch):
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp(_BLOCK, status=409))
+    c = LLMClient(basis_url="http://x/anthropic")
+    with pytest.raises(PseudonymisierungBlockiert) as e:
+        c.complete("s", [])
+    assert e.value.vorgang_id == "vg_1"
+    assert e.value.befunde[0]["treffer"] == "Vogt"
+
+
+def test_502_wird_zu_schutzabschaltung(monkeypatch):
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp(
+                            {"error": {"type": "rueckersetzung_unvollstaendig",
+                                       "message": "Leckverdacht"}}, status=502))
+    c = LLMClient(basis_url="http://x/anthropic")
+    with pytest.raises(RueckersetzungUnvollstaendig):
+        c.complete("s", [])
+
+
+def test_dienst_weg_faellt_nicht_auf_den_anbieter_zurueck(monkeypatch):
+    import requests
+
+    def kaputt(*a, **kw):
+        raise requests.ConnectionError("refused")
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post", kaputt)
+    with pytest.raises(PseudoNichtErreichbar):
+        LLMClient(basis_url="http://x/anthropic").complete("s", [])
+
+
+# ---- Kriterium 3: DER Test (die Falle aus ANBINDUNG.md 6.2) --------------- #
+
+@pytest.mark.parametrize("aufruf", [
+    lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
+    .estimate_risk_assessment(llm, "Ein Risiko."),
+    lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
+    .assess_complexity(llm, "Eine Ausgangslage."),
+    lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
+    .detect_gender(llm, "Andrea Muster"),
+    lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
+    .generate_followups(llm, {"id": "ziele", "title": "Ziele",
+                              "interview": {"intent": "Ziele erheben"}}, "Text."),
+])
+def test_blockiert_schlaegt_durch_generischen_except_faenger(aufruf):
+    """Jede dieser Funktionen hat ein `except Exception:`, das LLM-Ausfaelle
+    absichtlich verschluckt. Der Blockierfall darf dort NICHT haengenbleiben."""
+    class _Blockiert:
+        def complete(self, *a, **kw):
+            raise PseudonymisierungBlockiert(befunde=[{"treffer": "Vogt"}], vorgang_id="vg")
+
+    with pytest.raises(PseudonymisierungBlockiert):
+        aufruf(_Blockiert())
+
+
+def test_gewoehnlicher_llm_ausfall_wird_weiterhin_verschluckt():
+    """Die Gegenprobe: an der bisherigen Nachsicht gegenueber echten Ausfaellen
+    darf sich nichts geaendert haben."""
+    from app.domains.interview.extraction import estimate_risk_assessment
+
+    class _Kaputt:
+        def complete(self, *a, **kw):
+            raise RuntimeError("Modell gerade weg")
+
+    assert estimate_risk_assessment(_Kaputt(), "Ein Risiko.") == {}
+
+
+# ---- Embedding-Weg (ANBINDUNG.md 6.5) ------------------------------------ #
+
+def test_embeddings_laufen_ebenfalls_ueber_den_dienst(monkeypatch):
+    """Dieser Weg traegt denselben Text ins Ausland wie der Chat."""
+    from app.domains.corpus.embeddings import VoyageEmbedder
+
+    gesehen = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        gesehen["url"] = url
+        gesehen["headers"] = headers
+        return _Resp({"data": [{"index": 0, "embedding": [0.1, 0.2]}]})
+
+    monkeypatch.setattr("app.domains.corpus.embeddings.requests.post", fake_post)
+    e = VoyageEmbedder(basis_url="http://127.0.0.1:8030/voyage", mandant="42")
+    assert e.embed(["Text"]) == [[0.1, 0.2]]
+    assert gesehen["url"] == "http://127.0.0.1:8030/voyage/v1/embeddings"
+    assert gesehen["headers"]["X-Pseudo-Mandant"] == "42"
+
+
+def test_embedder_ohne_dienst_ist_inaktiv():
+    from app.domains.corpus.embeddings import VoyageEmbedder
+    e = VoyageEmbedder(basis_url="")
+    assert e.available is False and e.embed(["x"]) is None
+
+
+# ---- Klarnamen-Sperre der Seed-Ingestion --------------------------------- #
+#
+# Der Korpus speichert den Chunk-TEXT im Klartext; nur die Einbettung laeuft durch
+# die Schicht. Ein im Text verbliebener Name landet also in der Datenbank und kann
+# ueber die RAG-Suche in ein neues Projektdokument gelangen.
+
+def _guard():
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+    spec = importlib.util.spec_from_file_location(
+        "_ingest_seed", Path(BASE_DIR, "scripts", "ingest_seed_corpus.py"))
+    modul = importlib.util.module_from_spec(spec)
+    sys.modules["_ingest_seed"] = modul
+    spec.loader.exec_module(modul)
+    return modul._klarnamen_verdacht
+
+
+def test_sperre_erkennt_abgekuerzten_vornamen_mit_nachnamen():
+    """Genau die Form, die ohne Anrede-Anker durch die Erkennung faellt
+    (der Dienst kennt diese Luecke, ANBINDUNG.md 10)."""
+    verdacht = _guard()("Besprechung mit Chr. Straumann vom 04.07.2019.")
+    assert "Chr. Straumann" in verdacht
+
+
+def test_sperre_meldet_keine_aufzaehlung_und_kein_zum_beispiel():
+    """Sonst schlaegt sie bei fast jedem Dokument an und wird abgeschaltet –
+    eine Sperre, die nur noch genervt weggeklickt wird, schuetzt nichts."""
+    v = _guard()("Dies gilt z. B. Anhang C sowie u. a. Vorlagen und Mio. Franken.")
+    assert v == set()
+
+
+def test_sperre_ist_bewusst_uebervorsichtig():
+    """'Anhang B. Betrieb' ist von 'Kollege B. Betrieb' nicht unterscheidbar –
+    also meldet die Sperre auch das. Das ist gewollt: ein uebersehener Name ist
+    draussen und kommt nicht zurueck, ein Fehlalarm kostet nur einen Blick.
+    Sie SPERRT nur, sie ersetzt nicht – entschieden wird von Hand."""
+    assert _guard()("Siehe Anhang B. Betriebshandbuch.") != set()

@@ -30,6 +30,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
 from app.domains.praesentation.parser import parse_pia
+from app.domains.llm.errors import PseudoFehler
 
 # Ampelfarben der Risikomatrix (dezent, an Excel-Klassiker angelehnt).
 _GRUEN = RGBColor(0xC6, 0xEF, 0xCE)
@@ -105,6 +106,8 @@ class PraesentationService:
                 bullets = [str(x).strip() for x in data.get("bullets", []) if str(x).strip()]
                 if bullets:
                     return bullets[:5]
+            except PseudoFehler:
+                raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
             except Exception:  # noqa: BLE001 – Fallback übernimmt
                 pass
         haupt = text.split("Komplexitätseinschätzung")[0]

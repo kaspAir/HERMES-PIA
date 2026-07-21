@@ -110,14 +110,26 @@ def create_app(config_class=None):
     # Services aus der Konfiguration aufbauen ("Konfiguration vor Programmierung").
     app.method_service = MethodService(app.config["METHODS_DIR"])
     app.catalog_service = CatalogService(app.config["CATALOGS_DIR"])
+    # Beide Wege – Chat UND Embeddings – laufen durch die Pseudonymisierungs-
+    # schicht; der Anbieterschlüssel liegt dort, nicht hier.
+    pseudo_url = (app.config.get("PSEUDO_BASIS_URL") or "").rstrip("/")
+    pseudo_anwendung = app.config.get("PSEUDO_ANWENDUNG", "hermes-pia")
+    pseudo_mandant = app.config.get("PSEUDO_MANDANT", "standard")
+    # Ohne konfigurierten Dienst gibt es KEINEN LLM-Client – nicht etwa einen
+    # Ausweichweg zum Anbieter. Die Anwendung arbeitet dann rein deterministisch,
+    # genau wie früher ohne Anbieterschlüssel.
     llm_client = LLMClient(
-        api_key=app.config.get("ANTHROPIC_API_KEY"),
+        basis_url=f"{pseudo_url}/anthropic",
         model=app.config.get("LLM_MODEL"),
-    )
+        anwendung=pseudo_anwendung,
+        mandant=pseudo_mandant,
+    ) if pseudo_url else None
     app.rag_service = RagService(VoyageEmbedder(
-        api_key=app.config.get("VOYAGE_API_KEY"),
+        basis_url=f"{pseudo_url}/voyage" if pseudo_url else "",
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),
-    ))
+        anwendung=pseudo_anwendung,
+        mandant=pseudo_mandant,
+    ) if pseudo_url else None)
     app.projekt_service = ProjektService()
     app.interview_service = InterviewService(
         app.method_service, app.catalog_service, llm_client, rag=app.rag_service,
