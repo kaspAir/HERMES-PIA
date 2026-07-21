@@ -14,6 +14,7 @@
 
 <form method="post" action="{{ url_for('ui.pseudo_entscheide') }}">
   <input type="hidden" name="ziel" value="{{ ziel }}">
+  <input type="hidden" name="methode" value="{{ methode }}">
   {% for name, wert in formfelder %}
   <input type="hidden" name="orig__{{ name }}" value="{{ wert }}">
   {% endfor %}

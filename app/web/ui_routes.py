@@ -1175,18 +1175,20 @@ def admin_reset_password(user_id):
 # Anwendung die Formularfelder und sendet sie nach dem Entscheid unveraendert
 # erneut (ANBINDUNG.md 5).
 
-def _blockiert_seite(exc, ziel, formfelder, fehler=""):
-    return render_template("pseudo_blockiert.html",
-                           befunde=exc.befunde, vorgang_id=exc.vorgang_id,
-                           ziel=ziel, formfelder=formfelder, fehler=fehler), 409
-
-
 @bp.app_errorhandler(PseudonymisierungBlockiert)
 def _pseudo_blockiert(exc):
     # request.form ist auch hier noch verfuegbar: der Originalaufruf wird daraus
     # spaeter Feld fuer Feld unveraendert wiederhergestellt.
+    #
+    # Die Methode MUSS mitgefuehrt werden: nicht jeder LLM-Aufruf haengt an einem
+    # Formular. Die Praesentation etwa wird per GET erzeugt -- ein stures POST-
+    # Replay liefe dort in einen 405.
     felder = [(k, v) for k, v in request.form.items(multi=True)]
-    return _blockiert_seite(exc, request.path, felder)
+    ziel = request.full_path.rstrip("?") if request.method == "GET" else request.path
+    return render_template("pseudo_blockiert.html",
+                           befunde=exc.befunde, vorgang_id=exc.vorgang_id,
+                           ziel=ziel, methode=request.method,
+                           formfelder=felder, fehler=""), 409
 
 
 @bp.app_errorhandler(RueckersetzungUnvollstaendig)
@@ -1237,11 +1239,16 @@ def pseudo_entscheide():
         return render_template("pseudo_fehler.html", art="entscheid",
                                meldung=" ".join(fehler)), 400
 
-    # Originalaufruf UNVERAENDERT wiederholen. Bewusst als echtes Formular-Replay
-    # im Browser statt als interner Wiedereinstieg: so gelten Anmeldung, Rechte
-    # und Fehlerbehandlung genau wie beim ersten Versuch.
-    if not ziel.startswith("/"):
+    # Originalaufruf UNVERAENDERT wiederholen. Bewusst als echtes Replay im
+    # Browser statt als interner Wiedereinstieg: so gelten Anmeldung, Rechte und
+    # Fehlerbehandlung genau wie beim ersten Versuch.
+    # `//` mit abfangen: '//example.com' ist protokollrelativ und fuehrte sonst
+    # aus der Anwendung heraus.
+    if not ziel.startswith("/") or ziel.startswith("//"):
         abort(400)                          # nur anwendungseigene Ziele
+    methode = "GET" if request.form.get("methode") == "GET" else "POST"
     felder = [(k[len("orig__"):], v) for k, v in request.form.items(multi=True)
               if k.startswith("orig__")]
+    if methode == "GET":
+        return redirect(ziel)               # GET-Aufrufe tragen keinen Rumpf
     return render_template("pseudo_wiederholen.html", ziel=ziel, felder=felder)

@@ -99,10 +99,10 @@ def test_pflichtkopfzeilen_werden_gesendet(monkeypatch):
         return _Resp({"content": [{"text": "ok"}]}, headers={"X-Pseudo-Status": "aktiv"})
 
     monkeypatch.setattr("app.domains.llm.client.requests.post", fake_post)
-    c = LLMClient(basis_url="http://127.0.0.1:8030/anthropic", mandant="42")
+    c = LLMClient(basis_url="http://127.0.0.1:8040/anthropic", mandant="42")
     assert c.complete("sys", [{"role": "user", "content": "hi"}], projekt="session-137") == "ok"
 
-    assert gesehen["url"] == "http://127.0.0.1:8030/anthropic/v1/messages"
+    assert gesehen["url"] == "http://127.0.0.1:8040/anthropic/v1/messages"
     h = gesehen["headers"]
     assert h["X-Pseudo-Anwendung"] == "hermes-pia"
     assert h["X-Pseudo-Mandant"] == "42"
@@ -215,9 +215,9 @@ def test_embeddings_laufen_ebenfalls_ueber_den_dienst(monkeypatch):
         return _Resp({"data": [{"index": 0, "embedding": [0.1, 0.2]}]})
 
     monkeypatch.setattr("app.domains.corpus.embeddings.requests.post", fake_post)
-    e = VoyageEmbedder(basis_url="http://127.0.0.1:8030/voyage", mandant="42")
+    e = VoyageEmbedder(basis_url="http://127.0.0.1:8040/voyage", mandant="42")
     assert e.embed(["Text"]) == [[0.1, 0.2]]
-    assert gesehen["url"] == "http://127.0.0.1:8030/voyage/v1/embeddings"
+    assert gesehen["url"] == "http://127.0.0.1:8040/voyage/v1/embeddings"
     assert gesehen["headers"]["X-Pseudo-Mandant"] == "42"
 
 
@@ -267,3 +267,145 @@ def test_sperre_ist_bewusst_uebervorsichtig():
     draussen und kommt nicht zurueck, ein Fehlalarm kostet nur einen Blick.
     Sie SPERRT nur, sie ersetzt nicht – entschieden wird von Hand."""
     assert _guard()("Siehe Anhang B. Betriebshandbuch.") != set()
+
+
+# ---- Kriterium 3 + 4: der Blockierweg ueber die Weboberflaeche ------------ #
+
+@pytest.fixture
+def app(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    db = str(tmp_path / "p.db").replace("\\", "/")
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + db
+        SECRET_KEY = "x"
+        PSEUDO_BASIS_URL = "http://127.0.0.1:8040"
+
+    SessionLocal.remove()
+    anwendung = create_app(_Cfg)
+    SessionLocal.remove()
+    yield anwendung
+    SessionLocal.remove()
+
+
+def _angemeldet(app):
+    auth = app.auth_service
+    org = auth.create_org("Org")
+    auth.create_user("u@o.ch", "pw", role="org_admin", org_id=org.id,
+                     can_read=True, can_write=True, can_delete=True)
+    c = app.test_client()
+    c.post("/login", data={"email": "u@o.ch", "password": "pw"})
+    ort = c.post("/interview/start",
+                 data={"project_name": "P", "projektleiter": "X"}).headers["Location"]
+    return c, int(ort.rstrip("/").split("/")[-1])
+
+
+class _BlockierenderLLM:
+    """Verhaelt sich wie der Dienst bei einer unsicheren Fundstelle."""
+    def complete(self, *a, **kw):
+        raise PseudonymisierungBlockiert(
+            befunde=_BLOCK["error"]["pseudo"]["befunde"], vorgang_id="vg_1")
+
+
+def test_blockierter_aufruf_zeigt_dem_nutzer_die_fundstellen(app):
+    """Kriterium 3: sichtbare Rueckfrage statt stillem Ersatzergebnis."""
+    app.interview_service.llm = _BlockierenderLLM()
+    c, sid = _angemeldet(app)
+
+    r = c.post(f"/interview/{sid}/answer",
+               data={"raw_text": "Wir sprachen mit Vogt."})
+
+    assert r.status_code == 409                  # nicht 302 auf die naechste Frage
+    seite = r.get_data(as_text=True)
+    assert "Vogt" in seite                       # die Fundstelle steht da
+    assert "Fehlalarm" in seite and "Personenbezug" in seite
+    assert "trotzdem" not in seite.lower()       # es gibt kein 'trotzdem senden'
+    # Der Originaltext wird gehalten, damit er unveraendert wiederholt werden kann
+    # (der Dienst speichert ihn bewusst nicht).
+    assert "Wir sprachen mit Vogt." in seite
+
+
+def test_entscheid_wird_gesendet_und_aufruf_wiederholt(app, monkeypatch):
+    """Kriterium 4: nach 'freigeben' laeuft derselbe Aufruf durch."""
+    gesendet = {}
+
+    def fake_entscheide(basis, befund_id, entscheid, muster, begruendung="", urheber="",
+                        timeout=20):
+        gesendet.update(befund_id=befund_id, entscheid=entscheid, muster=muster,
+                        begruendung=begruendung, basis=basis)
+        return True, ""
+
+    monkeypatch.setattr("app.web.ui_routes.entscheide", fake_entscheide)
+    c, sid = _angemeldet(app)
+
+    r = c.post("/pseudo/entscheide", data={
+        "ziel": f"/interview/{sid}/answer", "methode": "POST",
+        "befund_id": "bf_1",
+        "entscheid__bf_1": "freigeben",
+        "muster__bf_1": "Vogt",
+        "begruendung__bf_1": "Name der Fachanwendung",
+        "orig__raw_text": "Wir sprachen mit Vogt.",
+    })
+
+    assert r.status_code == 200
+    assert gesendet["entscheid"] == "freigeben"
+    assert gesendet["muster"] == "Vogt"          # Klartext geht MIT (HMAC-Pruefung)
+    assert gesendet["basis"] == "http://127.0.0.1:8040"
+    # Die Wiederholung traegt exakt den urspruenglichen Rumpf.
+    seite = r.get_data(as_text=True)
+    assert f'action="/interview/{sid}/answer"' in seite
+    assert 'name="raw_text"' in seite and "Wir sprachen mit Vogt." in seite
+
+
+def test_unentschiedener_befund_bleibt_blockiert(app, monkeypatch):
+    monkeypatch.setattr("app.web.ui_routes.entscheide",
+                        lambda *a, **kw: (True, ""))
+    c, sid = _angemeldet(app)
+    r = c.post("/pseudo/entscheide", data={
+        "ziel": f"/interview/{sid}/answer", "methode": "POST",
+        "befund_id": "bf_1",                     # ohne entscheid__bf_1
+        "orig__raw_text": "Text",
+    })
+    assert r.status_code == 400
+    assert "blockiert" in r.get_data(as_text=True).lower()
+
+
+def test_get_aufruf_wird_als_get_wiederholt(app, monkeypatch):
+    """Die Praesentation wird per GET erzeugt - ein POST-Replay liefe in 405."""
+    monkeypatch.setattr("app.web.ui_routes.entscheide", lambda *a, **kw: (True, ""))
+    c, _ = _angemeldet(app)
+    r = c.post("/pseudo/entscheide", data={
+        "ziel": "/projekt/1/ergebnis/2/praesentation/x.pptx", "methode": "GET",
+        "befund_id": "bf_1", "entscheid__bf_1": "ersetzen", "muster__bf_1": "Vogt",
+    })
+    assert r.status_code == 302
+    assert r.headers["Location"].endswith("/praesentation/x.pptx")
+
+
+def test_replay_nur_auf_anwendungseigene_ziele(app, monkeypatch):
+    """Sonst waere die Seite eine offene Weiterleitung."""
+    monkeypatch.setattr("app.web.ui_routes.entscheide", lambda *a, **kw: (True, ""))
+    c, _ = _angemeldet(app)
+    for ziel in ("https://example.com/x", "//example.com/x"):
+        r = c.post("/pseudo/entscheide", data={
+            "ziel": ziel, "methode": "GET",
+            "befund_id": "b", "entscheid__b": "ersetzen", "muster__b": "V",
+        })
+        assert r.status_code == 400
+
+
+def test_502_zeigt_fehler_und_uebernimmt_keinen_text(app):
+    """Kriterium 6."""
+    class _Leck:
+        def complete(self, *a, **kw):
+            raise RueckersetzungUnvollstaendig("Platzhalter nicht aufloesbar")
+
+    app.interview_service.llm = _Leck()
+    c, sid = _angemeldet(app)
+    r = c.post(f"/interview/{sid}/answer", data={"raw_text": "Ein Text."})
+    assert r.status_code == 502
+    seite = r.get_data(as_text=True)
+    assert "zurückgehalten" in seite or "zurueckgehalten" in seite

@@ -32,7 +32,7 @@ class Config:
     LLM_MODEL = _env("HERMESPIA_LLM_MODEL", "METHODOS_LLM_MODEL", default="claude-sonnet-4-6")
 
     # Pseudonymisierungsdienst. Nur über 127.0.0.1 erreichbar; Port je Stufe:
-    # 8030 develop · 8031 test · 8032 integration · 8033 main.
+    # 8040 develop · 8041 test · 8042 integration · 8043 main.
     # Vorgabe bewusst LEER = kein LLM: ohne Dienst gibt es keinen Weg zum Anbieter.
     # Ein geratener Standard-Port würde bei fehlender .env stillschweigend ins
     # Leere laufen, statt die Fehlkonfiguration sichtbar zu machen.
