@@ -13,6 +13,7 @@ from app.domains.llm.entscheid import entscheide
 from app.domains.llm.kontext import loese_kontext, projekt_schluessel, setze_kontext
 from app.domains.llm.errors import (
     PseudoAntwortUnlesbar,
+    PseudoUnerwarteteAntwort,
     PseudoKeinSchluessel,
     PseudoKontextFehlt,
     PseudoNichtErreichbar,
@@ -1260,9 +1261,10 @@ def _pseudo_konfiguration(exc):
 
 
 @bp.app_errorhandler(PseudoAntwortUnlesbar)
+@bp.app_errorhandler(PseudoUnerwarteteAntwort)
 def _pseudo_antwort_unlesbar(exc):
     """Lieber ein sichtbarer Fehler als ein Dokument mit dem rohen Diktat darin."""
-    current_app.logger.warning("Antwort der Pseudonymisierungsschicht unlesbar: %s", exc)
+    current_app.logger.warning("Antwort der Pseudonymisierungsschicht unbrauchbar: %s", exc)
     return render_template("pseudo_fehler.html", meldung=str(exc), art="antwort"), 502
 
 

@@ -18,10 +18,11 @@ from app.domains.llm.kontext import aktueller_kontext, pseudo_kontext
 
 
 class _Resp:
-    def __init__(self, payload, status=200, headers=None):
+    def __init__(self, payload, status=200, headers=None, text=""):
         self._p = payload
         self.status_code = status
         self.headers = headers or {}
+        self.text = text            # echte requests-Antworten haben das immer
 
     def json(self):
         return self._p
@@ -596,3 +597,59 @@ def test_health_meldet_den_zustand_der_schicht(app, app_ohne_dienst):
     assert ohne["konfiguriert"] is False
     assert ohne["textformulierung_aktiv"] is False
     assert ohne["basis_url"] is None
+
+
+# ---- Der Befund vom 21.07. (zweiter Anlauf): stiller HTTPError ------------ #
+#
+# `_melde_fehler` endete mit `resp.raise_for_status()`. Das wirft einen
+# requests.HTTPError -- KEINEN PseudoFehler. Er lief damit in den generischen
+# `except Exception:` der Extraktion: kein Fehler, keine Kosten, kein Hinweis,
+# nur der Rohtext im Dokument. Genau das Bild vom dev-Lauf.
+
+@pytest.mark.parametrize("status", [401, 404, 405, 500, 501, 418])
+def test_jeder_unerwartete_status_wird_zum_pseudofehler(monkeypatch, status):
+    from app.domains.llm.errors import PseudoFehler
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp({}, status=status))
+    with pytest.raises(PseudoFehler):
+        LLMClient(basis_url="http://x/anthropic").complete("s", [])
+
+
+def test_unerwarteter_status_nennt_code_und_rumpf(monkeypatch):
+    """Sonst raet der Betrieb, warum nichts ankommt."""
+    from app.domains.llm.errors import PseudoUnerwarteteAntwort
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp({}, status=404,
+                                               text='{"detail":"Not Found"}'))
+    with pytest.raises(PseudoUnerwarteteAntwort) as e:
+        LLMClient(basis_url="http://x/anthropic").complete("s", [])
+    assert e.value.status == 404
+    assert "404" in str(e.value) and "Not Found" in str(e.value)
+
+
+def test_unerwarteter_status_landet_nicht_im_rohtext(monkeypatch):
+    """Der eigentliche Schaden: das Diktat als Kapiteltext, ohne jeden Hinweis."""
+    from app.domains.interview.extraction import _extract_free_text
+    from app.domains.llm.errors import PseudoFehler
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp({}, status=404))
+    with pytest.raises(PseudoFehler):
+        _extract_free_text(LLMClient(basis_url="http://x/anthropic"),
+                           "Ausgangslage", "Wir haben einen Serverraum.")
+
+
+def test_unerwarteter_status_zeigt_dem_nutzer_einen_fehler(app):
+    from app.domains.llm.errors import PseudoUnerwarteteAntwort
+
+    class _VierNullVier:
+        def complete(self, *a, **kw):
+            raise PseudoUnerwarteteAntwort(404, '{"detail":"Not Found"}')
+
+    app.interview_service.llm = _VierNullVier()
+    c, sid = _angemeldet(app)
+    r = c.post(f"/interview/{sid}/answer", data={"raw_text": "Ein Diktat."})
+    assert r.status_code == 502
+    assert "404" in r.get_data(as_text=True)

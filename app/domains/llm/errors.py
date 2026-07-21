@@ -36,6 +36,27 @@ class PseudoKeinSchluessel(PseudoFehler):
     """HTTP 503 -- fuer diese Anwendung ist im Dienst kein Anbieterschluessel hinterlegt."""
 
 
+class PseudoUnerwarteteAntwort(PseudoFehler):
+    """Ein Statuscode, den die Spezifikation nicht vorsieht (404, 401, 405, 500 …).
+
+    Frueher endete `_melde_fehler` mit `resp.raise_for_status()`. Das wirft einen
+    `requests.HTTPError` -- KEINEN PseudoFehler. Er lief damit in den generischen
+    `except Exception:` der Extraktion und wurde verschluckt: kein Fehler, keine
+    Kosten, kein Hinweis, nur der Rohtext im Dokument.
+
+    Jede Antwort ungleich 200 muss deshalb als PseudoFehler herauskommen, auch
+    eine unerwartete. Was hier ankommt, ist fast immer ein Konfigurationsfehler
+    (falscher Pfad, Anwendung nicht registriert) und gehoert dem Betrieb gesagt.
+    """
+
+    def __init__(self, status, koerper=""):
+        self.status = status
+        self.koerper = (koerper or "")[:300]
+        super().__init__(
+            f"Unerwartete Antwort des Pseudonymisierungsdienstes: HTTP {status}."
+            + (f" Rumpf: {self.koerper!r}" if self.koerper else ""))
+
+
 class PseudoAntwortUnlesbar(PseudoFehler):
     """HTTP 200, aber es liess sich kein Text aus der Antwort lesen.
 
