@@ -4,8 +4,11 @@ Verantwortung: Das LLM formuliert und extrahiert.
 Es entscheidet NICHT, ob eine Luecke vorliegt - das ist Sache des gap_check.
 """
 import json
+import logging
 import re
 from app.domains.llm.errors import PseudoFehler
+
+log = logging.getLogger("hermes.extraktion")
 
 # Verbindliche HERMES-2022-Vorgaben, die in jeden generierenden Prompt einfliessen.
 # Stand: offizielles HERMES-2022-Referenzhandbuch (Phase Initialisierung).
@@ -515,7 +518,14 @@ def _extract_free_text(llm_client, section_title, raw_text):
         # bei zu kleinem Limit wird das JSON abgeschnitten und der Code faellt
         # still auf den Rohtext zurueck (keine Umformulierung).
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
-        return _parse_json(raw) or {"text": raw_text}
+        gelesen = _parse_json(raw)
+        if gelesen:
+            return gelesen
+        # Legitimer Rueckfall (das Modell hat kein JSON geliefert), aber er
+        # setzt das ROHE Diktat ins Dokument. Ohne Protokolleintrag sieht der
+        # Projektleiter nur "nicht umformuliert" und sucht den Fehler bei sich.
+        log.warning("Freitext nicht als JSON lesbar, Rohtext uebernommen. Abschnitt=%s, Antwort=%.200r", section_title, raw)
+        return {"text": raw_text}
     except PseudoFehler:
         raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:

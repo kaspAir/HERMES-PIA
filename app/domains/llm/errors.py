@@ -36,6 +36,18 @@ class PseudoKeinSchluessel(PseudoFehler):
     """HTTP 503 -- fuer diese Anwendung ist im Dienst kein Anbieterschluessel hinterlegt."""
 
 
+class PseudoAntwortUnlesbar(PseudoFehler):
+    """HTTP 200, aber es liess sich kein Text aus der Antwort lesen.
+
+    Frueher gab der Client in diesem Fall '' zurueck. Der Aufrufer hielt das fuer
+    eine unbrauchbare Modellantwort und uebernahm STILL den Rohtext -- der
+    Projektleiter sah sein Diktat unveraendert im Dokument und konnte nicht
+    erkennen, dass gar nichts formuliert worden war. Dieselbe Fehlerklasse wie
+    die Falle in ANBINDUNG.md 6.2, nur eine Ebene tiefer: lieber sichtbar kaputt
+    als still falsch.
+    """
+
+
 class PseudoNichtErreichbar(PseudoFehler):
     """Der Dienst antwortet nicht.
 

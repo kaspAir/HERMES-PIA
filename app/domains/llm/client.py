@@ -16,6 +16,7 @@ import requests
 
 from app.domains.llm.kontext import aktueller_kontext
 from app.domains.llm.errors import (
+    PseudoAntwortUnlesbar,
     PseudoKeinSchluessel,
     PseudoKontextFehlt,
     PseudoNichtErreichbar,
@@ -24,6 +25,34 @@ from app.domains.llm.errors import (
 )
 
 log = logging.getLogger("hermes.llm")
+
+
+def _text_aus_antwort(data):
+    """Liest den Text aus der Anbieterantwort – etwas duldsamer als noetig.
+
+    Erwartet wird die Anthropic-Form (`content` als Liste von Bloecken). Der
+    Dienst reicht sie durch, koennte sie aber je nach Fassung leicht anders
+    verpacken; deshalb werden auch ein einfacher `text`-Schluessel und eine
+    Verschachtelung unter `data`/`message` akzeptiert. Was hier NICHT gefunden
+    wird, fuehrt bewusst zu einem Fehler statt zu einer leeren Zeichenkette.
+    """
+    if isinstance(data, dict):
+        inhalt = data.get("content")
+        if isinstance(inhalt, list):
+            return "".join(b.get("text", "") for b in inhalt if isinstance(b, dict))
+        if isinstance(inhalt, str):
+            return inhalt
+        if isinstance(data.get("text"), str):
+            return data["text"]
+        for schluessel in ("data", "message", "response"):
+            tiefer = data.get(schluessel)
+            if isinstance(tiefer, (dict, list)):
+                gefunden = _text_aus_antwort(tiefer)
+                if gefunden:
+                    return gefunden
+    elif isinstance(data, list):
+        return "".join(_text_aus_antwort(e) for e in data)
+    return ""
 
 
 class LLMClient:
@@ -88,8 +117,22 @@ class LLMClient:
         self.letzter_status = resp.headers.get("X-Pseudo-Status", "")
         if resp.status_code != 200:
             self._melde_fehler(resp)
-        data = resp.json()
-        return "".join(block.get("text", "") for block in data.get("content", []))
+        try:
+            data = resp.json() or {}
+        except ValueError:
+            raise PseudoAntwortUnlesbar(
+                f"Antwort ist kein JSON: {(resp.text or '')[:200]!r}") from None
+
+        text = _text_aus_antwort(data)
+        if not text.strip():
+            # NICHT stillschweigend '' zurueckgeben: der Aufrufer wuerde daraus
+            # 'Modell lieferte nichts' schliessen und den Rohtext uebernehmen.
+            log.warning("Antwort ohne Text. Status=%s, Schluessel=%s",
+                        self.letzter_status or "-", sorted(data.keys()))
+            raise PseudoAntwortUnlesbar(
+                "Die Antwort enthielt keinen Text. Felder der Antwort: "
+                f"{sorted(data.keys())}")
+        return text
 
     # ---- Fehlerabbildung -------------------------------------------------- #
 

@@ -12,6 +12,7 @@ from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMI
 from app.domains.llm.entscheid import entscheide
 from app.domains.llm.kontext import loese_kontext, projekt_schluessel, setze_kontext
 from app.domains.llm.errors import (
+    PseudoAntwortUnlesbar,
     PseudoKeinSchluessel,
     PseudoKontextFehlt,
     PseudoNichtErreichbar,
@@ -1235,6 +1236,13 @@ def _pseudo_weg(exc):
 @bp.app_errorhandler(PseudoKeinSchluessel)
 def _pseudo_konfiguration(exc):
     return render_template("pseudo_fehler.html", meldung=str(exc), art="konfiguration"), 500
+
+
+@bp.app_errorhandler(PseudoAntwortUnlesbar)
+def _pseudo_antwort_unlesbar(exc):
+    """Lieber ein sichtbarer Fehler als ein Dokument mit dem rohen Diktat darin."""
+    current_app.logger.warning("Antwort der Pseudonymisierungsschicht unlesbar: %s", exc)
+    return render_template("pseudo_fehler.html", meldung=str(exc), art="antwort"), 502
 
 
 @bp.post("/pseudo/entscheide")
