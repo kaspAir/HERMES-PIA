@@ -17,6 +17,7 @@ import requests
 from app.domains.llm.kontext import aktueller_kontext
 from app.domains.llm.errors import (
     PseudoAntwortUnlesbar,
+    PseudoUnerwarteteAntwort,
     PseudoKeinSchluessel,
     PseudoKontextFehlt,
     PseudoNichtErreichbar,
@@ -161,4 +162,9 @@ class LLMClient:
             raise PseudoKontextFehlt(text)
         if resp.status_code == 503 or typ == "kein_anbieterschluessel":
             raise PseudoKeinSchluessel(text)
-        resp.raise_for_status()
+        # Alles Uebrige (404, 401, 405, 500, 501 …) MUSS ebenfalls als PseudoFehler
+        # herauskommen. Ein requests.HTTPError waere kein PseudoFehler und liefe
+        # in den generischen Faenger der Extraktion -- still zurueck zum Rohtext.
+        log.warning("Unerwartete Antwort: HTTP %s auf %s/v1/messages. Rumpf: %.300r",
+                    resp.status_code, self.basis_url, resp.text or "")
+        raise PseudoUnerwarteteAntwort(resp.status_code, resp.text)
