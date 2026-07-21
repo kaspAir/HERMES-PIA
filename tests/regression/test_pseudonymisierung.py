@@ -116,7 +116,7 @@ def test_projekt_kommt_aus_dem_anfragekontext(monkeypatch):
     gesehen = {}
     monkeypatch.setattr("app.domains.llm.client.requests.post",
                         lambda url, headers=None, json=None, timeout=None:
-                        (gesehen.update(headers), _Resp({"content": []}))[1])
+                        (gesehen.update(headers), _Resp({"content": [{"text": "ok"}]}))[1])
     c = LLMClient(basis_url="http://x/anthropic", mandant="vorgabe")
     with pseudo_kontext(projekt=137, mandant="7"):
         c.complete("s", [])
@@ -484,3 +484,62 @@ def test_prompts_betonen_keine_woerter_die_nachnamen_sein_koennen():
         for zeichenkette in re.findall(r'"([^"\n]{10,})"', text):
             gefunden = heikel & set(re.findall(r"\b[A-ZÄÖÜ]{3,}\b", zeichenkette))
             assert not gefunden, f"{Path(pfad).name}: {gefunden} im Prompt-Text"
+
+
+# ---- Der Befund vom 21.07.: Text kam 1:1 statt formuliert zurueck --------- #
+#
+# Der Client gab bei einer 200-Antwort ohne lesbaren Text schlicht '' zurueck.
+# `_extract_free_text` machte daraus `_parse_json('') or {"text": raw_text}` --
+# also den ROHTEXT, ohne Ausnahme, ohne Protokolleintrag. Der Projektleiter sah
+# sein Diktat unveraendert im Dokument und konnte nicht erkennen, dass gar nichts
+# formuliert worden war.
+
+def test_antwort_ohne_text_wird_zum_fehler_statt_zu_leerstring(monkeypatch):
+    from app.domains.llm.errors import PseudoAntwortUnlesbar
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp({"id": "msg_1", "content": []}))
+    with pytest.raises(PseudoAntwortUnlesbar) as e:
+        LLMClient(basis_url="http://x/anthropic").complete("s", [])
+    # Die Meldung nennt die Felder der Antwort - sonst raet man beim Diagnostizieren.
+    assert "content" in str(e.value) and "id" in str(e.value)
+
+
+def test_rohtext_landet_nicht_still_im_dokument(monkeypatch):
+    """Der eigentliche Schaden: das Diktat als Kapiteltext."""
+    from app.domains.interview.extraction import _extract_free_text
+    from app.domains.llm.errors import PseudoAntwortUnlesbar
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post",
+                        lambda *a, **kw: _Resp({"content": []}))
+    llm = LLMClient(basis_url="http://x/anthropic")
+    with pytest.raises(PseudoAntwortUnlesbar):
+        _extract_free_text(llm, "Ausgangslage", "Wir haben einen Serverraum.")
+
+
+def test_antwortformen_werden_geduldig_gelesen(monkeypatch):
+    """Der Dienst reicht die Anbieterform durch, koennte sie aber leicht anders
+    verpacken. Was lesbar ist, soll gelesen werden - nur voellig Unlesbares
+    wird zum Fehler."""
+    from app.domains.llm.client import _text_aus_antwort
+
+    assert _text_aus_antwort({"content": [{"text": "a"}, {"text": "b"}]}) == "ab"
+    assert _text_aus_antwort({"content": "direkt"}) == "direkt"
+    assert _text_aus_antwort({"text": "flach"}) == "flach"
+    assert _text_aus_antwort({"data": {"content": [{"text": "tief"}]}}) == "tief"
+    assert _text_aus_antwort({"id": "msg_1", "content": []}) == ""
+
+
+def test_unlesbare_antwort_zeigt_dem_nutzer_einen_fehler(app):
+    """Kein Dokument mit dem rohen Diktat darin."""
+    from app.domains.llm.errors import PseudoAntwortUnlesbar
+
+    class _Stumm:
+        def complete(self, *a, **kw):
+            raise PseudoAntwortUnlesbar("Die Antwort enthielt keinen Text.")
+
+    app.interview_service.llm = _Stumm()
+    c, sid = _angemeldet(app)
+    r = c.post(f"/interview/{sid}/answer", data={"raw_text": "Ein Diktat."})
+    assert r.status_code == 502
+    assert "nicht auswertbar" in r.get_data(as_text=True)
