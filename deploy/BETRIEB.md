@@ -111,12 +111,12 @@ Verwaltungskunden an.
 ### Konfiguration (`.env`)
 
 ```
-PSEUDO_BASIS_URL=http://127.0.0.1:8030
+PSEUDO_BASIS_URL=http://127.0.0.1:8040
 PSEUDO_ANWENDUNG=hermes-pia
 PSEUDO_MANDANT=standard
 ```
 
-Port je Stufe: `8030` develop · `8031` test · `8032` integration · `8033` main.
+Port je Stufe: `8040` develop · `8041` test · `8042` integration · `8043` main.
 
 **`PSEUDO_BASIS_URL` leer = kein LLM.** Die Anwendung arbeitet dann rein
 deterministisch weiter (wie früher ohne Anbieterschlüssel). Es gibt bewusst
