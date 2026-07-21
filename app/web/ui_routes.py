@@ -36,7 +36,24 @@ bp = Blueprint("ui", __name__)
 
 @bp.get("/health")
 def health():
-    return jsonify({"status": "ok", "service": "hermes-pia"})
+    """Betriebszustand – auch, ob die Pseudonymisierungsschicht steht.
+
+    Ohne sie formuliert HERMES PIA nichts; das muss von aussen prüfbar sein,
+    ohne sich durch ein Interview zu klicken. Nennt bewusst KEINE Geheimnisse.
+    """
+    llm = current_app.interview_service.llm
+    return jsonify({
+        "status": "ok",
+        "service": "hermes-pia",
+        "pseudonymisierung": {
+            "konfiguriert": bool(llm),
+            "basis_url": current_app.config.get("PSEUDO_BASIS_URL", "") or None,
+            "anwendung": current_app.config.get("PSEUDO_ANWENDUNG", ""),
+            # Ohne Dienst laeuft die Anwendung rein deterministisch: keine
+            # Formulierung, keine Extraktion, keine Komplexitaetseinschaetzung.
+            "textformulierung_aktiv": bool(llm),
+        },
+    })
 
 
 # ---- Mandantentrennung: Session laden + Zugriff prüfen ---------------- #
@@ -204,6 +221,10 @@ def interview_workspace(session_id):
         session=session, state=state, sections=sections, preview=preview, method=method,
         projekt=projekt,
         stt_available=getattr(current_app.transcriber, "available", False),
+        # Ohne Pseudonymisierungsdienst wird NICHT formuliert. Das muss sichtbar
+        # sein: sonst diktiert der Projektleiter ein ganzes Interview und merkt
+        # erst am fertigen Dokument, dass sein Rohtext darin steht.
+        llm_available=bool(svc.llm),
     )
 
 

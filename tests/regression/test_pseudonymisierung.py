@@ -543,3 +543,56 @@ def test_unlesbare_antwort_zeigt_dem_nutzer_einen_fehler(app):
     r = c.post(f"/interview/{sid}/answer", data={"raw_text": "Ein Diktat."})
     assert r.status_code == 502
     assert "nicht auswertbar" in r.get_data(as_text=True)
+
+
+# ---- Ohne Dienst darf nicht STILL schlechter gearbeitet werden ------------ #
+#
+# Befund vom dev-Lauf: kein Blockierdialog, keine Formulierung, keine Kosten -
+# also gar kein Aufruf. Ursache war eine leere PSEUDO_BASIS_URL. HERMES PIA lief
+# rein deterministisch weiter und sagte es nirgends; der Projektleiter diktierte
+# ein ganzes Interview und sah erst am Dokument, dass sein Rohtext darin stand.
+
+@pytest.fixture
+def app_ohne_dienst(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    db = str(tmp_path / "ohne.db").replace("\\", "/")
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + db
+        SECRET_KEY = "x"
+        PSEUDO_BASIS_URL = ""
+
+    SessionLocal.remove()
+    anwendung = create_app(_Cfg)
+    SessionLocal.remove()
+    yield anwendung
+    SessionLocal.remove()
+
+
+def test_interview_warnt_sichtbar_wenn_nicht_formuliert_wird(app_ohne_dienst):
+    c, sid = _angemeldet(app_ohne_dienst)
+    seite = c.get(f"/interview/{sid}").get_data(as_text=True)
+    assert "nicht aufbereitet" in seite
+    assert "PSEUDO_BASIS_URL" in seite          # sagt auch, WO man nachsieht
+    assert "unverändert" in seite
+
+
+def test_interview_warnt_nicht_wenn_der_dienst_steht(app):
+    c, sid = _angemeldet(app)
+    seite = c.get(f"/interview/{sid}").get_data(as_text=True)
+    assert "nicht aufbereitet" not in seite
+
+
+def test_health_meldet_den_zustand_der_schicht(app, app_ohne_dienst):
+    """Von aussen pruefbar, ohne sich durch ein Interview zu klicken."""
+    mit = app.test_client().get("/health").get_json()["pseudonymisierung"]
+    assert mit["konfiguriert"] is True
+    assert mit["basis_url"] == "http://127.0.0.1:8040"
+
+    ohne = app_ohne_dienst.test_client().get("/health").get_json()["pseudonymisierung"]
+    assert ohne["konfiguriert"] is False
+    assert ohne["textformulierung_aktiv"] is False
+    assert ohne["basis_url"] is None

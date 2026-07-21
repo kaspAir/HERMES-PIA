@@ -3,6 +3,19 @@
 {% block main_class %}wide{% endblock %}
 
 {% block content %}
+{% if not llm_available %}
+{# Ohne Dienst wird nichts formuliert und nichts extrahiert. Frueher lief das
+   still weiter - der Rohtext landete im Dokument und niemand konnte erkennen,
+   warum. Diese Warnung darf nicht wegklickbar sein. #}
+<div class="warnbanner" role="alert">
+  <strong>Achtung: Die Texte werden derzeit nicht aufbereitet.</strong>
+  Der Pseudonymisierungsdienst ist nicht konfiguriert, deshalb geht nichts an ein
+  Sprachmodell. Ihr Diktat wird <em>unverändert</em> übernommen – ohne
+  Umformulierung, ohne Vorschläge und ohne Komplexitätseinschätzung.
+  Prüfen Sie <code>PSEUDO_BASIS_URL</code>; der Zustand steht auch unter
+  <a href="{{ url_for('ui.health') }}">/health</a>.
+</div>
+{% endif %}
 {% if projekt %}
 <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">
   &#8592; Projekt: {{ projekt.name }}</a>
