@@ -4,12 +4,13 @@ import json
 from datetime import date
 
 from flask import (
-    Blueprint, abort, current_app, jsonify, redirect, render_template, request,
+    Blueprint, abort, current_app, g, jsonify, redirect, render_template, request,
     send_file, url_for,
 )
 
 from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
 from app.domains.llm.entscheid import entscheide
+from app.domains.llm.kontext import loese_kontext, projekt_schluessel, setze_kontext
 from app.domains.llm.errors import (
     PseudoKeinSchluessel,
     PseudoKontextFehlt,
@@ -1174,6 +1175,32 @@ def admin_reset_password(user_id):
 # ausgerechnet von den heikelsten Texten eine Halde an. Deshalb haelt die
 # Anwendung die Formularfelder und sendet sie nach dem Entscheid unveraendert
 # erneut (ANBINDUNG.md 5).
+
+@bp.before_app_request
+def _pseudo_kontext_setzen():
+    """Mandant und Projekt fuer JEDE Anfrage setzen -- nicht je Aufrufstelle.
+
+    Die vier dekorierten Einstiegspunkte im Interview deckten die Ergebnis-Module
+    (Rechtsgrundlagen, Schutzbedarf, Praesentation) und den Nachweis NICHT ab;
+    dort ging `X-Pseudo-Projekt` leer raus und der Dienst antwortete zu Recht mit
+    400. Hier greift es fuer alle Routen, auch fuer kuenftige.
+    """
+    benutzer = current_user()
+    marken = setze_kontext(
+        projekt=projekt_schluessel(request.view_args),
+        mandant=getattr(benutzer, "org_id", None) if benutzer else None,
+    )
+    g._pseudo_marken = marken
+
+
+@bp.teardown_app_request
+def _pseudo_kontext_loesen(_fehler=None):
+    # Ohne Zuruecksetzen truege die naechste Anfrage auf demselben Thread den
+    # Mandanten der vorherigen -- Zuordnungen landeten im falschen Topf.
+    marken = g.pop("_pseudo_marken", None)
+    if marken:
+        loese_kontext(marken)
+
 
 @bp.app_errorhandler(PseudonymisierungBlockiert)
 def _pseudo_blockiert(exc):

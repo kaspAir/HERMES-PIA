@@ -30,10 +30,39 @@ def aktueller_kontext():
 
 @contextmanager
 def pseudo_kontext(projekt=None, mandant=None):
-    t_p = _projekt.set(str(projekt) if projekt else _projekt.get())
-    t_m = _mandant.set(str(mandant) if mandant else _mandant.get())
+    marken = setze_kontext(projekt, mandant)
     try:
         yield
     finally:
-        _projekt.reset(t_p)
-        _mandant.reset(t_m)
+        loese_kontext(marken)
+
+
+# Fuer Aufrufer, die keinen `with`-Block aufspannen koennen -- namentlich Flasks
+# before_request/teardown_request. Die Marken MUESSEN zurueckgegeben werden,
+# sonst traegt der naechste Aufruf auf demselben Thread den alten Mandanten.
+def setze_kontext(projekt=None, mandant=None):
+    return (_projekt.set(str(projekt) if projekt else _projekt.get()),
+            _mandant.set(str(mandant) if mandant else _mandant.get()))
+
+
+def loese_kontext(marken):
+    t_p, t_m = marken
+    _projekt.reset(t_p)
+    _mandant.reset(t_m)
+
+
+def projekt_schluessel(view_args):
+    """Konsistenzrahmen aus den Routenparametern ableiten.
+
+    Bewusst das PROJEKT vor der Session: dieselbe Person soll im PIA und in der
+    daraus abgeleiteten Rechtsgrundlagenanalyse denselben Platzhalter bekommen.
+    Nur wenn kein Projekt in der Route steht, traegt die Session den Rahmen.
+    """
+    if not view_args:
+        return ""
+    for schluessel, praefix in (("projekt_id", "projekt"),
+                                ("session_id", "session")):
+        wert = view_args.get(schluessel)
+        if wert:
+            return f"{praefix}-{wert}"
+    return ""

@@ -409,3 +409,78 @@ def test_502_zeigt_fehler_und_uebernimmt_keinen_text(app):
     assert r.status_code == 502
     seite = r.get_data(as_text=True)
     assert "zurückgehalten" in seite or "zurueckgehalten" in seite
+
+
+# ---- Der Fehler vom 21.07.: 'Fehlende Kopfzeile: X-Pseudo-Projekt' -------- #
+#
+# Der Kontext hing an vier dekorierten Interview-Methoden. Die Ergebnis-Module
+# (Rechtsgrundlagen, Schutzbedarf, Praesentation) und der Nachweis liefen daran
+# vorbei -> Kopfzeile leer -> der Dienst antwortete zu Recht mit 400.
+# Jetzt setzt eine Anfrage-Bindung den Kontext fuer JEDE Route.
+
+class _MerktKontext:
+    """Haelt fest, welchen Kontext der Aufruf tatsaechlich gesehen haette."""
+    def __init__(self):
+        self.gesehen = []
+
+    def complete(self, *a, **kw):
+        self.gesehen.append(aktueller_kontext())
+        return "{}"
+
+
+def test_jede_route_setzt_den_kontext(app):
+    """Nicht nur die vier frueher dekorierten Interview-Einstiegspunkte."""
+    merker = _MerktKontext()
+    app.interview_service.llm = merker
+    c, sid = _angemeldet(app)
+
+    c.post(f"/interview/{sid}/answer", data={"raw_text": "Eine Ausgangslage."})
+
+    assert merker.gesehen, "es wurde gar kein LLM-Aufruf ausgeloest"
+    for projekt, mandant in merker.gesehen:
+        assert projekt, "X-Pseudo-Projekt waere leer -> HTTP 400 kontext_fehlt"
+        assert mandant, "X-Pseudo-Mandant waere leer -> HTTP 400 kontext_fehlt"
+
+
+def test_kontext_wird_aus_der_route_abgeleitet():
+    from app.domains.llm.kontext import projekt_schluessel
+    # Das Projekt hat Vorrang: dieselbe Person soll im PIA und in der daraus
+    # abgeleiteten Rechtsgrundlagenanalyse denselben Platzhalter bekommen.
+    assert projekt_schluessel({"projekt_id": 5, "ergebnis_id": 9}) == "projekt-5"
+    assert projekt_schluessel({"session_id": 137}) == "session-137"
+    assert projekt_schluessel({}) == ""
+    assert projekt_schluessel(None) == ""
+
+
+def test_kontext_wird_nach_der_anfrage_zurueckgesetzt(app):
+    """Sonst truege die naechste Anfrage auf demselben Thread den fremden
+    Mandanten - Zuordnungen landeten im falschen Topf."""
+    c, sid = _angemeldet(app)
+    c.get(f"/interview/{sid}")
+    assert aktueller_kontext() == ("", "")
+
+
+def test_prompts_betonen_keine_woerter_die_nachnamen_sein_koennen():
+    """Der Nutzer musste ueber 'LEER' entscheiden, das er nie diktiert hat.
+
+    Grossgeschriebene Betonungen im Prompt sind fuer die Erkennung nicht von
+    Namen zu unterscheiden - «Leer», «Kosten», «Recht», «Bau» sind Schweizer
+    Nachnamen. Solche Woerter gehoeren klein geschrieben; Betonung nur bei
+    Funktionswoertern (NUR, NICHT, NIEMALS).
+    """
+    import glob
+    import re
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+
+    # Grossgeschriebene Woerter, die zugleich Schweizer Nachnamen sind.
+    heikel = {"LEER", "KOSTEN", "RECHT", "BAU", "SITZ", "BERG", "STEIN",
+              "WINTER", "SOMMER", "FRISCH", "REICH", "JUNG", "KLEIN", "GROSS"}
+    for pfad in glob.glob(str(Path(BASE_DIR, "app", "domains", "**", "*.py")),
+                          recursive=True):
+        text = Path(pfad).read_text(encoding="utf-8")
+        # Nur Zeichenketten betrachten (Prompts), nicht Bezeichner/Kommentare.
+        for zeichenkette in re.findall(r'"([^"\n]{10,})"', text):
+            gefunden = heikel & set(re.findall(r"\b[A-ZÄÖÜ]{3,}\b", zeichenkette))
+            assert not gefunden, f"{Path(pfad).name}: {gefunden} im Prompt-Text"
