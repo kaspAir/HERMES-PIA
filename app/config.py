@@ -24,18 +24,32 @@ class Config:
     METHODS_DIR = BASE_DIR / "methods"
     CATALOGS_DIR = BASE_DIR / "catalogs"
 
-    # LLM
-    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+    # LLM – ausschliesslich über die Pseudonymisierungsschicht.
+    # HERMES PIA hat bewusst KEINEN eigenen Anbieterschlüssel mehr: der liegt im
+    # Dienst. Solange die Anwendung einen eigenen Schlüssel besitzt, ist das
+    # Umgehen der Schicht nur verboten, nicht unmöglich – und genau darauf kommt
+    # es bei Verwaltungskunden an (ANBINDUNG.md 6.4).
     LLM_MODEL = _env("HERMESPIA_LLM_MODEL", "METHODOS_LLM_MODEL", default="claude-sonnet-4-6")
+
+    # Pseudonymisierungsdienst. Nur über 127.0.0.1 erreichbar; Port je Stufe:
+    # 8030 develop · 8031 test · 8032 integration · 8033 main.
+    # Vorgabe bewusst LEER = kein LLM: ohne Dienst gibt es keinen Weg zum Anbieter.
+    # Ein geratener Standard-Port würde bei fehlender .env stillschweigend ins
+    # Leere laufen, statt die Fehlkonfiguration sichtbar zu machen.
+    PSEUDO_BASIS_URL = os.environ.get("PSEUDO_BASIS_URL", "")
+    PSEUDO_ANWENDUNG = os.environ.get("PSEUDO_ANWENDUNG", "hermes-pia")
+    # Mandant INNERHALB der Anwendung. Es gibt bewusst keinen Standard im Dienst –
+    # ein Vertipper darf nicht dazu führen, dass Zuordnungen im falschen Topf
+    # landen. Sobald Organisationen durchgängig sind, tritt die org_id an die Stelle.
+    PSEUDO_MANDANT = os.environ.get("PSEUDO_MANDANT", "standard")
 
     # Betreiber-Account (Super-Admin) – via .env / Umgebungsvariablen setzen.
     # Neuer Name HERMESPIA_*, alter Name METHODOS_* bleibt als Fallback gültig.
     SUPERADMIN_EMAIL = _env("HERMESPIA_SUPERADMIN_EMAIL", "METHODOS_SUPERADMIN_EMAIL")
     SUPERADMIN_PASSWORD = _env("HERMESPIA_SUPERADMIN_PASSWORD", "METHODOS_SUPERADMIN_PASSWORD")
 
-    # RAG / Wissenskorpus (Voyage-Embeddings über die REST-API, kein neues pip-Paket).
-    # Ohne Key bleibt das RAG inaktiv (Ingest/Suche liefern leer) – sicher fürs Deployment.
-    VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
+    # RAG / Wissenskorpus (Voyage-Embeddings). Der Schlüssel liegt – wie beim Chat –
+    # im Pseudonymisierungsdienst; ohne dessen Basis-URL bleibt das RAG inaktiv.
     VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-3")
 
     # Speech-to-Text (Meeting mithören). OpenAI-kompatibler Endpoint -> frei wählbar

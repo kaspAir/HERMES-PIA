@@ -99,3 +99,61 @@ Fehler wie "Saeure" statt "Server/Services":
 
 Beide sind optional; Defaults stehen in app/config.py. Das Warte-Budget des
 asynchronen Pfads liegt bei 100 s – bewusst UNTER dem Gunicorn-Worker-Timeout (120 s).
+
+## Pseudonymisierungsschicht (alle KI-Aufrufe)
+
+Seit V0.8.0 besitzt HERMES PIA **keinen eigenen Anbieterschlüssel mehr**. Sämtliche
+LLM- *und* Embedding-Aufrufe laufen über den lokalen Pseudonymisierungsdienst; der
+Schlüssel liegt dort. Solange die Anwendung einen eigenen Schlüssel hätte, wäre das
+Umgehen der Schicht nur verboten, nicht unmöglich – und genau darauf kommt es bei
+Verwaltungskunden an.
+
+### Konfiguration (`.env`)
+
+```
+PSEUDO_BASIS_URL=http://127.0.0.1:8030
+PSEUDO_ANWENDUNG=hermes-pia
+PSEUDO_MANDANT=standard
+```
+
+Port je Stufe: `8030` develop · `8031` test · `8032` integration · `8033` main.
+
+**`PSEUDO_BASIS_URL` leer = kein LLM.** Die Anwendung arbeitet dann rein
+deterministisch weiter (wie früher ohne Anbieterschlüssel). Es gibt bewusst
+keinen Ausweichweg direkt zum Anbieter: lieber keine Auswertung als eine
+ungeschützte. Ein geratener Standard-Port wäre die schlechtere Vorgabe – er liefe
+bei fehlender `.env` stillschweigend ins Leere.
+
+`ANTHROPIC_API_KEY` und `VOYAGE_API_KEY` gehören **entfernt**. Stehen sie noch in
+der `.env`, richten sie keinen Schaden mehr an (nichts liest sie), sind aber ein
+unnötiges Geheimnis auf der Platte.
+
+### Was der Betrieb sehen muss
+
+| Lage | Anzeige für den Nutzer | HTTP |
+|---|---|---|
+| Fundstelle unsicher | Rückfrage mit Fundstellen und zwei Schaltflächen | 409 |
+| Rückersetzung unsicher | «Antwort zurückgehalten», **kein Text übernommen** | 502 |
+| Dienst nicht erreichbar | «Pseudonymisierung nicht erreichbar» | 503 |
+| Mandant/Anwendung/Schlüssel falsch | «nicht einsatzbereit» (Konfigurationsfehler) | 500 |
+
+**502 ist eine Schutzabschaltung, kein Netzwerkfehler.** Nicht stillschweigend
+wiederholen – der Dienst liefert lieber einen Fehler aus als einen Text, in dem
+ein Platzhalter falsch aufgelöst wurde.
+
+Fällt der Dienst aus, steht das Interview. Das ist gewollt. Beim Wiederanfahren
+zuerst den Dienst starten, dann HERMES PIA.
+
+### Seed-Korpus neu laden
+
+```
+python scripts/ingest_seed_corpus.py "<verzeichnis>" --ersetzen
+```
+
+Der Korpus speichert den Chunk-**Text** im Klartext; nur die Einbettung läuft durch
+die Schicht. Ein im Text verbliebener Personenname landet also in der Datenbank und
+kann über die RAG-Suche in ein neues Projektdokument gelangen. Das Skript prüft
+deshalb vorher auf Restmuster (abgekürzter Vorname + Nachname, z.B. `Chr. Dürr`)
+und **bricht ab**. Die Prüfung ist bewusst übervorsichtig und meldet auch
+Anhang-Aufzählungen mit; sie sperrt nur, sie ersetzt nichts. `--trotzdem` übergeht
+sie bewusst und sollte begründet sein.
