@@ -30,7 +30,7 @@ HERMES_RULES = (
     "Die in der Phase Initialisierung erst erarbeiteten Ergebnisse (Stakeholderliste, "
     "Studie, Rechtsgrundlagen-/Schutzbedarfs-/Beschaffungsanalyse, Projektmanagementplan, "
     "Durchfuehrungsauftrag, Prototyp) gehoeren NIEMALS in diese beiden Abschnitte.\n"
-    "- KOSTEN/BUDGET betreffen im PIA AUSSCHLIESSLICH die Phase Initialisierung. "
+    "- Kosten und Budget betreffen im PIA AUSSCHLIESSLICH die Phase Initialisierung. "
     "Budgetiere NIEMALS die Phasen Konzept, Realisierung, Einfuehrung, Abschluss oder "
     "Umsetzung. Ob das Projekt klassisch (mit diesen Phasen) oder agil (nur Initialisierung, "
     "Umsetzung, Abschluss) gefuehrt wird, entscheidet sich erst im Meilenstein 'Weiteres "
@@ -61,7 +61,11 @@ HERMES_RULES = (
     "diese werden erst in spaeteren Phasen relevant.\n"
     "- ERFINDE NIEMALS Fundstellen: keine SR-Nummern, keine kantonalen Erlass-Nummern (z.B. "
     "'NG ...', 'BGS ...'), keine Aktenzeichen, keine Links. Wenn die exakte Nummer/Fundstelle "
-    "nicht zweifelsfrei bekannt ist, lass das Feld 'Nummer/Link' LEER und nenne NUR den Namen des "
+    # 'LEER' stand hier frueher als Betonung. «Leer» ist ein Schweizer Nachname –
+    # die Pseudonymisierungsschicht meldete es als Fundstelle, und der Nutzer
+    # musste ueber ein Wort entscheiden, das er nie diktiert hat. Betonungen in
+    # Grossbuchstaben nur noch fuer Wörter, die keine Namen sein koennen.
+    "nicht zweifelsfrei bekannt ist, lass das Feld 'Nummer/Link' leer und nenne NUR den Namen des "
     "Erlasses. Eine falsche oder geratene Fundstelle ist schlimmer als gar keine.\n"
     "- Formuliere KEINE feste Maximaldauer der Phase Initialisierung (z.B. 'innerhalb von X "
     "Monaten/Wochen abzuschliessen', 'Dauer maximal ...') als Rahmenbedingung, Ziel oder Vorgabe. "

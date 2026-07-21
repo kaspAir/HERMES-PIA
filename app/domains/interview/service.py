@@ -13,11 +13,9 @@ Klare Aufgabentrennung:
   - extraction.py  formuliert und extrahiert            (LLM)
   - Diese Klasse   steuert den Dialog                   (Zustand + Logik)
 """
-import functools
 import json
 import re
 
-from app.domains.llm.kontext import pseudo_kontext
 from app.domains.interview.extraction import (
     COMPLEXITY_DIMENSIONS,
     analyze_results_options,
@@ -102,27 +100,6 @@ _AVAILABLE_PROJECT_TYPES = [
         ),
     },
 ]
-
-
-def mit_pseudo_kontext(fn):
-    """Setzt Mandant und Projekt für ALLE LLM-Aufrufe dieser Operation.
-
-    Als Dekorator statt als `with`-Block im Rumpf, damit der gewachsene PIA-Kern
-    nicht komplett neu eingerückt werden muss. `X-Pseudo-Projekt` = Session-ID:
-    stabil über das ganze Interview, sodass dieselbe Person durchgehend denselben
-    Platzhalter bekommt. Mandant = org_id der Session, sonst die Vorgabe aus der
-    Konfiguration.
-    """
-    @functools.wraps(fn)
-    def wrapper(self, session_id, *args, **kwargs):
-        mandant = None
-        try:
-            mandant = getattr(self.get_session(session_id), "org_id", None)
-        except Exception:                    # noqa: BLE001 – Kontext darf nie blockieren
-            mandant = None
-        with pseudo_kontext(projekt=session_id, mandant=mandant):
-            return fn(self, session_id, *args, **kwargs)
-    return wrapper
 
 
 class InterviewService:
@@ -304,7 +281,6 @@ class InterviewService:
     # Antwortverarbeitung                                                  #
     # ------------------------------------------------------------------ #
 
-    @mit_pseudo_kontext
     def submit_answer(self, session_id, raw_text, tarife=None):
         """Verarbeitet die Antwort des Projektleiters auf die aktuelle Frage."""
         session = self.get_session(session_id)
@@ -370,7 +346,6 @@ class InterviewService:
         self._persist_answers(session, answers)
         return self.current_state(session)
 
-    @mit_pseudo_kontext
     def reprocess(self, session_id, tarife=None):
         """Wendet die deterministischen HERMES-Korrekturen erneut auf die bereits
         gespeicherten Antworten an – ohne neues Interview.
@@ -417,7 +392,6 @@ class InterviewService:
         self._persist_answers(session, answers)
         return changed
 
-    @mit_pseudo_kontext
     def answer_followup(self, session_id, risk_id, accepted, raw_text=None, tarife=None):
         """Nimmt ein nachgefragtes Risiko auf oder markiert es als bewusst weggelassen.
 
@@ -1253,7 +1227,6 @@ class InterviewService:
             return extracted.get("text", "") or entry.get("raw_text", "")
         return ""
 
-    @mit_pseudo_kontext
     def update_free_text(self, session_id, section_id, raw_text):
         """Übernimmt den bearbeiteten Freitext und lässt ihn neu sauber formulieren."""
         session = self.get_session(session_id)
