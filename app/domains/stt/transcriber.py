@@ -16,6 +16,8 @@ import time
 
 import requests
 
+from app.domains.stt.nachbearbeitung import bereinige
+
 log = logging.getLogger("hermes.stt")
 
 _FERTIG = {"done", "finished", "success", "succeeded", "completed", "complete", "ok"}
@@ -127,12 +129,12 @@ class Transcriber:
 
         text = _text_aus(body)
         if text:
-            return text                          # synchron (OpenAI & Co.)
+            return bereinige(text, prompt)       # synchron (OpenAI & Co.)
 
         entpackt = _entpacke(body)
         batch_id = entpackt.get("batch_id") if isinstance(entpackt, dict) else None
         if batch_id:
-            return self._warte_auf_ergebnis(str(batch_id))
+            return bereinige(self._warte_auf_ergebnis(str(batch_id)), prompt)
         return ""
 
     # ---- asynchroner Pfad (z.B. Infomaniak AI Services) ------------------ #

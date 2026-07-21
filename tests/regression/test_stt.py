@@ -323,3 +323,73 @@ def test_diktat_nimmt_nach_dem_stopp_noch_stille_auf():
 def test_weiter_wartet_auch_waehrend_des_nachlaufs():
     """Sonst ginge die Antwort ab, bevor das letzte Segment ueberhaupt aufgenommen ist."""
     assert "if (nachlauf || sending || sendQueue.length)" in _vorlage("interview.html")
+
+
+# ---- Prompt-Echo und Wiederholungsschleife ------------------------------- #
+#
+# Echter Befund vom 21.07.2026: Whisper gab den mitgeschickten Kontextsatz
+# «Das Projekt heisst BKI Test 4.» dreimal als Transkript aus, ohne dass er je
+# gesprochen wurde. Das ist eine Folge des Vokabular-Hinweises (V0.7.6) und
+# gehoert deterministisch entfernt, bevor der Text im Antwortfeld landet.
+
+_ECHT = ("unser chef, herr buergi moechte, dass wir alle unsere services, die auf "
+         "unserem internen server in unserem eigenen rechenzentrum das projekt heisst "
+         "bki test 4 unemployen. das projekt heisst bki test 4 unemployen. "
+         "das projekt heisst bki test 4 unemployen. "
+         "der arbeiterin bessere verkaufsargumente hat.")
+_PROMPT = ("Dies ist ein Diktat zu einem Projekt der oeffentlichen Verwaltung nach "
+           "HERMES 2022. Das Projekt heisst BKI Test 4.")
+
+
+def test_prompt_echo_wird_entfernt():
+    from app.domains.stt.nachbearbeitung import bereinige
+    sauber = bereinige(_ECHT, _PROMPT)
+    assert "das projekt heisst bki test 4" not in sauber.lower()
+
+
+def test_echtes_diktat_ueberlebt_den_schnitt():
+    """Das Echo klebt an echter Sprache. Wer den ganzen Satz verwirft, verliert
+    das Diktat - genau das war der erste, zu scharfe Versuch."""
+    from app.domains.stt.nachbearbeitung import bereinige
+    sauber = bereinige(_ECHT, _PROMPT)
+    assert "herr buergi" in sauber
+    assert "rechenzentrum" in sauber
+    assert "verkaufsargumente" in sauber
+
+
+def test_wiederholungsschleife_kollabiert():
+    from app.domains.stt.nachbearbeitung import bereinige
+    assert bereinige("Ein Satz. Ein Satz. Ein Satz. Noch einer.", "") == \
+        "Ein Satz. Noch einer."
+
+
+def test_ohne_prompt_wird_nichts_als_echo_entfernt():
+    """Sagt jemand denselben Satz wirklich, bleibt er stehen."""
+    from app.domains.stt.nachbearbeitung import bereinige
+    assert bereinige("Das Projekt heisst BKI Test 4.", "") == \
+        "Das Projekt heisst BKI Test 4."
+
+
+def test_kurze_uebereinstimmungen_gelten_nicht_als_echo():
+    """Sonst faellt jedes 'Ja.' oder 'Das Projekt.' dem Filter zum Opfer."""
+    from app.domains.stt.nachbearbeitung import bereinige
+    assert "Wir migrieren" in bereinige("Wir migrieren die Dienste.", "Das Projekt.")
+
+
+def test_nie_alles_wegwerfen():
+    """Ein leeres Feld sieht aus wie ein Aufnahmefehler und laesst den Nutzer
+    ratlos zurueck - dann lieber das Rohtranskript zeigen."""
+    from app.domains.stt.nachbearbeitung import bereinige
+    assert bereinige("Das Projekt heisst BKI Test 4.", _PROMPT).strip() != ""
+
+
+def test_transcriber_bereinigt_die_antwort(monkeypatch):
+    """Die Bereinigung haengt am Transcriber, nicht an der Route - sonst greift
+    sie beim generischen Diktat (Bemerkungsfelder) nicht."""
+    monkeypatch.setattr("app.domains.stt.transcriber.requests.post",
+                        lambda *a, **kw: _Resp({"text": _ECHT}))
+    t = Transcriber(api_url="http://stt/x", api_key="k",
+                    prompt="Dies ist ein Diktat nach HERMES 2022.")
+    ergebnis = t.transcribe(b"audio", kontext="Das Projekt heisst BKI Test 4.")
+    assert "das projekt heisst bki test 4" not in ergebnis.lower()
+    assert "herr buergi" in ergebnis
