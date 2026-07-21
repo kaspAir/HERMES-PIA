@@ -36,6 +36,23 @@ class PseudoKeinSchluessel(PseudoFehler):
     """HTTP 503 -- fuer diese Anwendung ist im Dienst kein Anbieterschluessel hinterlegt."""
 
 
+class PseudoAnbieterFehler(PseudoFehler):
+    """Der Dienst hat sauber gearbeitet -- der ANBIETER hat abgelehnt.
+
+    Typischer Fall: der im Dienst hinterlegte Anbieterschluessel ist ungueltig
+    (HTTP 401, `invalid x-api-key`). Das ist weder ein Fehler von HERMES PIA noch
+    eine Nutzereingabe, und es ist ausdruecklich KEIN Pseudonymisierungsproblem --
+    der Text war bereits pseudonymisiert, als der Anbieter ablehnte. Eigene
+    Klasse, damit die Oberflaeche nicht 'Antwort nicht auswertbar' behauptet und
+    der Betrieb sofort weiss, wo er nachsehen muss.
+    """
+
+    def __init__(self, meldung="", anbieter_meldung="", status=None):
+        self.anbieter_meldung = anbieter_meldung
+        self.status = status
+        super().__init__(meldung or "Der Anbieter hat den Aufruf abgelehnt.")
+
+
 class PseudoUnerwarteteAntwort(PseudoFehler):
     """Ein Statuscode, den die Spezifikation nicht vorsieht (404, 401, 405, 500 …).
 
