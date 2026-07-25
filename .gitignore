@@ -30,3 +30,6 @@ tests/e2e/fixtures/*.mp3
 tests/e2e/fixtures/*.webm
 tests/e2e/fixtures/*.ogg
 tests/e2e/fixtures/*.flac
+
+# Mandanten-spezifische Skills: pro Kunde, vertraulich, Konfiguration statt Code
+skills/mandant-*/

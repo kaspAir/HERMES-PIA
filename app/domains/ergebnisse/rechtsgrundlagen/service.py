@@ -13,6 +13,7 @@ from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
 from app.domains.ergebnisse.rechtsgrundlagen.proposals import analysiere
 from app.domains.projekt.reference import ERG_PIA
 from app.domains.rechtsquellen.fedlex import FedlexClient
+from app.domains.skills import load_skills
 from app.domains.rechtsquellen.kantone import sammlung_link
 from app.shared.database import SessionLocal
 
@@ -207,11 +208,18 @@ class RechtsgrundlagenService:
                  "beschreibung": "Für die im Projekt geplanten Tätigkeiten besteht nach "
                                  "dieser Analyse eine Rechtsgrundlage."}]
 
-    def build_answers(self, wissen):
+    def build_answers(self, wissen, tenant_id=None):
         relevante = self._relevante_gesetze(wissen)
+        # Skills laden. Mapping Skill↔Schritt: der Entwurfs-/Kartierungsschritt
+        # nutzt NUR die Kartierung – die weiteren Skills der Kette (Gap, Würdigung,
+        # Handlungsoptionen) gehören in ihre eigenen, später folgenden Schritte.
+        # applies_to sichert zusätzlich, dass nie ein fremder Skill hereinkommt.
+        # Ohne Skills-Ordner ist das Bündel leer -> Verhalten wie vor den Skills.
+        bundle = load_skills(METHOD_ID, tenant_id=tenant_id,
+                             only={"rechtsgrundlagen-kartierung"})
         # LLM ermittelt selbst die einschlägigen Rechtsgrundlagen (auch im PIA nicht
         # genannte, z.B. StReG/StReV) und prüft je Ziel, ob eine Grundlage besteht.
-        v = analysiere(wissen, self.llm, bestehende_namen=relevante)
+        v = analysiere(wissen, self.llm, bestehende_namen=relevante, skill_bundle=bundle)
         entdeckt = [str(r.get("rechtsgrundlage", "")).strip()
                     for r in (v.get("bestehende") or []) if isinstance(r, dict)]
         # Kap.-1-Kandidaten: PIA-Recht + vom LLM ergänzte, gefiltert (echte Gesetze).
@@ -225,6 +233,9 @@ class RechtsgrundlagenService:
         grounded = self._grounding_names(alle_namen, wissen.ebene)
         klink = self._kantonslink(wissen)
         return {
+            # Nachweis (Auditierbarkeit): welche Skill-Version(en) diesen Entwurf
+            # gesteuert haben. Reservierter Schlüssel – kein Dokumentabschnitt.
+            "_skills": bundle.versions,
             "referenzierte_dokumente": {"extracted": self._dokumente(wissen.referenzierte(), grounded, klink)},
             "mitgeltende_unterlagen": {"extracted": self._dokumente(wissen.mitgeltende(), grounded, klink)},
             "definitionen": {"extracted": self._definitionen(wissen)},
@@ -261,7 +272,7 @@ class RechtsgrundlagenService:
     def erzeuge_entwurf(self, projekt, ebene=None, kanton=None):
         """Baut den Entwurf aus dem PIA (+ Detailfragen) und speichert ihn."""
         wissen, _ = self.projektwissen(projekt, ebene=ebene, kanton=kanton)
-        answers = self.build_answers(wissen)
+        answers = self.build_answers(wissen, tenant_id=projekt.org_id)
         db = SessionLocal()
         row = db.query(ErgebnisEntwurf).filter(
             ErgebnisEntwurf.projekt_id == projekt.id,
@@ -303,7 +314,7 @@ class RechtsgrundlagenService:
             answers = json.loads(entwurf.answers_json)
         else:
             wissen, _ = self.projektwissen(projekt)
-            answers = self.build_answers(wissen)
+            answers = self.build_answers(wissen, tenant_id=projekt.org_id)
         _, session = self._pia(projekt)
         metadata = self._metadata(projekt, session)
         return self.generation.generate(METHOD_ID, answers, metadata)

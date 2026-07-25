@@ -24,6 +24,11 @@ class Config:
     METHODS_DIR = BASE_DIR / "methods"
     CATALOGS_DIR = BASE_DIR / "catalogs"
 
+    # Skills (Laufzeit-Steuerung der LLM-Aufrufe). Layout: base/ + mandant-<id>/.
+    # Kanonische Quelle ist das Skills-Repo; per scripts/sync_skills.py hierher
+    # gespiegelt. Fehlt der Ordner, arbeitet die App wie ohne Skills.
+    SKILLS_DIR = os.environ.get("SKILLS_DIR", str(BASE_DIR / "skills"))
+
     # LLM – ausschliesslich über die Pseudonymisierungsschicht.
     # HERMES PIA hat bewusst KEINEN eigenen Anbieterschlüssel mehr: der liegt im
     # Dienst. Solange die Anwendung einen eigenen Schlüssel besitzt, ist das
