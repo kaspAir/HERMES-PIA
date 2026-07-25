@@ -31,6 +31,11 @@ _LEGAL_TERMS = ("gesetz", "verordnung", "reglement", "recht", "ordnung", "erlass
                 "beschluss", "abkommen", "konkordat", "vereinbarung", "richtlinie",
                 "verfassung", "konvention", "übereinkommen", "uebereinkommen", "dekret")
 _NICHT_LEGAL = ("betriebskonzept", "konzept", "strategie", "dokumentation", "handbuch")
+# Füllwörter, die denselben Erlass nicht unterscheiden (Dublettenvergleich).
+_NAME_FUELLWORTE = {"über", "ueber", "betreffend", "sowie", "bzw", "und", "oder",
+                    "der", "die", "das", "des", "dem", "den", "vom", "zur", "zum",
+                    "kantons", "kanton", "kantonale", "kantonales", "kantonaler",
+                    "einschlägige", "einschlaegige", "zugehörige", "zugehoerige"}
 
 # Tabellen-Abschnitte mit ihren Spalten-Schlüsseln (für Leerzeilen-Fallback).
 _TABELLEN = {
@@ -40,6 +45,18 @@ _TABELLEN = {
     "vorschlaege_deckung": ("luecke", "vorschlag"),
     "product_compliance": ("compliance", "beschreibung"),
 }
+
+
+def _kernworte(name):
+    """Bedeutungstragende Wörter eines Erlassnamens als Menge.
+
+    Für den Dublettenvergleich ohne Fundstelle. Kurze Teile (Kantonskürzel wie
+    «NW», Artikel, Präpositionen) fallen weg – sie unterscheiden denselben Erlass
+    nicht. Die Erlassform bleibt drin, damit Gesetz und Verordnung getrennt
+    bleiben.
+    """
+    return frozenset(w for w in re.findall(r"[a-zäöüéèàç]{4,}", (name or "").lower())
+                     if w not in _NAME_FUELLWORTE)
 
 
 class RechtsgrundlagenService:
@@ -147,14 +164,26 @@ class RechtsgrundlagenService:
         derselbe Erlass. Behalten wird der zuerst genannte (der ausführlichere
         aus dem PIA), Ungegroundetes bleibt unangetastet.
         """
-        out, gesehen = [], set()
+        out, gesehen_sr, gesehen_worte = [], set(), []
         for name in namen:
             g = grounded.get(name)
             if g:
                 schluessel = ((g.get("entity") or "CH").upper(), g.get("sr", ""))
-                if schluessel in gesehen:
+                if schluessel in gesehen_sr:
                     continue
-                gesehen.add(schluessel)
+                gesehen_sr.add(schluessel)
+            else:
+                # Ohne Fundstelle bleibt nur der Name. Gemessen standen
+                # «Kantonales Beschaffungsrecht (Submissionsgesetz/-verordnung)»
+                # und dasselbe mit «NW» als zwei Zeilen da. Verglichen wird die
+                # MENGE der bedeutungstragenden Wörter – exakt, nicht unscharf:
+                # «Bundesgesetz über das Strafregister» und «Verordnung über das
+                # Strafregister» bleiben damit korrekt getrennt.
+                worte = _kernworte(name)
+                if worte and worte in gesehen_worte:
+                    continue
+                if worte:
+                    gesehen_worte.append(worte)
             out.append(name)
         return out
 

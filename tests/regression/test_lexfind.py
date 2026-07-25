@@ -345,3 +345,41 @@ def test_verschiedene_erlasse_bleiben_getrennt():
     grounded = {"G": {"sr": "330", "entity": "CH"}, "V": {"sr": "331", "entity": "CH"},
                 "K": {"sr": "330", "entity": "NW"}}      # gleiche Nummer, andere Sammlung
     assert RechtsgrundlagenService._ohne_dubletten(["G", "V", "K"], grounded) == ["G", "V", "K"]
+
+
+# ---- Erlassform-Woerter sind keine Suchbegriffe --------------------------- #
+
+def test_konkordat_ist_kein_suchbegriff():
+    """Gemessen: «(Konkordat)» aus dem Justizvollzugskonkordat traf NW 912.5
+    «Interkantonale Vereinbarung ueber die computergestuetzte Zusammenarbeit» –
+    ein voellig anderer Erlass, der «Konkordat» nur als Stichwort fuehrt."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import suchbegriffe
+    b = suchbegriffe("Justizvollzugskonkordat der Nordwest- und Innerschweiz (Konkordat)")
+    assert "Konkordat" not in b
+    assert "Justizvollzugskonkordat" in b        # der spezifische Name bleibt
+
+
+@pytest.mark.parametrize("form", ["Konkordat", "Vereinbarung", "Abkommen", "Beschluss",
+                                  "Weisung", "Dekret", "Verfassung"])
+def test_erlassformen_fallen_als_suchbegriff_weg(form):
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import suchbegriffe
+    assert form not in suchbegriffe(f"Irgendein Spezialerlass ({form})")
+
+
+# ---- Dubletten ohne Fundstelle ------------------------------------------- #
+
+def test_dublette_ohne_fundstelle_wird_ueber_den_namen_erkannt():
+    """«Kantonales Beschaffungsrecht (…)» und dasselbe mit «NW» standen als zwei
+    Zeilen da; ohne Fundstelle greift der Nummernvergleich nicht."""
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    a = "Kantonales Beschaffungsrecht (Submissionsgesetz/-verordnung)"
+    b = "Kantonales Beschaffungsrecht NW (Submissionsgesetz/-verordnung)"
+    assert RechtsgrundlagenService._ohne_dubletten([a, b], {}) == [a]
+
+
+def test_gesetz_und_verordnung_gelten_nicht_als_dublette():
+    """Der Vergleich ist exakt, nicht unscharf - sonst verschwaende die Verordnung."""
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    g = "Bundesgesetz über das Strafregister"
+    v = "Verordnung über das Strafregister"
+    assert RechtsgrundlagenService._ohne_dubletten([g, v], {}) == [g, v]

@@ -13,6 +13,14 @@ _GENERISCH = {
     "von", "im", "in", "betreffend", "schweizerische", "schweizerisches",
     "schweizerischen", "kantonale", "kantonales", "kantonaler", "eidgenössische",
     "richtlinie", "strategie", "konzept", "verwendung", "identifizierung",
+    # Erlassformen sind KEINE Suchbegriffe: sie passen auf beliebige Erlasse
+    # derselben Form. Gemessen: «(Konkordat)» aus dem Namen des
+    # Justizvollzugskonkordats traf die «Interkantonale Vereinbarung ueber die
+    # computergestuetzte Zusammenarbeit» (NW 912.5) – ein voellig anderer Erlass,
+    # der «Konkordat» nur als Stichwort fuehrt.
+    "konkordat", "vereinbarung", "uebereinkommen", "übereinkommen", "konvention",
+    "abkommen", "weisung", "erlass", "dekret", "beschluss", "statut", "ordnung",
+    "verfassung",
 }
 
 
