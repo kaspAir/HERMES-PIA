@@ -134,6 +134,30 @@ class RechtsgrundlagenService:
             return False
         return self._ist_rechtsgrundlage(name)
 
+    @staticmethod
+    def _ohne_dubletten(namen, grounded):
+        """Denselben Erlass nur EINMAL in Kap. 1 aufführen.
+
+        Der PIA und das LLM schreiben denselben Erlass oft verschieden lang –
+        gemessen standen «Bundesgesetz über die Verwendung von DNA-Profilen im
+        Strafverfahren und zur Identifizierung von unbekannten oder vermissten
+        Personen (DNA-Profil-Gesetz)» und dieselbe Bestimmung in der Kurzform
+        zweimal untereinander. Ein Namensvergleich erkennt das nicht – die
+        verifizierte Fundstelle schon: gleiche Sammlung + gleiche Nummer =
+        derselbe Erlass. Behalten wird der zuerst genannte (der ausführlichere
+        aus dem PIA), Ungegroundetes bleibt unangetastet.
+        """
+        out, gesehen = [], set()
+        for name in namen:
+            g = grounded.get(name)
+            if g:
+                schluessel = ((g.get("entity") or "CH").upper(), g.get("sr", ""))
+                if schluessel in gesehen:
+                    continue
+                gesehen.add(schluessel)
+            out.append(name)
+        return out
+
     def _relevante_gesetze(self, wissen):
         """Aus dem PIA genannte, für Kap. 1 geeignete Rechtsgrundlagen (gefiltert)."""
         return [n for n in wissen.genannte_rechtsgrundlagen()
@@ -249,6 +273,7 @@ class RechtsgrundlagenService:
         # Alle Namen (PIA-Verweise für 0.2/0.3 + Kap.-1-Recht) einmal gegen Fedlex prüfen.
         alle_namen = list({*wissen.genannte_rechtsgrundlagen(), *kap1})
         grounded = self._grounding_names(alle_namen, wissen.ebene, wissen.kanton)
+        kap1 = self._ohne_dubletten(kap1, grounded)
         klink = self._kantonslink(wissen)
         return {
             # Nachweis (Auditierbarkeit): welche Skill-Version(en) diesen Entwurf
