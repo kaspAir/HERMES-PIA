@@ -53,6 +53,34 @@ def _nennt_eigene_ebene(name):
     return any(w in (name or "").lower() for w in _EIGENE_EBENE)
 
 
+def erlassform(text):
+    """'verordnung' | 'gesetz' | '' – die Erlassform aus einem Namen/Titel.
+
+    Wichtig, weil zu einem Sachgebiet fast immer BEIDES existiert (Strafregister:
+    Gesetz SR 330, Verordnung SR 331). Die Auswahl «kürzeste SR-Nummer» trifft bei
+    einer Verordnung deshalb systematisch das Gesetz – gemessen: «Verordnung über
+    das Strafregister (StReV)» wurde mit SR 330 (dem GESETZ) belegt.
+    """
+    t = (text or "").lower()
+    # 'Verordnung' zuerst prüfen: 'Bundesgesetz ... Verordnung' gibt es nicht,
+    # aber 'Verordnung zum Gesetz über ...' sehr wohl.
+    if "verordnung" in t or t.startswith("v ") or "reglement" in t:
+        return "verordnung"
+    if "gesetz" in t or "ordnung" in t or "konkordat" in t or "vereinbarung" in t:
+        return "gesetz"
+    return ""
+
+
+def _form_passt(name, titel):
+    """Trägt der Treffer dieselbe Erlassform wie der gesuchte Name?
+    Ohne erkennbare Form im Namen: keine Präferenz (True)."""
+    gesucht = erlassform(name)
+    if not gesucht:
+        return True
+    gefunden = erlassform(titel)
+    return (not gefunden) or gefunden == gesucht
+
+
 def ground_federal(namen, ebene=None, client=None, kanton=None):
     """{name -> {sr, titel, url}} für die als Bundeserlass auffindbaren Gesetze.
 
@@ -79,7 +107,11 @@ def ground_federal(namen, ebene=None, client=None, kanton=None):
                 if _nennt_eigene_ebene(name) and (hit.get("entity") or "CH") == "CH":
                     continue
                 kandidaten[hit["sr"]] = hit
-        best = sorted(kandidaten.values(), key=lambda k: (len(k["sr"]), k["sr"]))
+        # Erlassform zuerst, DANN kürzeste Nummer: sonst gewinnt bei einer
+        # Verordnung immer das (kürzer nummerierte) Gesetz.
+        best = sorted(kandidaten.values(),
+                      key=lambda k: (not _form_passt(name, k.get("titel")),
+                                     len(k["sr"]), k["sr"]))
         if best:
             out[name] = best[0]
     return out

@@ -283,3 +283,65 @@ def test_generische_klammerbegriffe_werden_nicht_gesucht():
     assert "Verordnung" not in begriffe and "Gesetz" not in begriffe
     # Aussagekraeftige Klammerinhalte bleiben erhalten.
     assert "Submissionsgesetz" in suchbegriffe("Beschaffung (Submissionsgesetz/-verordnung)")
+
+
+# ---- Erlassform: Verordnung ist nicht das Gesetz -------------------------- #
+#
+# Gemessener Befund: «Verordnung über das Strafregister (StReV)» wurde mit SR 330
+# belegt – das ist das GESETZ (StReG); die Verordnung ist SR 331. Ursache war die
+# Auswahl «kürzeste Nummer gewinnt»: zu fast jedem Sachgebiet gibt es beides, und
+# das Gesetz traegt immer die kuerzere Nummer.
+
+class _BeideErlasse:
+    """Liefert zu 'Strafregister' Gesetz UND Verordnung – wie die echte API."""
+    def suche_mehrere(self, begriffe, treffer_je_begriff=1, **_):
+        return {b: [
+            {"sr": "330", "titel": "Bundesgesetz über das Strafregister-Informationssystem",
+             "url": "u330", "entity": "CH"},
+            {"sr": "331", "titel": "Verordnung über das Strafregister-Informationssystem",
+             "url": "u331", "entity": "CH"},
+        ] for b in begriffe}
+
+
+def test_verordnung_bekommt_die_verordnung_nicht_das_gesetz():
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
+    g = ground_federal(["Bundesgesetz über das Strafregister (StReG)",
+                        "Verordnung über das Strafregister (StReV)"], "bund", _BeideErlasse())
+    assert g["Bundesgesetz über das Strafregister (StReG)"]["sr"] == "330"
+    assert g["Verordnung über das Strafregister (StReV)"]["sr"] == "331"
+
+
+def test_erlassform_wird_erkannt():
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import erlassform
+    assert erlassform("Verordnung über das Strafregister") == "verordnung"
+    assert erlassform("Bundesgesetz über das Strafregister") == "gesetz"
+    assert erlassform("Konkordat über den Vollzug") == "gesetz"
+    assert erlassform("Kantonale ICT-Strategie") == ""      # keine Praeferenz
+
+
+# ---- Dubletten ------------------------------------------------------------ #
+
+def test_derselbe_erlass_erscheint_nur_einmal():
+    """PIA und LLM schreiben denselben Erlass unterschiedlich lang; der
+    Namensvergleich erkennt das nicht, die Fundstelle schon."""
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    lang = ("Bundesgesetz über die Verwendung von DNA-Profilen im Strafverfahren "
+            "und zur Identifizierung von unbekannten oder vermissten Personen (DNA-Profil-Gesetz)")
+    kurz = "Bundesgesetz über die Verwendung von DNA-Profilen im Strafverfahren (DNA-Profil-Gesetz)"
+    grounded = {lang: {"sr": "363", "entity": "CH"}, kurz: {"sr": "363", "entity": "CH"}}
+    out = RechtsgrundlagenService._ohne_dubletten([lang, kurz, "StPO"], grounded)
+    assert out == [lang, "StPO"]        # der zuerst genannte bleibt
+
+
+def test_ungegroundete_namen_bleiben_alle_stehen():
+    """Ohne Fundstelle laesst sich Gleichheit nicht belegen – dann nichts entfernen."""
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    out = RechtsgrundlagenService._ohne_dubletten(["A", "B"], {})
+    assert out == ["A", "B"]
+
+
+def test_verschiedene_erlasse_bleiben_getrennt():
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    grounded = {"G": {"sr": "330", "entity": "CH"}, "V": {"sr": "331", "entity": "CH"},
+                "K": {"sr": "330", "entity": "NW"}}      # gleiche Nummer, andere Sammlung
+    assert RechtsgrundlagenService._ohne_dubletten(["G", "V", "K"], grounded) == ["G", "V", "K"]
