@@ -62,7 +62,7 @@ def _nennt_eigene_ebene(name):
 
 
 def erlassform(text):
-    """'verordnung' | 'gesetz' | '' – die Erlassform aus einem Namen/Titel.
+    """'verordnung' | 'konkordat' | 'gesetz' | '' – die Erlassform.
 
     Wichtig, weil zu einem Sachgebiet fast immer BEIDES existiert (Strafregister:
     Gesetz SR 330, Verordnung SR 331). Die Auswahl «kürzeste SR-Nummer» trifft bei
@@ -74,14 +74,24 @@ def erlassform(text):
     # aber 'Verordnung zum Gesetz über ...' sehr wohl.
     if "verordnung" in t or t.startswith("v ") or "reglement" in t:
         return "verordnung"
-    if "gesetz" in t or "ordnung" in t or "konkordat" in t or "vereinbarung" in t:
+    # Konkordate/interkantonale Vereinbarungen sind eine EIGENE Form – gemessen
+    # wurde «Konkordat über den Vollzug von Strafen und Massnahmen» mit dem
+    # kantonalen «Gesetz über den Straf- und Massnahmenvollzug» (NW 273.3)
+    # belegt. Trennt zugleich IVöB (Vereinbarung) von BöB (Bundesgesetz).
+    if ("konkordat" in t or "vereinbarung" in t or "übereinkommen" in t
+            or "uebereinkommen" in t or "konvention" in t or "abkommen" in t):
+        return "konkordat"
+    if "gesetz" in t or "ordnung" in t:
         return "gesetz"
     return ""
 
 
 def _form_passt(name, titel):
     """Trägt der Treffer dieselbe Erlassform wie der gesuchte Name?
-    Ohne erkennbare Form im Namen: keine Präferenz (True)."""
+
+    Ohne erkennbare Form – im Namen ODER im Titel – keine Aussage (True).
+    Sonst muss sie übereinstimmen: eine Verordnung ist nicht das Gesetz, ein
+    Konkordat nicht das kantonale Gesetz zum selben Thema."""
     gesucht = erlassform(name)
     if not gesucht:
         return True
@@ -113,6 +123,11 @@ def ground_federal(namen, ebene=None, client=None, kanton=None):
                 # Heisst der Erlass selbst «kantonal/kommunal», ist ein Bundes-
                 # treffer keine Fundstelle, sondern ein Fehler.
                 if _nennt_eigene_ebene(name) and (hit.get("entity") or "CH") == "CH":
+                    continue
+                # Formfremde Treffer sind keine Fundstelle, sondern ein Fehler.
+                # Verwerfen statt hinten einsortieren – sonst bleibt der falsche
+                # Treffer stehen, wenn er der einzige ist.
+                if not _form_passt(name, hit.get("titel")):
                     continue
                 kandidaten[hit["sr"]] = hit
         # Erlassform zuerst, DANN kürzeste Nummer: sonst gewinnt bei einer

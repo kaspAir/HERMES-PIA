@@ -315,7 +315,7 @@ def test_erlassform_wird_erkannt():
     from app.domains.ergebnisse.rechtsgrundlagen.grounding import erlassform
     assert erlassform("Verordnung über das Strafregister") == "verordnung"
     assert erlassform("Bundesgesetz über das Strafregister") == "gesetz"
-    assert erlassform("Konkordat über den Vollzug") == "gesetz"
+    assert erlassform("Konkordat über den Vollzug") == "konkordat"   # eigene Form
     assert erlassform("Kantonale ICT-Strategie") == ""      # keine Praeferenz
 
 
@@ -383,3 +383,55 @@ def test_gesetz_und_verordnung_gelten_nicht_als_dublette():
     g = "Bundesgesetz über das Strafregister"
     v = "Verordnung über das Strafregister"
     assert RechtsgrundlagenService._ohne_dubletten([g, v], {}) == [g, v]
+
+
+# ---- Konkordat ist weder Gesetz noch Verordnung --------------------------- #
+#
+# Gemessen: «Konkordat ueber den Vollzug von Strafen und Massnahmen» war mit dem
+# kantonalen «Gesetz ueber den Straf- und Massnahmenvollzug» (NW 273.3) belegt.
+# Ein Konkordat ist eine eigene Erlassform - dieselbe Verwechslung droht bei
+# IVoeB (Vereinbarung) und BoeB (Bundesgesetz).
+
+def test_konkordat_ist_eine_eigene_erlassform():
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import erlassform
+    assert erlassform("Konkordat über den Vollzug von Strafen") == "konkordat"
+    assert erlassform("Interkantonale Vereinbarung über das Beschaffungswesen") == "konkordat"
+    assert erlassform("Gesetz über den Straf- und Massnahmenvollzug") == "gesetz"
+    assert erlassform("Verordnung über das Strafregister") == "verordnung"
+
+
+class _NurKantonalesGesetz:
+    def suche_mehrere(self, begriffe, treffer_je_begriff=1, **_):
+        return {b: [{"sr": "273.3", "titel": "Gesetz über den Straf- und Massnahmenvollzug",
+                     "url": "u", "entity": "NW"}] for b in begriffe}
+
+
+def test_konkordat_bekommt_nicht_das_kantonale_gesetz():
+    """Formfremde Treffer werden VERWORFEN, nicht bloss hinten einsortiert -
+    sonst bleibt der falsche Treffer stehen, wenn er der einzige ist."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
+    g = ground_federal(["Konkordat über den Vollzug von Strafen und Massnahmen"],
+                       "kanton", _NurKantonalesGesetz(), kanton="Nidwalden")
+    assert g == {}          # ehrlich leer statt falsch belegt
+
+
+def test_vereinbarung_und_bundesgesetz_werden_getrennt():
+    """IVoeB und BoeB heissen fast gleich - nur die Erlassform unterscheidet sie."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
+
+    class _Beide:
+        def suche_mehrere(self, begriffe, treffer_je_begriff=1, **_):
+            return {b: [
+                {"sr": "172.056.1", "titel": "Bundesgesetz über das öffentliche "
+                                             "Beschaffungswesen", "url": "u", "entity": "CH"},
+                {"sr": "612.2", "titel": "Interkantonale Vereinbarung über das "
+                                         "öffentliche Beschaffungswesen", "url": "u",
+                 "entity": "NW"},
+            ] for b in begriffe}
+
+    g = ground_federal(["Bundesgesetz über das öffentliche Beschaffungswesen (BöB)",
+                        "Interkantonale Vereinbarung über das öffentliche "
+                        "Beschaffungswesen (IVöB)"], "kanton", _Beide(), kanton="Nidwalden")
+    assert g["Bundesgesetz über das öffentliche Beschaffungswesen (BöB)"]["sr"] == "172.056.1"
+    assert g["Interkantonale Vereinbarung über das öffentliche "
+             "Beschaffungswesen (IVöB)"]["sr"] == "612.2"
