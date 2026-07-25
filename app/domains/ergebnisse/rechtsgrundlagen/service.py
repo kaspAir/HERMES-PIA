@@ -204,7 +204,11 @@ class RechtsgrundlagenService:
             llm_row = by_name.pop(name.lower(), None)
             g = grounded.get(name)
             if g:
-                beschreibung = f"{g['titel']} (SR {g['sr']}) – {g['url']}"
+                ent = (g.get("entity") or "CH").upper()
+                praefix = "SR" if ent in ("CH", "") else ent
+                beschreibung = f"{g['titel']} ({praefix} {g['sr']})"
+                if g.get("url"):
+                    beschreibung += f" – {g['url']}"
             else:
                 beschreibung = (llm_row or {}).get("beschreibung", "")
                 if kantonslink:
