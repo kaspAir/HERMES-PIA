@@ -24,15 +24,33 @@ def suchbegriffe(name):
     """Kandidaten-Suchbegriffe aus einem Gesetzesnamen: Abkürzung(en) in Klammern
     plus das längste signifikante Wort."""
     terms = []
-    for abk in re.findall(r"\(([^)]+)\)", name or ""):
-        abk = abk.strip()
-        if 2 <= len(abk) <= 14:
-            terms.append(abk)
+    for klammer in re.findall(r"\(([^)]+)\)", name or ""):
+        # «(Submissionsgesetz/-verordnung)» -> beide Teile einzeln. Frueher fiel
+        # der ganze Klammerinhalt durchs Laengenlimit und ging verloren; seit die
+        # Treffer gegen den Begriff geprueft werden, sind laengere Begriffe
+        # ungefaehrlich (ein unpassender Treffer wird ohnehin verworfen).
+        for teil in re.split(r"[/,;]", klammer):
+            teil = teil.strip(" -–—")
+            # Generische Teile («Verordnung», «Gesetz») NICHT als Begriff: sie
+            # stehen in unzaehligen Titeln und wuerden die Trefferpruefung
+            # aushebeln – jede beliebige Verordnung gaelte dann als Fundstelle.
+            if 2 <= len(teil) <= 30 and teil.lower() not in _GENERISCH:
+                terms.append(teil)
     woerter = re.findall(r"[A-Za-zÄÖÜäöü-]{5,}", name or "")
     signifikant = [w for w in woerter if w.lower() not in _GENERISCH]
     if signifikant:
         terms.append(max(signifikant, key=len))
     return terms
+
+
+# Namen, die sich selbst als kantonal/kommunal ausweisen. Ein Bundestreffer waere
+# dafuer per Definition falsch - gemessen: «Kantonale Datenschutzgesetzgebung»
+# bekam SR 128.1 (Bundesverordnung) samt Fedlex-Link.
+_EIGENE_EBENE = ("kantonal", "kantons", "kommunal", "gemeinde", "kant.")
+
+
+def _nennt_eigene_ebene(name):
+    return any(w in (name or "").lower() for w in _EIGENE_EBENE)
 
 
 def ground_federal(namen, ebene=None, client=None, kanton=None):
@@ -56,6 +74,10 @@ def ground_federal(namen, ebene=None, client=None, kanton=None):
         kandidaten = {}
         for t in terms:
             for hit in treffer.get(t, []):
+                # Heisst der Erlass selbst «kantonal/kommunal», ist ein Bundes-
+                # treffer keine Fundstelle, sondern ein Fehler.
+                if _nennt_eigene_ebene(name) and (hit.get("entity") or "CH") == "CH":
+                    continue
                 kandidaten[hit["sr"]] = hit
         best = sorted(kandidaten.values(), key=lambda k: (len(k["sr"]), k["sr"]))
         if best:

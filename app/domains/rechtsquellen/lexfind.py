@@ -83,6 +83,46 @@ def _entfrage_hervorhebung(text):
     return re.sub(r"<[^>]+>", "", text or "").strip()
 
 
+def _gemeinsamer_anfang(a, b):
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
+def passt_zum_begriff(begriff, titel, stichworte=""):
+    """Gehört dieser Treffer wirklich zum gesuchten Begriff?
+
+    UNVERZICHTBAR: lexfind ist eine Volltextsuche und liefert IMMER etwas – auch
+    völlig Fachfremdes. Gemessen 2026-07-25: «Beschaffungsrecht» gab als Treffer
+    das *Fernmeldegesetz* (SR 784.10) zurück, «Datenschutzgesetzgebung» die
+    *Verordnung über die Informationssicherheit* (SR 128.1). Ungeprüft übernommen
+    landen solche Nummern samt offiziellem Link im Dokument – falsche Fundstellen
+    sind schlimmer als gar keine ([[feedback_no_hallucination]]).
+
+    Angenommen wird ein Treffer nur, wenn der Begriff im Titel oder in den
+    Stichworten tatsächlich vorkommt:
+      * kurze Begriffe (Abkürzungen wie StReG, DSG) als ganzes Wort,
+      * längere als Teilzeichenkette,
+      * oder über einen gemeinsamen Wortstamm von mindestens acht Zeichen –
+        deutsche Komposita (Beschaffungs|recht ~ Beschaffungs|wesen).
+    """
+    b = (begriff or "").strip().lower()
+    heuhaufen = f"{titel or ''} {stichworte or ''}".lower()
+    if not b or not heuhaufen.strip():
+        return False
+    if len(b) <= 6:                       # Abkürzung: nur als eigenes Wort
+        return re.search(rf"\b{re.escape(b)}\b", heuhaufen) is not None
+    if b in heuhaufen:
+        return True
+    for wort in re.findall(r"[a-zäöüéèàß]{4,}", heuhaufen.replace("-", " ")):
+        if _gemeinsamer_anfang(b, wort) >= 8:
+            return True
+    return False
+
+
 class LexfindClient:
     def __init__(self, timeout=12, basis=_BASIS, oeffner=None):
         self.timeout = timeout
@@ -156,10 +196,11 @@ class LexfindClient:
             sr = (eintrag.get("systematic_number") or "").strip()
             if not sr:
                 continue
-            titel = ""
+            titel, stichworte = "", ""
             for m in (eintrag.get("matches") or []):
-                titel = _entfrage_hervorhebung(m.get("title_hl"))
-                if titel:
+                titel = titel or _entfrage_hervorhebung(m.get("title_hl"))
+                stichworte = stichworte or _entfrage_hervorhebung(m.get("keywords_hl"))
+                if titel and stichworte:
                     break
             url = ""
             for u in (eintrag.get("dta_urls") or []):
@@ -168,7 +209,7 @@ class LexfindClient:
                     break
             ent = eintrag.get("entity") or {}
             gefunden.append({
-                "sr": sr, "titel": titel, "url": url,
+                "sr": sr, "titel": titel, "url": url, "stichworte": stichworte,
                 "aktiv": bool(eintrag.get("is_active")),
                 "entity": ent.get("abbreviation") or ent.get("name") or "",
             })
@@ -187,7 +228,12 @@ class LexfindClient:
         ents = entity_ids(ebene, kanton)
         out = {}
         for begriff in dict.fromkeys(b for b in begriffe if b):
-            hits = self.suche(begriff, entities=ents, treffer=max(treffer_je_begriff, 3))
+            hits = self.suche(begriff, entities=ents, treffer=max(treffer_je_begriff, 5))
+            # NUR Treffer, die wirklich zum Begriff gehoeren. Ohne diese Pruefung
+            # landet die erstbeste Volltext-Fundstelle im Dokument (gemessen:
+            # 'Beschaffungsrecht' -> Fernmeldegesetz).
+            hits = [h for h in hits
+                    if passt_zum_begriff(begriff, h.get("titel"), h.get("stichworte"))]
             if hits:
                 hits = sorted(hits, key=lambda h: (h.get("entity") != "CH",
                                                    len(h["sr"]), h["sr"]))

@@ -31,12 +31,14 @@ class _Antwort:
         return False
 
 
-def _treffer(sr, titel, entity="CH", url="https://example.ch/x", aktiv=True):
+def _treffer(sr, titel, entity="CH", url="https://example.ch/x", aktiv=True,
+             stichworte=""):
     return {
         "systematic_number": sr, "is_active": aktiv,
         "dta_urls": [{"language": "de", "original_url": url}],
         "entity": {"abbreviation": entity, "name": entity},
-        "matches": [{"title_hl": f'<span class="match">{titel}</span>'}],
+        "matches": [{"title_hl": f'<span class="match">{titel}</span>',
+                     "keywords_hl": stichworte}],
     }
 
 
@@ -74,7 +76,8 @@ def test_findet_bundesgesetz_mit_nummer_link_und_aktualitaet():
     """Der Fall aus der Praxis: StReG soll das Werkzeug SELBER finden."""
     api = _FakeAPI({(BUND, "StReG"): [
         _treffer("330", "Bundesgesetz über das Strafregister-Informationssystem VOSTRA",
-                 url="https://www.fedlex.admin.ch/eli/cc/2022/600/de")]})
+                 url="https://www.fedlex.admin.ch/eli/cc/2022/600/de",
+                 stichworte="Strafregistergesetz, StReG")]})
     c = LexfindClient(oeffner=api)
     hits = c.suche_mehrere(["StReG"], ebene="bund")["StReG"]
     assert hits[0]["sr"] == "330"
@@ -119,7 +122,7 @@ def test_treffer_ohne_nummer_werden_verworfen():
 
 
 def test_zwischenspeicher_spart_wiederholte_abfragen():
-    api = _FakeAPI({(BUND, "StReG"): [_treffer("330", "StReG")]})
+    api = _FakeAPI({(BUND, "StReG"): [_treffer("330", "Strafregistergesetz")]})
     c = LexfindClient(oeffner=api)
     c.suche("StReG", entities=[BUND])
     c.suche("StReG", entities=[BUND])
@@ -140,7 +143,8 @@ class _Index:
 
 
 def test_lexfind_hat_vorrang_index_fuellt_die_luecken():
-    api = _FakeAPI({(BUND, "StReG"): [_treffer("330", "StReG")]})
+    api = _FakeAPI({(BUND, "StReG"): [
+        _treffer("330", "Strafregistergesetz", stichworte="StReG")]})
     index = _Index({"AltesGesetz": [{"sr": "111", "titel": "Alt", "url": "u"}]})
     r = RechercheClient(lexfind=LexfindClient(oeffner=api), index=index)
     out = r.suche_mehrere(["StReG", "AltesGesetz"], ebene="bund")
@@ -207,3 +211,75 @@ def test_konfiguration_schaltet_die_live_recherche(tmp_path):
 
     assert _app(False).rechtsgrundlagen_service.recherche.lexfind is None
     assert _app(True).rechtsgrundlagen_service.recherche.lexfind is not None
+
+
+# ---- Trefferpruefung: der Befund aus dem echten Dokument ------------------ #
+#
+# Im erzeugten Dokument standen falsche Fundstellen MIT offiziellem Link:
+#   «Kantonales Beschaffungsrecht»  -> SR 784.10 = Fernmeldegesetz
+#   «Kantonale Datenschutzgesetzgebung» -> SR 128.1 (Bundesverordnung)
+# Ursache: lexfind ist eine Volltextsuche und liefert IMMER etwas; der erste
+# Treffer wurde ungeprueft uebernommen. Falsche Fundstellen sind schlimmer als
+# gar keine.
+
+from app.domains.rechtsquellen.lexfind import passt_zum_begriff
+
+
+@pytest.mark.parametrize("begriff,titel,stichworte,erwartet", [
+    # Die gemessenen Fehlgriffe -> muessen abgelehnt werden
+    ("Beschaffungsrecht", "Fernmeldegesetz", "", False),
+    ("Datenschutzgesetzgebung", "Verordnung über die Informationssicherheit", "", False),
+    ("Archivgesetz", "Gesetz über den Datenschutz", "", False),
+    # Richtige Treffer -> muessen durchgehen
+    ("Datenschutzgesetzgebung", "Gesetz über den Datenschutz", "", True),
+    ("Beschaffungsrecht", "Verordnung über das öffentliche Beschaffungswesen", "", True),
+    ("Strafprozessordnung", "Schweizerische Strafprozessordnung", "", True),
+    # Abkuerzung nur als ganzes Wort - und ueber die Stichworte
+    ("StReG", "Bundesgesetz über das Strafregister-Informationssystem",
+     "Strafregistergesetz, StReG", True),
+    ("DSG", "Fernmeldegesetz", "", False),
+])
+def test_treffer_wird_gegen_den_begriff_geprueft(begriff, titel, stichworte, erwartet):
+    assert passt_zum_begriff(begriff, titel, stichworte) is erwartet
+
+
+def test_unpassende_treffer_erscheinen_nicht_im_ergebnis():
+    """Ende zu Ende: der Fernmeldegesetz-Fehlgriff darf nicht durchkommen."""
+    api = _FakeAPI({(BUND, "Beschaffungsrecht"): [
+        _treffer("784.10", "Fernmeldegesetz"),
+        _treffer("172.056.11", "Verordnung über das öffentliche Beschaffungswesen"),
+    ]})
+    hits = LexfindClient(oeffner=api).suche_mehrere(["Beschaffungsrecht"], ebene="bund")
+    assert hits["Beschaffungsrecht"][0]["sr"] == "172.056.11"
+
+
+def test_nur_falsche_treffer_ergeben_leer_statt_falsch():
+    api = _FakeAPI({(BUND, "Beschaffungsrecht"): [_treffer("784.10", "Fernmeldegesetz")]})
+    assert LexfindClient(oeffner=api).suche_mehrere(["Beschaffungsrecht"], ebene="bund") == {}
+
+
+# ---- Ebenen-Schutz -------------------------------------------------------- #
+
+def test_kantonaler_name_bekommt_keine_bundesfundstelle():
+    """«Kantonale Datenschutzgesetzgebung» mit einer SR-Nummer zu belegen ist per
+    Definition falsch - egal wie gut der Treffer aussieht."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
+
+    class _Quelle:
+        def suche_mehrere(self, begriffe, treffer_je_begriff=1, **_):
+            return {b: [{"sr": "235.1", "titel": "Bundesgesetz über den Datenschutz",
+                         "url": "u", "entity": "CH"}] for b in begriffe}
+
+    assert ground_federal(["Kantonale Datenschutzgesetzgebung"], "kanton", _Quelle()) == {}
+    # Ohne den Zusatz «kantonal» ist derselbe Treffer korrekt.
+    assert ground_federal(["Datenschutzgesetz"], "bund", _Quelle()) != {}
+
+
+def test_generische_klammerbegriffe_werden_nicht_gesucht():
+    """«Verordnung» als Suchbegriff wuerde auf JEDE Verordnung passen und die
+    Trefferpruefung aushebeln."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import suchbegriffe
+    begriffe = suchbegriffe("Irgendein Erlass (Gesetz/Verordnung)")
+    assert "Verordnung" not in begriffe and "Gesetz" not in begriffe
+    # Aussagekraeftige Klammerinhalte bleiben erhalten.
+    assert "Submissionsgesetz" in suchbegriffe("Beschaffung (Submissionsgesetz/-verordnung)")
