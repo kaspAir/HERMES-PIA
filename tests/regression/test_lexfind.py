@@ -1,0 +1,209 @@
+"""Beweist: Live-Recherche über lexfind (Bund + Kantone) mit Offline-Index als Netz.
+
+Alle Tests laufen OHNE Netz (injizierter Öffner). Die echten API-Eigenheiten sind
+am 2026-07-25 gegen www.lexfind.ch gemessen und hier als Attrappe nachgebildet:
+  * Browser-Kopfzeilen nötig, sonst HTTP 400,
+  * `entity_filter` darf NICHT leer sein und nimmt GENAU EINE Sammlung,
+  * die Treffer stehen in `texts_of_law_with_matches`, nicht in `results`.
+"""
+import json
+import urllib.error
+
+import pytest
+
+from app.domains.rechtsquellen.lexfind import BUND, KANTON_ENTITY, LexfindClient, entity_ids
+from app.domains.rechtsquellen.recherche import RechercheClient
+
+
+# ---- Attrappe der echten API --------------------------------------------- #
+
+class _Antwort:
+    def __init__(self, nutzlast):
+        self._n = json.dumps(nutzlast).encode("utf-8")
+
+    def read(self):
+        return self._n
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _treffer(sr, titel, entity="CH", url="https://example.ch/x", aktiv=True):
+    return {
+        "systematic_number": sr, "is_active": aktiv,
+        "dta_urls": [{"language": "de", "original_url": url}],
+        "entity": {"abbreviation": entity, "name": entity},
+        "matches": [{"title_hl": f'<span class="match">{titel}</span>'}],
+    }
+
+
+class _FakeAPI:
+    """Bildet die gemessenen Regeln der echten API nach."""
+    def __init__(self, je_entity=None, kaputt=False):
+        self.je_entity = je_entity or {}
+        self.kaputt = kaputt
+        self.anfragen = []
+
+    def __call__(self, req, timeout=None):
+        url = req.full_url
+        if self.kaputt:
+            raise urllib.error.URLError("kein Netz")
+        if req.get_method() == "POST":
+            koerper = json.loads(req.data.decode())
+            self.anfragen.append(koerper)
+            ents = koerper.get("entity_filter") or []
+            # Gemessene Regeln der echten API:
+            if len(ents) != 1:
+                raise urllib.error.HTTPError(url, 400, "Ungültige Anfrage", {}, None)
+            if "Mozilla" not in (req.get_header("User-agent") or ""):
+                raise urllib.error.HTTPError(url, 400, "Ungültige Anfrage", {}, None)
+            return _Antwort({"id": 1, "session_id": "s"})
+        letzte = self.anfragen[-1]
+        ent = letzte["entity_filter"][0]
+        begriff = letzte["search_text"]
+        return _Antwort({"results": [{"language": "de"}],
+                         "texts_of_law_with_matches": self.je_entity.get((ent, begriff), [])})
+
+
+# ---- Client -------------------------------------------------------------- #
+
+def test_findet_bundesgesetz_mit_nummer_link_und_aktualitaet():
+    """Der Fall aus der Praxis: StReG soll das Werkzeug SELBER finden."""
+    api = _FakeAPI({(BUND, "StReG"): [
+        _treffer("330", "Bundesgesetz über das Strafregister-Informationssystem VOSTRA",
+                 url="https://www.fedlex.admin.ch/eli/cc/2022/600/de")]})
+    c = LexfindClient(oeffner=api)
+    hits = c.suche_mehrere(["StReG"], ebene="bund")["StReG"]
+    assert hits[0]["sr"] == "330"
+    assert hits[0]["aktiv"] is True
+    assert hits[0]["url"].startswith("https://www.fedlex.admin.ch/")
+    assert "<span" not in hits[0]["titel"]          # Hervorhebung entfernt
+
+
+def test_kanton_wird_mitdurchsucht_und_getrennt_abgefragt():
+    """Bund UND Kanton zusammen ergaeben 400 – es MUSS einzeln abgefragt werden."""
+    api = _FakeAPI({
+        (BUND, "Datenschutzgesetz"): [_treffer("235.1", "Bundesgesetz über den Datenschutz")],
+        (KANTON_ENTITY["nidwalden"], "Datenschutzgesetz"): [
+            _treffer("232.1", "Gesetz über den Datenschutz", entity="NW")],
+    })
+    c = LexfindClient(oeffner=api)
+    hits = c.suche_mehrere(["Datenschutzgesetz"], treffer_je_begriff=2,
+                           ebene="kanton", kanton="Nidwalden")["Datenschutzgesetz"]
+    assert [h["entity"] for h in hits] == ["CH", "NW"]      # Bundesrecht zuerst
+    assert {h["sr"] for h in hits} == {"235.1", "232.1"}
+    # Jede Anfrage trug genau EINE Sammlung.
+    assert all(len(a["entity_filter"]) == 1 for a in api.anfragen)
+
+
+def test_bundesrecht_wird_auch_bei_kantonsebene_gesucht():
+    """Bundesrecht gilt in jedem Kanton."""
+    assert entity_ids("kanton", "Zug") == [BUND, KANTON_ENTITY["zug"]]
+    assert entity_ids("bund", None) == [BUND]
+    assert entity_ids("kanton", "Gibtsnicht") == [BUND]     # unbekannt -> kein Raten
+
+
+def test_ausfall_liefert_leer_statt_zu_raten():
+    c = LexfindClient(oeffner=_FakeAPI(kaputt=True))
+    assert c.suche_mehrere(["StReG"], ebene="bund") == {}
+    assert "URLError" in c.letzter_fehler
+
+
+def test_treffer_ohne_nummer_werden_verworfen():
+    """Ohne Systematik-Nummer ist es keine belegbare Fundstelle."""
+    api = _FakeAPI({(BUND, "X"): [{"systematic_number": "", "matches": [{"title_hl": "Etwas"}]}]})
+    assert LexfindClient(oeffner=api).suche_mehrere(["X"], ebene="bund") == {}
+
+
+def test_zwischenspeicher_spart_wiederholte_abfragen():
+    api = _FakeAPI({(BUND, "StReG"): [_treffer("330", "StReG")]})
+    c = LexfindClient(oeffner=api)
+    c.suche("StReG", entities=[BUND])
+    c.suche("StReG", entities=[BUND])
+    assert len(api.anfragen) == 1                    # freundlich zur fremden API
+
+
+# ---- Zusammenspiel live + offline ---------------------------------------- #
+
+class _Index:
+    """Offline-SR-Index (kennt nur Bundesrecht, keine Aktualitaet)."""
+    def __init__(self, daten=None):
+        self.daten = daten or {}
+        self.gefragt = []
+
+    def suche_mehrere(self, begriffe, treffer_je_begriff=1, **_):
+        self.gefragt.append(list(begriffe))
+        return {b: self.daten[b] for b in begriffe if b in self.daten}
+
+
+def test_lexfind_hat_vorrang_index_fuellt_die_luecken():
+    api = _FakeAPI({(BUND, "StReG"): [_treffer("330", "StReG")]})
+    index = _Index({"AltesGesetz": [{"sr": "111", "titel": "Alt", "url": "u"}]})
+    r = RechercheClient(lexfind=LexfindClient(oeffner=api), index=index)
+    out = r.suche_mehrere(["StReG", "AltesGesetz"], ebene="bund")
+    assert out["StReG"][0]["quelle"] == "lexfind"
+    assert out["AltesGesetz"][0]["quelle"] == "index"
+    assert index.gefragt == [["AltesGesetz"]]        # nur die Luecke nachgeschlagen
+
+
+def test_ohne_netz_uebernimmt_der_offline_index():
+    """Genau der Zustand auf dem Infomaniak-Host, falls lexfind dort blockiert ist."""
+    index = _Index({"DSG": [{"sr": "235.1", "titel": "DSG", "url": "u"}]})
+    r = RechercheClient(lexfind=LexfindClient(oeffner=_FakeAPI(kaputt=True)), index=index)
+    out = r.suche_mehrere(["DSG"], ebene="bund")
+    assert out["DSG"][0]["sr"] == "235.1"
+    assert out["DSG"][0]["quelle"] == "index"
+    assert out["DSG"][0]["aktiv"] is None            # Index kennt keine Aktualitaet
+    assert r.letzte_quelle == "index"
+
+
+def test_ganz_ohne_quellen_wird_nichts_erfunden():
+    r = RechercheClient(lexfind=None, index=None)
+    assert r.suche_mehrere(["StReG"]) == {}
+    assert r.letzte_quelle == "keine"
+
+
+# ---- Darstellung im Dokument --------------------------------------------- #
+
+@pytest.mark.parametrize("entity,sr,erwartet", [
+    ("CH", "330", "SR 330"),
+    ("NW", "232.1", "NW 232.1"),      # 'SR' waere fuer Kantonsrecht schlicht falsch
+])
+def test_fundstelle_beschriftet_die_sammlung_korrekt(entity, sr, erwartet):
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    dienst = RechtsgrundlagenService.__new__(RechtsgrundlagenService)
+    text = dienst._fundstelle("G", {"G": {"sr": sr, "url": "https://x", "entity": entity}}, "")
+    assert text.startswith(erwartet)
+
+
+# ---- Kein Netz ohne ausdrueckliche Konfiguration -------------------------- #
+
+def test_service_telefoniert_von_sich_aus_nicht_nach_aussen():
+    """Ein direkt gebauter Service macht NIE Netzaufrufe – sonst haetten Tests
+    (und ueberraschte Deployments) stillen Internetverkehr."""
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    svc = RechtsgrundlagenService(None, None, None, llm=None, fedlex=_Index())
+    assert svc.recherche.lexfind is None
+
+
+def test_konfiguration_schaltet_die_live_recherche(tmp_path):
+    """RECHERCHE_LIVE entscheidet – das Deployment, nicht der Code."""
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    def _app(live):
+        class _Cfg(Config):
+            DATABASE_URL = "sqlite:///" + str(tmp_path / f"r{live}.db").replace("\\", "/")
+            SECRET_KEY = "x"
+            RECHERCHE_LIVE = live
+        SessionLocal.remove()
+        a = create_app(_Cfg)
+        SessionLocal.remove()
+        return a
+
+    assert _app(False).rechtsgrundlagen_service.recherche.lexfind is None
+    assert _app(True).rechtsgrundlagen_service.recherche.lexfind is not None

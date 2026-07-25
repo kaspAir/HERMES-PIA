@@ -138,8 +138,20 @@ def create_app(config_class=None):
     app.generation_service = GenerationService(app.method_service)
     # Abgeleitete Initialisierungs-Ergebnisse (eigene Module, PIA unberührt).
     from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    # Live-Rechtsquellen-Recherche (lexfind: Bund + 26 Kantone). Abschaltbar, weil
+    # es eine undokumentierte Fremd-API ist und die Suchbegriffe den Host verlassen.
+    # Aus: nur der mitgelieferte Offline-SR-Index (Bundesrecht, ohne Aktualitaet).
+    from app.domains.rechtsquellen.fedlex import FedlexClient
+    from app.domains.rechtsquellen.lexfind import LexfindClient
+    from app.domains.rechtsquellen.recherche import RechercheClient
+    _index = FedlexClient()
+    _recherche = RechercheClient(
+        lexfind=LexfindClient() if app.config.get("RECHERCHE_LIVE") else None,
+        index=_index,
+    )
     app.rechtsgrundlagen_service = RechtsgrundlagenService(
         app.interview_service, app.projekt_service, app.generation_service, llm=llm_client,
+        fedlex=_index, recherche=_recherche,
     )
     from app.domains.ergebnisse.schutzbedarf.service import SchutzbedarfService
     app.schutzbedarf_service = SchutzbedarfService(
