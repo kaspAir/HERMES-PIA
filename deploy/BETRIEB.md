@@ -174,8 +174,10 @@ RECHERCHE_LIVE=1      # 0 = nur Offline-Index (Bundesrecht, ohne Aktualität)
 
 ### Erreichbarkeit prüfen (WICHTIG)
 
-Fedlex ist vom Infomaniak-Host **nicht** erreichbar – deshalb gibt es den
-Offline-Index überhaupt. Ob lexfind erreichbar ist, muss je Host geprüft werden:
+Beide Quellen sind vom Infomaniak-Host erreichbar (geprüft 2026-07-25: lexfind
+HTTP 200). Die frühere Annahme, Fedlex sei dort blockiert, war eine Fehldiagnose –
+tatsächlich war die SPARQL-Abfrage kaputt (nackte Regex-Alternation liefert 0
+Zeilen). Prüfen lässt sich die Erreichbarkeit je Host so:
 
 ```bash
 curl -s -o /dev/null -w 'lexfind: HTTP %{http_code}\n' -m 15 \

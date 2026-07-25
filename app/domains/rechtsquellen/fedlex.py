@@ -1,10 +1,19 @@
 """Fedlex-Connector: verknüpft Suchbegriffe mit Bundeserlassen (SR).
 
 Arbeitet OFFLINE gegen einen mitgelieferten SR-Index (data/fedlex_sr_de.json.gz,
-einmalig aus dem offiziellen Fedlex-SPARQL geholt – siehe scripts/refresh_fedlex_index.py).
-So funktioniert das Grounding auf JEDEM Host, ohne Live-Netzwerk – der Managed-Host
-erreicht den Fedlex-Dienst nicht. Liefert echte SR-Nummer + offizieller Titel +
-Fedlex-Permalink. Nichts wird geraten: kein Treffer -> keine Fundstelle.
+aus dem offiziellen Fedlex-SPARQL geholt – siehe scripts/refresh_fedlex_index.py).
+So funktioniert das Grounding auf JEDEM Host, auch ohne Netzwerk. Liefert echte
+SR-Nummer + offizieller Titel + Fedlex-Permalink. Nichts wird geraten: kein
+Treffer -> keine Fundstelle.
+
+RICHTIGSTELLUNG (gemessen 2026-07-25): Der frühere Live-SPARQL-Client wurde mit
+der Begründung «der Host erreicht Fedlex nicht» durch diesen Index ersetzt. Das
+war eine FEHLDIAGNOSE. Fedlex ist erreichbar (HTTP 200 in ~1 s); die Abfrage war
+kaputt: sie verkettete die Suchbegriffe zu einer nackten Regex-Alternation
+("a|b"), und die liefert auf diesem Endpunkt NULL Zeilen – geklammert
+("(a)|(b)") dagegen Treffer. Aus «0 Treffer» wurde fälschlich «nicht
+erreichbar» geschlossen. Der Index bleibt trotzdem sinnvoll: er kostet kein
+Netz und dient als Rückfall, wenn die Live-Recherche (lexfind) ausfällt.
 """
 import gzip
 import json
