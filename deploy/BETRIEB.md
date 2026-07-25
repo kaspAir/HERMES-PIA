@@ -157,3 +157,49 @@ deshalb vorher auf Restmuster (abgekürzter Vorname + Nachname, z.B. `Chr. Dürr
 und **bricht ab**. Die Prüfung ist bewusst übervorsichtig und meldet auch
 Anhang-Aufzählungen mit; sie sperrt nur, sie ersetzt nichts. `--trotzdem` übergeht
 sie bewusst und sollte begründet sein.
+
+## Rechtsquellen-Recherche (lexfind, Bund + 26 Kantone)
+
+Seit V0.8.9 sucht die Rechtsgrundlagenanalyse die Fundstellen **live** über
+`www.lexfind.ch` – Bund *und* Kantone, mit echter Systematik-Nummer, Aktiv-Status
+und offiziellem Quell-Link. Der mitgelieferte Offline-SR-Index bleibt als Netz:
+Was live keinen Treffer hat (oder wenn lexfind ausfällt), wird dort nachgeschlagen.
+**Geraten wird nie** – ohne Treffer bleibt die Fundstelle leer.
+
+### Konfiguration (`.env`)
+
+```
+RECHERCHE_LIVE=1      # 0 = nur Offline-Index (Bundesrecht, ohne Aktualität)
+```
+
+### Erreichbarkeit prüfen (WICHTIG)
+
+Fedlex ist vom Infomaniak-Host **nicht** erreichbar – deshalb gibt es den
+Offline-Index überhaupt. Ob lexfind erreichbar ist, muss je Host geprüft werden:
+
+```bash
+curl -s -o /dev/null -w 'lexfind: HTTP %{http_code}\n' -m 15 \
+  https://www.lexfind.ch/api/frontend/v1/de/categories
+```
+
+`HTTP 200` → live nutzbar. Alles andere (000/403/timeout) → `RECHERCHE_LIVE=0`
+setzen; die Analyse läuft dann unverändert mit dem Offline-Index weiter.
+
+### Eigenheiten der API (gemessen 2026-07-25)
+
+- Braucht Browser-Kopfzeilen (`User-Agent`, `Referer`), sonst HTTP 400.
+- `entity_filter` darf **nicht leer** sein und nimmt **genau eine** Sammlung –
+  Bund und Kanton werden deshalb getrennt abgefragt und zusammengeführt.
+- Die Treffer stehen in `texts_of_law_with_matches` (nicht in `results`).
+
+### Vorbehalt
+
+Undokumentierte Frontend-API ohne zugesicherte Stabilität oder Nutzungsbedingungen.
+Für den Produktivbetrieb ist ein sanktionierter Zugang bei lexfind/Sitrox zu
+klären. Ändert sie sich, fällt die Analyse automatisch auf den Offline-Index
+zurück – sie bricht nicht.
+
+**Datenschutz:** Es verlassen nur **Rechtsbegriffe** (aus Gesetzesnamen abgeleitet)
+den Host, nie Projekttext. Die Suchbegriffe bestimmt die Anwendung, nicht das
+Sprachmodell – ein modellgesteuerter Werkzeugaufruf könnte Projektinhalte an den
+externen Dienst tragen und würde die Pseudonymisierungsschicht umgehen.

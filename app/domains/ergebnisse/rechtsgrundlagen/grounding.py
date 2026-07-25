@@ -35,7 +35,7 @@ def suchbegriffe(name):
     return terms
 
 
-def ground_federal(namen, ebene=None, client=None):
+def ground_federal(namen, ebene=None, client=None, kanton=None):
     """{name -> {sr, titel, url}} für die als Bundeserlass auffindbaren Gesetze.
 
     Wird IMMER versucht (der Offline-Index kostet kein Netzwerk): Bundesrecht (z.B.
@@ -48,7 +48,9 @@ def ground_federal(namen, ebene=None, client=None):
     alle = [t for terms in begriffe_je_name.values() for t in terms]
     if not alle:
         return {}
-    treffer = client.suche_mehrere(alle)          # {begriff: [{sr,titel,url}]}
+    # ebene/kanton steuern bei der Live-Recherche, WELCHE Sammlungen durchsucht
+    # werden (Bund + ggf. der Kanton). Der Offline-Index ignoriert sie.
+    treffer = client.suche_mehrere(alle, ebene=ebene, kanton=kanton)
     out = {}
     for name, terms in begriffe_je_name.items():
         kandidaten = {}

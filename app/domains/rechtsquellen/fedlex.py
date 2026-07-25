@@ -47,7 +47,9 @@ class FedlexClient:
             self._index = _load_offline_index()
         return self._index
 
-    def suche_mehrere(self, begriffe, treffer_je_begriff=1):
+    def suche_mehrere(self, begriffe, treffer_je_begriff=1, **_):
+        # **_ schluckt ebene/kanton: der Offline-Index kennt nur Bundesrecht,
+        # bleibt aber gegen dieselbe Schnittstelle austauschbar wie lexfind.
         """{begriff: [{sr, titel, url}]} – je Begriff die Treffer mit der KÜRZESTEN
         SR-Nummer (i.d.R. der Haupterlass). Wortgrenzen, damit 'DSG' nicht in
         'GerichtsstanDSGesetz' matcht. Leeres Dict bei leerer Eingabe/ohne Index."""

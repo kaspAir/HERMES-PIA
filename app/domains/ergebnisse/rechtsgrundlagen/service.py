@@ -13,6 +13,8 @@ from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
 from app.domains.ergebnisse.rechtsgrundlagen.proposals import analysiere
 from app.domains.projekt.reference import ERG_PIA
 from app.domains.rechtsquellen.fedlex import FedlexClient
+from app.domains.rechtsquellen.lexfind import LexfindClient
+from app.domains.rechtsquellen.recherche import RechercheClient
 from app.domains.skills import load_skills
 from app.domains.rechtsquellen.kantone import sammlung_link
 from app.shared.database import SessionLocal
@@ -42,12 +44,17 @@ _TABELLEN = {
 
 class RechtsgrundlagenService:
     def __init__(self, interview_service, projekt_service, generation_service,
-                 llm=None, fedlex=None):
+                 llm=None, fedlex=None, recherche=None):
         self.interview = interview_service
         self.projekte = projekt_service
         self.generation = generation_service
         self.llm = llm
-        self.fedlex = fedlex or FedlexClient()   # Phase B: Bundes-Fundstellen (Fedlex)
+        self.fedlex = fedlex or FedlexClient()   # Offline-SR-Index (immer verfügbar)
+        # Vorgabe bewusst OHNE Netz: der Service allein telefoniert nie nach aussen.
+        # Die Live-Recherche (lexfind) wird in der Factory aus der Konfiguration
+        # eingehängt – so entscheidet das Deployment, ob Suchbegriffe den Host
+        # verlassen, und Tests bleiben ohne Netzwerk.
+        self.recherche = recherche or RechercheClient(lexfind=None, index=self.fedlex)
 
     # ---- PIA-Zugriff (nur lesen) ---------------------------------------- #
     def _pia(self, projekt):
@@ -88,14 +95,16 @@ class RechtsgrundlagenService:
         """Verifizierte Bundes-Fundstellen (Fedlex) zu ALLEN genannten Gesetzen – für die
         Links in 0.2/0.3 und die Beschreibung in Kap. 1. {} bei Störung."""
         try:
-            return ground_federal(wissen.genannte_rechtsgrundlagen(), wissen.ebene, self.fedlex)
+            return ground_federal(wissen.genannte_rechtsgrundlagen(), wissen.ebene,
+                                  self.recherche, kanton=wissen.kanton)
         except Exception:  # noqa: BLE001 – Grounding-Störung darf den Entwurf nicht kippen
             return {}
 
-    def _grounding_names(self, namen, ebene):
-        """Verifizierte Bundes-Fundstellen (Fedlex) zu einer beliebigen Namensliste."""
+    def _grounding_names(self, namen, ebene, kanton=None):
+        """Verifizierte Fundstellen (live über lexfind, sonst Offline-Index) zu einer
+        beliebigen Namensliste – Bund und, wenn gesetzt, der Kanton."""
         try:
-            return ground_federal(namen, ebene, self.fedlex)
+            return ground_federal(namen, ebene, self.recherche, kanton=kanton)
         except Exception:  # noqa: BLE001
             return {}
 
@@ -139,11 +148,16 @@ class RechtsgrundlagenService:
         return ""
 
     def _fundstelle(self, name, grounded, kantonslink):
-        """Fedlex-Fundstelle (Bund) bevorzugt; sonst kantonaler Sammlungs-Link für
+        """Verifizierte Fundstelle bevorzugt; sonst kantonaler Sammlungs-Link für
         kantonale Gesetze; sonst leer. Nie eine Nummer erfinden."""
         g = grounded.get(name)
         if g:
-            return f"SR {g['sr']} – {g['url']}"
+            # 'SR' ist die Systematik des BUNDES. Ein kantonaler Treffer trägt die
+            # Nummer seiner eigenen Sammlung – dort wäre 'SR' schlicht falsch.
+            ent = (g.get("entity") or "CH").upper()
+            praefix = "SR" if ent in ("CH", "") else ent
+            return f"{praefix} {g['sr']} – {g['url']}" if g.get("url") \
+                else f"{praefix} {g['sr']}"
         if kantonslink and self._ist_rechtsgrundlage(name):
             return kantonslink
         return ""
@@ -230,7 +244,7 @@ class RechtsgrundlagenService:
                 kap1.append(name)
         # Alle Namen (PIA-Verweise für 0.2/0.3 + Kap.-1-Recht) einmal gegen Fedlex prüfen.
         alle_namen = list({*wissen.genannte_rechtsgrundlagen(), *kap1})
-        grounded = self._grounding_names(alle_namen, wissen.ebene)
+        grounded = self._grounding_names(alle_namen, wissen.ebene, wissen.kanton)
         klink = self._kantonslink(wissen)
         return {
             # Nachweis (Auditierbarkeit): welche Skill-Version(en) diesen Entwurf

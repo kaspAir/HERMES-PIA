@@ -24,6 +24,12 @@ class Config:
     METHODS_DIR = BASE_DIR / "methods"
     CATALOGS_DIR = BASE_DIR / "catalogs"
 
+    # Live-Recherche in den Rechtsquellen (lexfind: Bund + 26 Kantone + Gemeinden).
+    # Aus = nur der mitgelieferte Offline-SR-Index (Bundesrecht, ohne Aktualität).
+    # Bewusst abschaltbar: undokumentierte Fremd-API, und die Suchbegriffe
+    # verlassen den Host (nur Rechtsbegriffe, nie Projekttext – siehe lexfind.py).
+    RECHERCHE_LIVE = os.environ.get("RECHERCHE_LIVE", "1") == "1"
+
     # Skills (Laufzeit-Steuerung der LLM-Aufrufe). Layout: base/ + mandant-<id>/.
     # Kanonische Quelle ist das Skills-Repo; per scripts/sync_skills.py hierher
     # gespiegelt. Fehlt der Ordner, arbeitet die App wie ohne Skills.
