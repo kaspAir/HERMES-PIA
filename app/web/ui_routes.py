@@ -21,6 +21,7 @@ from app.domains.llm.errors import (
     PseudonymisierungBlockiert,
     RueckersetzungUnvollstaendig,
 )
+from app.domains.qualitaet.service import pruefe_session
 from app.domains.stt.kontext import kontext_fuer_diktat
 from app.domains.method.template_structure import (
     ZIEL_GENERISCH,
@@ -229,6 +230,9 @@ def interview_workspace(session_id):
         # Ohne Pseudonymisierungsdienst wird NICHT formuliert. Das muss sichtbar
         # sein: sonst diktiert der Projektleiter ein ganzes Interview und merkt
         # erst am fertigen Dokument, dass sein Rohtext darin steht.
+        # Laufende Invarianten-Pruefung: waehrend der Erstellung ein HINWEIS,
+        # verbindlich erst vor der Ausgabe (Briefing Abschnitt 4.1).
+        qualitaet=pruefe_session(session, tarife=_tarife_for_session(session)),
         llm_available=bool(svc.llm),
         # Direktmodus muss im Interview SICHTBAR sein – sonst arbeitet jemand
         # wochenlang ohne Pseudonymisierung, ohne es zu merken.
@@ -1038,12 +1042,34 @@ def interview_download(session_id, filename):
     else:
         buf = gen.generate(session.method_id, answers, metadata,
                            changelog=changelog, nachweis=nachweis)
+    # VERBINDLICHE Pruefung vor der Ausgabe (Briefing Abschnitt 4.1):
+    # Muss-Befunde verhindern die Ausgabe, Vorbehalte werden als Auflage gefuehrt.
+    # Die Dok-Ebene laeuft mit - Platzhalter und Hilfetexte zeigen sich erst hier.
+    ergebnis = _pruefe_vor_ausgabe(session, answers, buf)
+    if not ergebnis.ausgabe_moeglich and not request.args.get("trotzdem"):
+        return render_template("qualitaet_blockiert.html", session=session,
+                               ergebnis=ergebnis, filename=filename), 409
     return send_file(
         buf,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         as_attachment=True,
         download_name=filename,
     )
+
+
+def _pruefe_vor_ausgabe(session, answers, buf):
+    """Daten- UND Dokumentebene pruefen, ohne den Puffer zu verbrauchen."""
+    dok = None
+    try:
+        from docx import Document
+        buf.seek(0)
+        dok = Document(buf)
+    except Exception:      # noqa: BLE001 - Dok-Ebene ist optional
+        dok = None
+    finally:
+        buf.seek(0)
+    return pruefe_session(session, answers=answers,
+                          tarife=_tarife_for_session(session), dokument=dok)
 
 
 # ===================================================================== #
