@@ -241,16 +241,15 @@ GRUPPEN = [
 # tatsaechlich erzeugte Ausgabe. Ein grosszuegiger Wert kostet also nichts und
 # nimmt der Ausgabelaenge jede kuenstliche Schranke.
 SCHRITT_TOKENS = 16000
-# GEMESSEN am Hosting: nach rund 30 s liefert die Kette eine nackte
-# «Internal Server Error»-Seite - der Prozess kommt dann gar nicht mehr bis
-# zur Fehlerbehandlung, es steht keine Ursache auf dem Bildschirm. Alle acht
-# Kapitelschritte blieben darunter und liefen durch; der Nachweisschritt mit
-# seinem grossen Modellaufruf nicht.
-# Deshalb liegt das Zeitlimit der Anwendung BEWUSST unter dieser Grenze: dann
-# meldet sich die Anwendung selbst mit einem klaren Grund, statt in eine
-# nackte 500 zu laufen, die nichts erklaert.
-PROXY_GRENZE = 30              # beobachtet, nicht konfiguriert
-KAPITEL_ZEITLIMIT = 25
+# Das Lese-Zeitlimit bleibt unter dem Worker-Limit (deploy/hermes_ctl.sh
+# --timeout 300), damit sich die Anwendung bei einem langsamen Aufruf SELBST
+# mit einem klaren Grund meldet, statt in eine nackte 500 zu laufen.
+#
+# Zur Geschichte: die «geheimnisvolle 30-s-Grenze» war keine Eigenschaft des
+# Hostings, sondern gunicorns STANDARD-Timeout - eine Kommentarzeile mitten in
+# einem mit \ fortgesetzten Befehl hatte das --timeout im Startskript
+# auskommentiert. Ein Test verbietet solche Kommentare jetzt.
+KAPITEL_ZEITLIMIT = 100
 
 # Nur noch fuer den einteiligen Altweg (pruefe_fachlich).
 KAPITEL_TOKENS = SCHRITT_TOKENS

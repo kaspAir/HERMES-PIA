@@ -731,12 +731,7 @@ def test_zeitlimit_und_worker_limit_passen_zusammen():
     worker = int(_re.search(r"--timeout (\d+)", ctl).group(1))
     assert VERBINDUNGSLIMIT + KAPITEL_ZEITLIMIT + 15 <= worker
 
-    # Und unter der GEMESSENEN Grenze der Kette davor: dort kommt nach rund
-    # 30 s eine nackte «Internal Server Error»-Seite zurueck, an der die
-    # Anwendung nicht mehr erklaeren kann, was los war. Bleibt sie darunter,
-    # meldet sie den Grund selbst.
-    from app.domains.qualitaet.auftraggeber import PROXY_GRENZE
-    assert KAPITEL_ZEITLIMIT < PROXY_GRENZE
+
 
     nginx = Path(BASE_DIR, "deploy", "nginx-hermespia.conf").read_text(encoding="utf-8")
     for wert in _re.findall(r"proxy_read_timeout (\d+)s", nginx):
