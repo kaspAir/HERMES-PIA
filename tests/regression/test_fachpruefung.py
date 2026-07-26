@@ -750,3 +750,70 @@ def test_budget_ist_grosszuegig_und_eine_einzige_zahl():
     assert ag.KAPITEL_TOKENS == ag.SYNTHESE_TOKENS == ag.SCHRITT_TOKENS
     quelle = Path(ag.__file__).read_text(encoding="utf-8")
     assert "def kapitel_budget" not in quelle    # keine Rechnerei mehr
+
+
+def _laufender_lauf(app, monkeypatch=None):
+    """Ein gestarteter Prueflauf – (client, session_id, pruefung_id)."""
+    c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
+    app.interview_service.llm = _LLM()
+    c.post(f"/interview/{sid}/fachpruefung")
+    return c, sid, _lauf_id(sid)
+
+
+def test_schrittfehler_kommt_als_json_nicht_als_html(app, monkeypatch):
+    """Ein Absturz im Prüfschritt muss als JSON zurückkommen. Kam eine
+    HTML-Fehlerseite, scheiterte der Browser am Parsen und meldete
+    «Verbindung unterbrochen» – der echte Grund war weg, und die Suche lief
+    stundenlang in die falsche Richtung."""
+    from app.web import ui_routes
+
+    def _kracht(*a, **kw):
+        raise RuntimeError("etwas ging schief")
+
+    monkeypatch.setattr(ui_routes, "fachpruefung_schritt", _kracht)
+    client, sid, pid = _laufender_lauf(app)
+    r = client.post(f"/interview/{sid}/fachpruefung/schritt",
+                    data={"pruefung_id": pid})
+    assert r.status_code == 500
+    assert r.is_json, "Fehler MUSS JSON sein, nie HTML"
+    assert "RuntimeError" in r.get_json()["fehler"]
+    assert "etwas ging schief" in r.get_json()["fehler"]
+
+
+def test_oberflaeche_unterscheidet_serverfehler_von_verbindungsabbruch():
+    from app.config import BASE_DIR
+
+    v = Path(BASE_DIR, "app", "templates", "fachpruefung.html").read_text(
+        encoding="utf-8")
+    # Erst Text lesen, dann parsen – nie direkt r.json() auf die Antwort.
+    assert "r.text()" in v
+    assert "return r.json()" not in v and ".then(r => r.json())" not in v
+    assert "'Accept': 'application/json'" in v
+    assert "nicht mit " in v                          # nennt HTTP-Status + Rumpf
+
+
+def test_nachweis_blockiert_den_lauf_nie(app, monkeypatch):
+    """Der Nachweis ist zusätzliche Evidenz, keine Voraussetzung. Scheitert er,
+    läuft die Gesamtwürdigung ohne ihn weiter – der Lauf darf daran nie
+    haengenbleiben."""
+    from app.domains.qualitaet.auftraggeber import GRUPPEN
+    from app.domains.qualitaet.models import PiaPruefung
+    from app.shared.database import SessionLocal
+
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    c, sid, pid = _laufender_lauf(app)
+    monkeypatch.setattr(
+        app.interview_service, "build_nachweis",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("Nachweis kaputt")))
+
+    db = SessionLocal()
+    zeile = db.get(PiaPruefung, pid)
+    zeile.schritt = len(GRUPPEN)          # direkt auf den Nachweisschritt
+    db.commit()
+
+    z = c.post(f"/interview/{sid}/fachpruefung/schritt",
+               data={"pruefung_id": pid})
+    assert z.status_code == 200, z.get_data(as_text=True)[:300]
+    assert z.get_json()["schritt"] == len(GRUPPEN) + 1

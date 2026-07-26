@@ -1404,14 +1404,21 @@ def interview_fachpruefung_schritt(session_id):
     # Formular ODER JSON annehmen - multipart wird bewusst nicht verwendet
     # (der Hosting-Proxy laesst es nicht durch, siehe fachpruefung.html).
     rumpf = request.get_json(silent=True) or request.form
-    zustand, grund = fachpruefung_schritt(
-        int(rumpf.get("pruefung_id", 0) or 0), session, svc.llm,
-        answers=answers, tarife=_tarife_for_session(session),
-        # Als FUNKTION: der Nachweis kostet selbst einen LLM-Aufruf und wird nur
-        # im Syntheseschritt gebraucht. Vor jedem Kapitel berechnet, riss er
-        # zusammen mit dem Kapitelaufruf das Worker-Zeitlimit.
-        nachweis_fn=lambda: svc.build_nachweis(session, answers),
-        tenant_id=getattr(session, "org_id", None))
+    # Dieser Endpunkt antwortet IMMER JSON – auch beim Absturz. Sonst schickt
+    # der allgemeine Fehlerbehandler eine HTML-Seite, der Browser scheitert am
+    # Parsen und meldet «Verbindung unterbrochen»: der echte Grund geht
+    # verloren, und man sucht Stunden an der falschen Stelle.
+    try:
+        zustand, grund = fachpruefung_schritt(
+            int(rumpf.get("pruefung_id", 0) or 0), session, svc.llm,
+            answers=answers, tarife=_tarife_for_session(session),
+            # Als FUNKTION: der Nachweis kostet selbst einen LLM-Aufruf und hat
+            # deshalb einen eigenen Schritt.
+            nachweis_fn=lambda: svc.build_nachweis(session, answers),
+            tenant_id=getattr(session, "org_id", None))
+    except Exception as e:      # noqa: BLE001 – der Grund muss zum Browser
+        current_app.logger.exception("Prüfschritt abgestürzt")
+        return jsonify({"fehler": f"{e.__class__.__name__}: {e}"}), 500
     if zustand is None:
         return jsonify({"fehler": grund or "Der Schritt ist fehlgeschlagen."}), 502
     return jsonify(zustand)

@@ -193,21 +193,30 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
         # Eigener Schritt: der Nachweis ist ein Modellaufruf fuer sich.
         # Faellt er aus, laeuft die Gesamtwuerdigung ohne Evidenzgrundlage
         # weiter - der Lauf darf daran nicht scheitern.
-        nachweis = None
+        # Der Nachweis ist ZUSATZLICHE Evidenz, keine Voraussetzung. Faellt er
+        # aus – aus welchem Grund auch immer – laeuft die Gesamtwuerdigung ohne
+        # ihn weiter und weist das aus. Der Lauf darf daran nie haengenbleiben.
+        # Auch das Wegschreiben liegt im try: eine nicht serialisierbare
+        # Rueckgabe haette den Schritt sonst zum Absturz gebracht.
+        zeile.nachweis_json = None
         if nachweis_fn is not None:
             try:
                 nachweis = nachweis_fn()
+                if nachweis:
+                    zeile.nachweis_json = _json.dumps(nachweis, ensure_ascii=False)
             except Exception:      # noqa: BLE001
-                log.warning("Nachweis nicht verfuegbar – Gesamtwuerdigung ohne "
-                            "Evidenzgrundlage.")
+                log.exception("Nachweis nicht verfuegbar – Gesamtwuerdigung ohne "
+                              "Evidenzgrundlage.")
         _takt("Nachweis erstellt")
-        zeile.nachweis_json = _json.dumps(nachweis, ensure_ascii=False) if nachweis else None
         zeile.schritt = index + 1
         db.commit()
         return _zustand(zeile), ""
 
     # Letzter Schritt: Gesamtwürdigung.
-    nachweis = _json.loads(zeile.nachweis_json) if zeile.nachweis_json else None
+    try:
+        nachweis = _json.loads(zeile.nachweis_json) if zeile.nachweis_json else None
+    except ValueError:
+        nachweis = None
     gesamt, versionen, grund = synthese(
         teile, answers, llm, invarianten=invarianten, nachweis=nachweis,
         tenant_id=tenant_id)

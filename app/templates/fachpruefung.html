@@ -58,6 +58,13 @@
       if (!seit) return;
       dauer.textContent = 'läuft seit ' + Math.round((Date.now() - seit) / 1000) + ' s';
     }
+    function scheitern(text) {
+      markiere(index, 'gescheitert');
+      fehler.textContent = text;
+      fehler.style.display = '';
+      document.getElementById('lauf-neu').style.display = '';
+      seit = null; dauer.textContent = '';
+    }
     function schritt() {
       if (index >= gesamt) { location.reload(); return; }
       markiere(index, 'aktiv');
@@ -72,18 +79,31 @@
       // scheiterte schon das Diktat, bis es auf JSON umgestellt wurde.
       fetch(box.dataset.endpoint, {
         method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          // Erzwingt JSON auch vom allgemeinen Fehlerbehandler – eine
+          // HTML-Fehlerseite waere hier unlesbar und der Grund verloren.
+          'Accept': 'application/json'
+        },
         body: new URLSearchParams({pruefung_id: box.dataset.pruefung}).toString()
       })
-        .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+        // Erst als TEXT lesen. Frueher stand hier r.json(): schickte der Server
+        // eine HTML-Fehlerseite, scheiterte das Parsen und landete im catch –
+        // jeder Serverfehler sah dann aus wie ein Verbindungsabbruch. Genau das
+        // hat die Fehlersuche stundenlang in die falsche Richtung geschickt.
+        .then(function (r) {
+          return r.text().then(function (t) {
+            var d = null;
+            try { d = JSON.parse(t); } catch (e) { d = null; }
+            return {ok: r.ok, status: r.status, d: d, text: t};
+          });
+        })
         .then(function (a) {
-          if (!a.ok) {
-            markiere(index, 'gescheitert');
-            fehler.textContent = a.d.fehler || 'Der Schritt ist fehlgeschlagen.';
-            fehler.style.display = '';
-            document.getElementById('lauf-neu').style.display = '';
-            seit = null; dauer.textContent = '';
-            return;
+          if (!a.ok || !a.d) {
+            return scheitern(a.d
+              ? (a.d.fehler || 'Der Schritt ist fehlgeschlagen.')
+              : ('Der Server antwortete mit HTTP ' + a.status + ' und nicht mit '
+                 + 'JSON: ' + a.text.replace(/<[^>]*>/g, ' ').trim().slice(0, 300)));
           }
           markiere(index, 'erledigt');
           index = a.d.schritt;
@@ -91,10 +111,10 @@
           if (a.d.fertig) { location.reload(); return; }
           schritt();
         })
-        .catch(function () {
-          markiere(index, 'gescheitert');
-          fehler.textContent = 'Verbindung unterbrochen – Seite neu laden, der Lauf setzt fort.';
-          fehler.style.display = ''; seit = null;
+        .catch(function (e) {
+          // Nur HIER ist es wirklich das Netz.
+          scheitern('Die Verbindung zum Server ist abgebrochen ('
+                    + (e && e.message ? e.message : 'unbekannt') + ').');
         });
     }
     document.getElementById('lauf-wiederholen').addEventListener('click', function () {
