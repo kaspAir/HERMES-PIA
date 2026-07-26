@@ -374,3 +374,46 @@ def test_grund_erscheint_auf_der_fehlerseite(app, monkeypatch):
                headers={"Accept": "text/html"})
     assert r.status_code == 502
     assert "kein JSON" in r.get_data(as_text=True)
+
+
+# ---- Eine gekuerzte Pruefung darf nie vollstaendig aussehen -------------- #
+#
+# Die Ausgabelaenge ist TECHNISCH begrenzt (Zeit/Token). Das ist nicht die
+# Proportionalitaet der Methode - dort folgt die Laenge dem Befund. Wird die
+# Grenze erreicht, MUSS die Pruefung das sagen.
+
+def test_erreichte_obergrenze_wird_gemeldet(skills_dir):
+    p = dict(_PROTOKOLL, weitere_befunde=12, weitere_fragen=3)
+    protokoll, _, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
+    assert protokoll["weitere_befunde"] == 12
+    assert protokoll["weitere_fragen"] == 3
+
+
+def test_kuerzung_ist_auf_der_seite_sichtbar(app, monkeypatch):
+    c, sid = _angemeldet(app)
+    p = dict(_PROTOKOLL, weitere_befunde=12)
+    app.interview_service.llm = _LLM(json.dumps(p))
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    c.post(f"/interview/{sid}/fachpruefung")
+    seite = c.get(f"/interview/{sid}/fachpruefung").get_data(as_text=True)
+    assert "Prüfung ist gekürzt" in seite
+    assert "12 weitere Befunde" in seite
+
+
+def test_ohne_kuerzung_kein_warnhinweis(app, monkeypatch):
+    c, sid = _angemeldet(app)
+    app.interview_service.llm = _LLM()          # weitere_befunde fehlt -> 0
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    c.post(f"/interview/{sid}/fachpruefung")
+    seite = c.get(f"/interview/{sid}/fachpruefung").get_data(as_text=True)
+    assert "gekürzt" not in seite
+
+
+def test_das_modell_wird_zur_meldung_der_kuerzung_angehalten(skills_dir):
+    llm = _LLM()
+    pruefe_fachlich({}, llm, skills_dir=skills_dir)
+    assert "weitere_befunde" in llm.user
+    assert "NIE wie eine vollständige aussehen" in llm.user
+    assert "höchstens" in llm.user          # die Grenze steht wirklich drin
