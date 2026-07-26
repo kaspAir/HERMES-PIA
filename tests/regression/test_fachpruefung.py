@@ -71,16 +71,17 @@ def test_skill_wird_geladen_und_injiziert(skills_dir):
 
 def test_ohne_skill_keine_pruefung(tmp_path):
     """Lieber kein Protokoll als ein im Code nachgebautes."""
-    protokoll, versionen = pruefe_fachlich({}, _LLM(), skills_dir=tmp_path)
+    protokoll, versionen, grund = pruefe_fachlich({}, _LLM(), skills_dir=tmp_path)
     assert protokoll is None and versionen == []
 
 
 def test_ohne_llm_keine_pruefung(skills_dir):
-    assert pruefe_fachlich({}, None, skills_dir=skills_dir) == (None, [])
+    protokoll, versionen, grund = pruefe_fachlich({}, None, skills_dir=skills_dir)
+    assert protokoll is None and versionen == [] and grund
 
 
 def test_versions_triple_wird_zurueckgegeben(skills_dir):
-    _, versionen = pruefe_fachlich({}, _LLM(), skills_dir=skills_dir)
+    _, versionen, _ = pruefe_fachlich({}, _LLM(), skills_dir=skills_dir)
     assert versionen and versionen[0]["name"] == SKILL
     assert versionen[0]["version"] == "1.0"
 
@@ -121,7 +122,7 @@ def test_unerlaubte_freigabe_wird_zur_empfehlung_zurueckgestuft(skills_dir, geme
     """Deterministisches Sicherheitsnetz: der Prompt sagt es, aber hier haengt
     eine Governance-Zusage dran – Verlassen ist besser als Vertrauen."""
     p = dict(_PROTOKOLL, empfehlung=gemeldet)
-    protokoll, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
+    protokoll, _, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
     assert protokoll["empfehlung"] == "mit vorbehalt"
     assert protokoll["_hinweis"]
 
@@ -129,7 +130,7 @@ def test_unerlaubte_freigabe_wird_zur_empfehlung_zurueckgestuft(skills_dir, geme
 def test_gueltige_empfehlung_bleibt(skills_dir):
     for wert in ("freigebbar", "mit vorbehalt", "nicht freigebbar"):
         p = dict(_PROTOKOLL, empfehlung=wert)
-        protokoll, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
+        protokoll, _, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
         assert protokoll["empfehlung"] == wert
 
 
@@ -137,20 +138,20 @@ def test_unbekanntes_gewicht_wird_zum_hinweis(skills_dir):
     p = dict(_PROTOKOLL, befunde=[{"kapitel": "K", "kriterium": "x",
                                    "feststellung": "y", "gewicht": "kritisch",
                                    "vorschlag": "z"}])
-    protokoll, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
+    protokoll, _, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
     assert protokoll["befunde"][0]["gewicht"] == "Hinweis"
 
 
 # ---- Abnahme 4: Kapitelbezug --------------------------------------------- #
 
 def test_befunde_tragen_einen_kapitelbezug(skills_dir):
-    protokoll, _ = pruefe_fachlich({}, _LLM(), skills_dir=skills_dir)
+    protokoll, _, _ = pruefe_fachlich({}, _LLM(), skills_dir=skills_dir)
     assert all(b.get("kapitel") for b in protokoll["befunde"])
 
 
 def test_unlesbare_antwort_ergibt_kein_protokoll(skills_dir):
     """Nichts erfinden: lieber kein Protokoll als ein geratenes."""
-    protokoll, versionen = pruefe_fachlich({}, _LLM("kein JSON"), skills_dir=skills_dir)
+    protokoll, versionen, grund = pruefe_fachlich({}, _LLM("kein JSON"), skills_dir=skills_dir)
     assert protokoll is None and versionen        # Versionen trotzdem bekannt
 
 
@@ -339,3 +340,37 @@ def test_zeitueberschritt_nennt_die_ursache(monkeypatch):
         LLMClient(basis_url="http://x/anthropic").complete("s", [], timeout=95)
     assert "95 Sekunden" in str(e.value)
     assert "nicht erreichbar" not in str(e.value)
+
+
+# ---- Die drei Fehlschlaege sind unterscheidbar ---------------------------- #
+#
+# Vorher fuehrten «kein Skill», «kein JSON» und «abgeschnitten» zur selben
+# nichtssagenden Meldung - man konnte nicht handeln, ohne nachzufragen.
+
+def test_fehlender_skill_nennt_den_erwarteten_ort(tmp_path):
+    _, _, grund = pruefe_fachlich({}, _LLM(), skills_dir=tmp_path)
+    assert SKILL in grund and "skills/base" in grund
+
+
+def test_abgeschnittene_antwort_wird_als_solche_erkannt(skills_dir):
+    """Der haeufigste Fall, wenn das Token-Budget nicht reicht."""
+    halb = '{"gegenstand":{"umfang":"a"},"befunde":[{"kapitel":"Kap. 1","fest'
+    _, _, grund = pruefe_fachlich({}, _LLM(halb), skills_dir=skills_dir)
+    assert "abgeschnitten" in grund and "Token-Budget" in grund
+
+
+def test_kein_json_nennt_den_anfang_der_antwort(skills_dir):
+    _, _, grund = pruefe_fachlich({}, _LLM("Das kann ich nicht beurteilen."),
+                                  skills_dir=skills_dir)
+    assert "kein JSON" in grund and "Das kann ich nicht" in grund
+
+
+def test_grund_erscheint_auf_der_fehlerseite(app, monkeypatch):
+    c, sid = _angemeldet(app)
+    app.interview_service.llm = _LLM("Kein JSON hier.")
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    r = c.post(f"/interview/{sid}/fachpruefung",
+               headers={"Accept": "text/html"})
+    assert r.status_code == 502
+    assert "kein JSON" in r.get_data(as_text=True)

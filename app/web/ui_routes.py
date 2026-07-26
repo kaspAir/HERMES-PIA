@@ -1387,14 +1387,16 @@ def interview_fachpruefung(session_id):
                                meldung="Ohne Sprachmodell ist keine fachliche "
                                        "Pruefung moeglich."), 500
     answers = json.loads(session.answers_json or "{}")
-    zeile, _ = fuehre_fachpruefung(
+    zeile, _, grund = fuehre_fachpruefung(
         session, svc.llm, answers=answers, tarife=_tarife_for_session(session),
         nachweis=svc.build_nachweis(session, answers),
         tenant_id=getattr(session, "org_id", None))
     if zeile is None:
+        # Der GRUND steht auf der Seite - sonst ist nicht erkennbar, ob der Skill
+        # fehlt, das Modell nichts lieferte oder die Antwort abgeschnitten wurde.
         return render_template("pseudo_fehler.html", art="antwort",
-                               meldung="Die fachliche Pruefung lieferte kein "
-                                       "auswertbares Protokoll."), 502
+                               meldung=grund or "Die fachliche Prüfung lieferte kein "
+                                                "auswertbares Protokoll."), 502
     return redirect(url_for("ui.interview_fachpruefung_zeigen", session_id=session_id))
 
 

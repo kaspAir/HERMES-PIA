@@ -59,10 +59,10 @@ def fuehre_fachpruefung(session, llm, answers=None, tarife=None, nachweis=None,
     if answers is None:
         answers = _json.loads(getattr(session, "answers_json", None) or "{}")
     invarianten = pruefe_session(session, answers=answers, tarife=tarife)
-    protokoll, versionen = pruefe_fachlich(
+    protokoll, versionen, grund = pruefe_fachlich(
         answers, llm, invarianten=invarianten, nachweis=nachweis, tenant_id=tenant_id)
     if protokoll is None:
-        return None, invarianten
+        return None, invarianten, grund
 
     db = SessionLocal()
     zeile = PiaPruefung(
@@ -75,7 +75,7 @@ def fuehre_fachpruefung(session, llm, answers=None, tarife=None, nachweis=None,
     db.add(zeile)
     db.commit()
     db.refresh(zeile)
-    return zeile, invarianten
+    return zeile, invarianten, ""
 
 
 def letzte_fachpruefung(session_id):
