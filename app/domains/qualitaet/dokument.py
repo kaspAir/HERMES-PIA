@@ -144,6 +144,13 @@ _HILFE_STIL = ("hilfe", "hinweis", "beispiel", "muster", "erklärung", "erklaeru
 
 
 def _d004_hilfetexte(dok):
+    """Unterscheidet LEERE Vorlagenzeile von INHALTSTRAGENDER.
+
+    Wichtig fuer die Handlungsanweisung: eine leere Beispielzeile gehoert
+    geloescht – eine mit Inhalt bedeutet, dass das Kapitel nicht befuellt wurde,
+    und dann ist zu BEFUELLEN. Die frueher einheitliche Meldung verleitete dazu,
+    sinnvolle Angaben zu loeschen (Katalog v0.4, D-004).
+    """
     for p in _alle_absaetze(dok):
         stil = ""
         pr = p.find(f"{_W}pPr")
@@ -151,13 +158,18 @@ def _d004_hilfetexte(dok):
             ps = pr.find(f"{_W}pStyle")
             if ps is not None:
                 stil = (ps.get(f"{_W}val") or "").lower()
-        if stil and any(h in stil for h in _HILFE_STIL):
-            text = "".join(t.text or "" for t in p.iter(f"{_W}t")).strip()
-            if text:
-                yield Befund("D-004", MUSS, DOK,
-                             f"Hilfe- oder Beispieltexte der Vorlage sind noch "
-                             f"enthalten: «{text[:60]}».", f"Formatvorlage {stil}")
-                return
+        if not (stil and any(h in stil for h in _HILFE_STIL)):
+            continue
+        text = "".join(t.text or "" for t in p.iter(f"{_W}t")).strip()
+        if text:
+            yield Befund("D-004", MUSS, DOK,
+                         f"Das Kapitel wurde nicht befüllt; die Vorlagenzeile steht "
+                         f"noch: «{text[:60]}».", f"Formatvorlage {stil}")
+        else:
+            yield Befund("D-004", MUSS, DOK,
+                         "Eine leere Hilfe-/Beispielzeile der Vorlage ist noch "
+                         "enthalten und gehört entfernt.", f"Formatvorlage {stil}")
+        return
 
 
 # ---- D-005 --------------------------------------------------------------- #

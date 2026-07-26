@@ -1058,3 +1058,26 @@ input:focus, select:focus, textarea:focus {
   padding: .45rem .6rem; text-align: left; vertical-align: top;
 }
 .befundliste th { background: var(--color-bg); font-weight: 600; }
+
+/* ===== Fachliche Prüfung (Auftraggeber-Sicht, Stufe 4) ===== */
+/* Bewusst anders als die Invarianten-Anzeige: der Nutzer muss Regelbefund und
+   fachliches Urteil unterscheiden können (Briefing 5.1). */
+.empfehlung {
+  border: 1px solid var(--color-border);
+  border-left: 5px solid var(--color-accent);
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem; margin: 1rem 0 1.5rem;
+  background: var(--color-surface);
+}
+.empfehlung-label {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--color-muted);
+}
+.empfehlung-wert { font-size: 1.35rem; font-weight: 700; margin: .2rem 0 .5rem; }
+.empfehlung-freigebbar        { border-left-color: var(--color-done); }
+.empfehlung-mit-vorbehalt     { border-left-color: var(--color-required); }
+.empfehlung-nicht-freigebbar  { border-left-color: #c0392b; }
+.widerspruch-form { display: flex; gap: .3rem; align-items: center; }
+.widerspruch-form input[type=text] { font-size: .85rem; padding: .2rem .4rem; }
+tr.widersprochen td { opacity: .55; text-decoration: line-through; }
+tr.widersprochen td:last-child { opacity: 1; text-decoration: none; }
