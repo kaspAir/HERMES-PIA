@@ -541,3 +541,97 @@ def test_ein_gescheiterter_schritt_verliert_die_bisherigen_nicht(app, monkeypatc
     zeile = letzte_fachpruefung(sid)
     assert zeile.schritt == 1                          # der erste bleibt erledigt
     assert json.loads(zeile.teilbefunde_json)          # sein Ergebnis auch
+
+
+# ---- Der Nachweis darf die Kapitelschritte nicht belasten ---------------- #
+#
+# Gemessener Befund auf dev: «laeuft seit 120 s / Verbindung unterbrochen» -
+# exakt das Worker-Limit. Ursache war NICHT das Modell, sondern build_nachweis:
+# ein eigener LLM-Aufruf (4096 Token, 90 s), den die Route VOR JEDEM der neun
+# Schritte machte. Zusammen mit dem Kapitelaufruf sprengte das die 120 s - und
+# war achtmal umsonst.
+
+def test_nachweis_wird_nur_im_syntheseschritt_geholt(app, monkeypatch):
+    from app.domains.qualitaet.auftraggeber import GRUPPEN
+    c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
+    app.interview_service.llm = _LLM()
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+
+    aufrufe = {"n": 0}
+    echt = app.interview_service.build_nachweis
+
+    def _gezaehlt(*a, **kw):
+        aufrufe["n"] += 1
+        return echt(*a, **kw)
+
+    monkeypatch.setattr(app.interview_service, "build_nachweis", _gezaehlt)
+
+    c.post(f"/interview/{sid}/fachpruefung")
+    pid = _lauf_id(sid)
+    # Alle Kapitelschritte: KEIN Nachweis-Aufruf.
+    for _ in range(len(GRUPPEN)):
+        c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
+    assert aufrufe["n"] == 0, "Der Nachweis darf die Kapitelschritte nicht belasten"
+
+    # Erst die Gesamtwuerdigung braucht ihn - genau einmal.
+    c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
+    assert aufrufe["n"] == 1
+
+
+def test_ein_schritt_macht_hoechstens_einen_llm_aufruf(app, monkeypatch):
+    """Sonst summieren sich die Zeitlimits und das Worker-Limit faellt."""
+    c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+
+    class _Zaehlt(_LLM):
+        n = 0
+        def complete(self, *a, **kw):
+            _Zaehlt.n += 1
+            return json.dumps(_PROTOKOLL)
+
+    app.interview_service.llm = _Zaehlt()
+    c.post(f"/interview/{sid}/fachpruefung")
+    pid = _lauf_id(sid)
+    _Zaehlt.n = 0
+    c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
+    assert _Zaehlt.n == 1
+
+
+def test_zeitlimit_ist_ein_gesamtlimit_kein_doppeltes(monkeypatch):
+    """In requests gilt ein SKALARES Zeitlimit getrennt fuer Verbindung UND Lesen.
+    60 werden so zu 120 - genau dort schiesst gunicorn den Worker ab. Deshalb
+    muss ein PAAR uebergeben werden, dessen Summe unter dem Worker-Limit bleibt."""
+    from pathlib import Path
+    import re as _re
+
+    from app.config import BASE_DIR
+    from app.domains.llm.client import LLMClient
+    from app.domains.qualitaet.auftraggeber import KAPITEL_ZEITLIMIT
+
+    gesehen = {}
+
+    def _merkt(url, headers=None, json=None, timeout=None):
+        gesehen["t"] = timeout
+
+        class _R:
+            status_code = 200
+            headers = {}
+            text = ""
+
+            def json(self):
+                return {"content": [{"text": "ok"}]}
+        return _R()
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post", _merkt)
+    LLMClient(basis_url="http://x/anthropic").complete("s", [], timeout=KAPITEL_ZEITLIMIT)
+
+    assert isinstance(gesehen["t"], tuple), "Zeitlimit muss (Verbindung, Lesen) sein"
+    ctl = Path(BASE_DIR, "deploy", "hermes_ctl.sh").read_text(encoding="utf-8")
+    worker = int(_re.search(r"--timeout (\d+)", ctl).group(1))
+    assert sum(gesehen["t"]) < worker, (
+        f"Summe der Zeitlimits {sum(gesehen['t'])}s erreicht das Worker-Limit "
+        f"{worker}s – der Prozess stirbt, bevor eine Meldung erscheint.")

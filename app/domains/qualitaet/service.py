@@ -5,8 +5,11 @@ Sammelt aus der Session zusammen, was die Regeln brauchen (Tarife, Phasendauer,
 vom Erzeugen getrennt (Briefing, Leitplanken).
 """
 import json
+import logging
 
 from app.domains.qualitaet.pruefung import pruefe
+
+log = logging.getLogger("hermes.qualitaet")
 
 
 def _phasendauer_monate(answers):
@@ -131,11 +134,16 @@ def starte_fachpruefung(session):
 
 
 def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
-                         nachweis=None, tenant_id=None):
+                         nachweis_fn=None, tenant_id=None):
     """Führt GENAU EINEN Schritt aus. Rückgabe: (zustand, grund).
 
     So bleibt jeder HTTP-Aufruf kurz – das Worker-Zeitlimit ist damit kein Thema
     mehr, und die Ausgabelänge muss nicht gedeckelt werden.
+
+    `nachweis_fn` ist bewusst eine FUNKTION und wird nur im Syntheseschritt
+    gerufen: der Nachweis kostet selbst einen LLM-Aufruf (4096 Token). Vor jedem
+    Kapitel berechnet, sprengte er zusammen mit dem Kapitelaufruf das
+    Worker-Zeitlimit – und war achtmal umsonst.
     """
     import json as _json
 
@@ -171,6 +179,12 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
         return _zustand(zeile), ""
 
     # Letzter Schritt: Gesamtwürdigung.
+    nachweis = None
+    if nachweis_fn is not None:
+        try:
+            nachweis = nachweis_fn()
+        except Exception:      # noqa: BLE001 – ohne Nachweis laeuft die Synthese weiter
+            log.warning("Nachweis nicht verfuegbar – Synthese ohne Evidenzgrundlage.")
     gesamt, versionen, grund = synthese(
         teile, answers, llm, invarianten=invarianten, nachweis=nachweis,
         tenant_id=tenant_id)

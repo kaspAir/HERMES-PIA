@@ -1404,7 +1404,10 @@ def interview_fachpruefung_schritt(session_id):
     zustand, grund = fachpruefung_schritt(
         int(request.form.get("pruefung_id", 0) or 0), session, svc.llm,
         answers=answers, tarife=_tarife_for_session(session),
-        nachweis=svc.build_nachweis(session, answers),
+        # Als FUNKTION: der Nachweis kostet selbst einen LLM-Aufruf und wird nur
+        # im Syntheseschritt gebraucht. Vor jedem Kapitel berechnet, riss er
+        # zusammen mit dem Kapitelaufruf das Worker-Zeitlimit.
+        nachweis_fn=lambda: svc.build_nachweis(session, answers),
         tenant_id=getattr(session, "org_id", None))
     if zustand is None:
         return jsonify({"fehler": grund or "Der Schritt ist fehlgeschlagen."}), 502
