@@ -731,10 +731,12 @@ def test_zeitlimit_und_worker_limit_passen_zusammen():
     worker = int(_re.search(r"--timeout (\d+)", ctl).group(1))
     assert VERBINDUNGSLIMIT + KAPITEL_ZEITLIMIT + 15 <= worker
 
-    # Und unter der 120-s-Grenze, die in der Kette davor sitzt (nginx/PHP):
-    # ein Schritt muss auch dann durchkommen, wenn eine Zwischenstelle noch
-    # nicht umgestellt ist. Genau daran brach der Lauf nach 121 s ab.
-    assert VERBINDUNGSLIMIT + KAPITEL_ZEITLIMIT < 120
+    # Und unter der GEMESSENEN Grenze der Kette davor: dort kommt nach rund
+    # 30 s eine nackte «Internal Server Error»-Seite zurueck, an der die
+    # Anwendung nicht mehr erklaeren kann, was los war. Bleibt sie darunter,
+    # meldet sie den Grund selbst.
+    from app.domains.qualitaet.auftraggeber import PROXY_GRENZE
+    assert KAPITEL_ZEITLIMIT < PROXY_GRENZE
 
     nginx = Path(BASE_DIR, "deploy", "nginx-hermespia.conf").read_text(encoding="utf-8")
     for wert in _re.findall(r"proxy_read_timeout (\d+)s", nginx):
@@ -817,3 +819,28 @@ def test_nachweis_blockiert_den_lauf_nie(app, monkeypatch):
                data={"pruefung_id": pid})
     assert z.status_code == 200, z.get_data(as_text=True)[:300]
     assert z.get_json()["schritt"] == len(GRUPPEN) + 1
+
+
+def test_nachweis_der_pruefung_braucht_kein_modell(app, monkeypatch):
+    """Der neunte Modellaufruf war die Ursache des Abbruchs nach 30 s – und er
+    war überflüssig: als EVIDENZ zählt die deterministisch abgeleitete
+    Herkunft, nicht die ausformulierte Prosa."""
+    gerufen = []
+    monkeypatch.setattr("app.domains.interview.service.nachweis_begruendungen",
+                        lambda *a, **kw: gerufen.append(1) or {})
+    svc = app.interview_service
+    svc.llm = _LLM()
+    c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
+    from app.domains.interview.models import InterviewSession
+    from app.shared.database import SessionLocal
+    session = SessionLocal().get(InterviewSession, sid)
+    answers = json.loads(session.answers_json or "{}")
+
+    eintraege = svc.build_nachweis(session, answers, mit_llm=False)
+    assert gerufen == [], "kein Modellaufruf im Prüf-Nachweis"
+    assert eintraege and all(e["herkunft"] and e["begruendung"] for e in eintraege)
+
+    # Fürs DOKUMENT bleibt die ausformulierte Fassung erhalten.
+    svc.build_nachweis(session, answers)
+    assert gerufen == [1]

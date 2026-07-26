@@ -241,12 +241,16 @@ GRUPPEN = [
 # tatsaechlich erzeugte Ausgabe. Ein grosszuegiger Wert kostet also nichts und
 # nimmt der Ausgabelaenge jede kuenstliche Schranke.
 SCHRITT_TOKENS = 16000
-# Das Lese-Zeitlimit bleibt bewusst unter 120 s - so ueberlebt ein Schritt
-# JEDE Zwischenstelle in der Kette, auch eine, die noch auf dem alten Wert
-# steht (nginx proxy_read_timeout, PHP max_execution_time). Gemessen: bei
-# 121 s schnitt der Proxy ab, bevor die Anwendung eine Fehlerseite zeigen
-# konnte. Verbindungsaufbau (10 s) ist mitgerechnet.
-KAPITEL_ZEITLIMIT = 100
+# GEMESSEN am Hosting: nach rund 30 s liefert die Kette eine nackte
+# «Internal Server Error»-Seite - der Prozess kommt dann gar nicht mehr bis
+# zur Fehlerbehandlung, es steht keine Ursache auf dem Bildschirm. Alle acht
+# Kapitelschritte blieben darunter und liefen durch; der Nachweisschritt mit
+# seinem grossen Modellaufruf nicht.
+# Deshalb liegt das Zeitlimit der Anwendung BEWUSST unter dieser Grenze: dann
+# meldet sich die Anwendung selbst mit einem klaren Grund, statt in eine
+# nackte 500 zu laufen, die nichts erklaert.
+PROXY_GRENZE = 30              # beobachtet, nicht konfiguriert
+KAPITEL_ZEITLIMIT = 25
 
 # Nur noch fuer den einteiligen Altweg (pruefe_fachlich).
 KAPITEL_TOKENS = SCHRITT_TOKENS

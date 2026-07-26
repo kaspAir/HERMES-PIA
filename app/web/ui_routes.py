@@ -1412,9 +1412,12 @@ def interview_fachpruefung_schritt(session_id):
         zustand, grund = fachpruefung_schritt(
             int(rumpf.get("pruefung_id", 0) or 0), session, svc.llm,
             answers=answers, tarife=_tarife_for_session(session),
-            # Als FUNKTION: der Nachweis kostet selbst einen LLM-Aufruf und hat
-            # deshalb einen eigenen Schritt.
-            nachweis_fn=lambda: svc.build_nachweis(session, answers),
+            # OHNE Modellaufruf: als Evidenz zaehlt die deterministisch
+            # abgeleitete Herkunft, nicht die ausformulierte Prosa. Damit
+            # braucht dieser Schritt keine Modellzeit - der frueher noetige
+            # neunte Aufruf war die Ursache des Abbruchs nach 30 s.
+            nachweis_fn=lambda: svc.build_nachweis(session, answers,
+                                                   mit_llm=False),
             tenant_id=getattr(session, "org_id", None))
     except Exception as e:      # noqa: BLE001 – der Grund muss zum Browser
         current_app.logger.exception("Prüfschritt abgestürzt")

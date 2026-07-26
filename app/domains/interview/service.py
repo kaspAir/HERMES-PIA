@@ -895,13 +895,19 @@ class InterviewService:
     # Nachweis / Herkunft der Angaben (Transparenz-Anhang)                 #
     # ------------------------------------------------------------------ #
 
-    def build_nachweis(self, session, answers):
+    def build_nachweis(self, session, answers, mit_llm=True):
         """Erstellt je Abschnitt einen Herkunfts-/Begruendungseintrag.
 
         Herkunft wird deterministisch aus dem Entstehungsweg abgeleitet (vom
         Projektleiter diktiert vs. von HERMES PIA generiert/ergaenzt), die
         Begruendung per LLM formuliert (mit deterministischem Fallback).
         Rueckgabe: [{"abschnitt", "herkunft", "begruendung"}].
+
+        `mit_llm=False` laesst den Modellaufruf weg und nutzt nur die
+        deterministischen Begruendungen. Fuer das DOKUMENT ist die
+        ausformulierte Fassung richtig; als EVIDENZ in der Pruefung ist die
+        deterministische sogar die bessere - sie ist belegbar statt formuliert,
+        und der Schritt braucht keine Modellzeit.
         """
         entries = []
         for s in self._effective_method(session).get("sections", []):
@@ -930,8 +936,9 @@ class InterviewService:
                 "inhalt": self._inhalt_summary(extracted),
             })
 
-        context = self._suggestion_context(session, answers)
-        begr = nachweis_begruendungen(self.llm, entries, context) if self.llm else {}
+        context = self._suggestion_context(session, answers) if mit_llm else ""
+        begr = (nachweis_begruendungen(self.llm, entries, context)
+                if (self.llm and mit_llm) else {})
 
         result = []
         for e in entries:

@@ -12,7 +12,7 @@ from pathlib import Path
 
 # Sichtbare Produktversion (Release-Marker). Wird unten rechts angezeigt und bei der
 # Promotion als Git-Tag (v<PRODUCT_VERSION>) gesetzt – bleibt auch auf Produktion sichtbar.
-PRODUCT_VERSION = "0.13.1"
+PRODUCT_VERSION = "0.13.2"
 
 _ROOT = Path(__file__).resolve().parents[2]
 _cache = None
