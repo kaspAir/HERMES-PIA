@@ -61,9 +61,15 @@
       zaehler.textContent = 'Schritt ' + (index + 1) + ' von ' + gesamt;
       balken.style.width = Math.round(index / gesamt * 100) + '%';
       seit = Date.now(); tick();
-      var daten = new FormData();
-      daten.append('pruefung_id', box.dataset.pruefung);
-      fetch(box.dataset.endpoint, {method: 'POST', body: daten})
+      // BEWUSST kein FormData: das ergaebe einen multipart-Rumpf, und den
+      // laesst der Hosting-Proxy nicht durch - der Server haengt dann beim
+      // Lesen des Rumpfes, bis gunicorn den Worker abschiesst. Genau daran
+      // scheiterte schon das Diktat, bis es auf JSON umgestellt wurde.
+      fetch(box.dataset.endpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({pruefung_id: box.dataset.pruefung}).toString()
+      })
         .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
         .then(function (a) {
           if (!a.ok) {

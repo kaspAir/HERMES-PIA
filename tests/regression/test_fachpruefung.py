@@ -635,3 +635,44 @@ def test_zeitlimit_ist_ein_gesamtlimit_kein_doppeltes(monkeypatch):
     assert sum(gesehen["t"]) < worker, (
         f"Summe der Zeitlimits {sum(gesehen['t'])}s erreicht das Worker-Limit "
         f"{worker}s – der Prozess stirbt, bevor eine Meldung erscheint.")
+
+
+# ---- Kein multipart: der Hosting-Proxy laesst ihn nicht durch ------------- #
+#
+# Gemessener Befund: der Worker hing 120 s in request.form -> _load_form_data,
+# also beim LESEN des Rumpfes. Ursache war `new FormData()` im Browser
+# (multipart). Derselbe Proxy hatte schon das Diktat blockiert, bis es auf JSON
+# umgestellt wurde.
+
+def test_browser_sendet_kein_multipart():
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+    vorlage = Path(BASE_DIR, "app", "templates", "fachpruefung.html").read_text(
+        encoding="utf-8")
+    assert "new FormData()" not in vorlage, (
+        "FormData erzeugt einen multipart-Rumpf – den laesst der Hosting-Proxy "
+        "nicht durch, der Server haengt dann beim Lesen bis zum Worker-Timeout.")
+    assert "URLSearchParams" in vorlage
+
+
+@pytest.mark.parametrize("wie", ["formular", "json"])
+def test_schritt_nimmt_formular_und_json(app, monkeypatch, wie):
+    """Beide proxytauglichen Transportwege muessen funktionieren."""
+    c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
+    app.interview_service.llm = _LLM()
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    c.post(f"/interview/{sid}/fachpruefung")
+    pid = _lauf_id(sid)
+
+    if wie == "formular":
+        r = c.post(f"/interview/{sid}/fachpruefung/schritt",
+                   data={"pruefung_id": pid},
+                   content_type="application/x-www-form-urlencoded")
+    else:
+        r = c.post(f"/interview/{sid}/fachpruefung/schritt",
+                   json={"pruefung_id": pid})
+    assert r.status_code == 200
+    assert r.get_json()["schritt"] == 1
