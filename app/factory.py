@@ -66,7 +66,8 @@ def _migrate_db(engine):
         pp = {c["name"] for c in inspector.get_columns("pia_pruefung")}
         with engine.connect() as conn:
             for spalte, typ in (("status", "VARCHAR(20)"), ("schritt", "INTEGER"),
-                                ("teilbefunde_json", "TEXT")):
+                                ("teilbefunde_json", "TEXT"),
+                                ("nachschlag", "INTEGER")):
                 if spalte not in pp:
                     conn.execute(text(
                         f"ALTER TABLE pia_pruefung ADD COLUMN {spalte} {typ}"))

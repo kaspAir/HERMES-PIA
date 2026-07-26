@@ -473,9 +473,14 @@ def test_jeder_schritt_bleibt_weit_unter_dem_worker_limit():
     from app.config import BASE_DIR
     from app.domains.qualitaet.auftraggeber import KAPITEL_ZEITLIMIT
 
+    from app.domains.llm.client import VERBINDUNGSLIMIT
+
     ctl = Path(BASE_DIR, "deploy", "hermes_ctl.sh").read_text(encoding="utf-8")
     worker = int(_re.search(r"--timeout (\d+)", ctl).group(1))
-    assert KAPITEL_ZEITLIMIT * 2 <= worker      # reichlich Luft je Schritt
+    # Die Regel sagt, was sie meint: Verbinden + Lesen + Vor-/Nacharbeit muss
+    # der Worker aushalten. Ein «mal zwei» hätte das Zeitlimit unnötig
+    # eingeschnürt, sobald das Budget mitwächst.
+    assert VERBINDUNGSLIMIT + KAPITEL_ZEITLIMIT + 15 <= worker
 
 
 def test_lauf_geht_schrittweise_und_meldet_fortschritt(app, monkeypatch):
@@ -678,13 +683,14 @@ def test_schritt_nimmt_formular_und_json(app, monkeypatch, wie):
     assert r.get_json()["schritt"] == 1
 
 
-def test_kapitelbudget_reicht_und_anweisung_passt_dazu(skills_dir):
-    """Gemessen: 1200 Token reichten fuer die Ausgangslage eines echten PIA nicht.
-    Und die Anweisung «es gibt KEINE Obergrenze» widersprach dem Budget -
-    das Modell schrieb bis zum Abschnitt."""
-    from app.domains.qualitaet.auftraggeber import KAPITEL_TOKENS, pruefe_kapitel
+def test_budget_waechst_mit_dem_umfang_statt_fest_zu_sein(skills_dir):
+    """Eine feste Zahl ist bei einer Pruefung, deren Umfang vom PIA abhaengt,
+    immer falsch. Genau daran scheiterten 1200 UND 2500 Token."""
+    from app.domains.qualitaet.auftraggeber import kapitel_budget, pruefe_kapitel
 
-    assert KAPITEL_TOKENS >= 2000
+    klein = kapitel_budget({"ausgangslage": {"extracted": {"text": "kurz"}}})
+    gross = kapitel_budget({"ausgangslage": {"extracted": {"text": "Satz. " * 2000}}})
+    assert gross > klein * 2, "grosser Inhalt muss deutlich mehr Platz bekommen"
 
     gesehen = {}
 
@@ -693,13 +699,51 @@ def test_kapitelbudget_reicht_und_anweisung_passt_dazu(skills_dir):
             gesehen.update(user=messages[0]["content"], max_tokens=max_tokens)
             return json.dumps({"befunde": [], "gut": []})
 
-    pruefe_kapitel({"ausgangslage": {"extracted": {"text": "T"}}}, _Merkt(), 0,
+    # Ueber den ECHTEN Weg gemessen: mehr Inhalt -> mehr Platz. (Der Vergleich
+    # laeuft ueber pruefe_kapitel, weil der Inhalt dort erst verdichtet wird.)
+    pruefe_kapitel({"ausgangslage": {"extracted": {"text": "kurz"}}}, _Merkt(), 0,
                    skills_dir=skills_dir)
-    assert gesehen["max_tokens"] == KAPITEL_TOKENS
-    # Kein Widerspruch mehr: praktische Grenze JE KAPITEL statt «keine Obergrenze».
+    schmal = gesehen["max_tokens"]
+    pruefe_kapitel({"ausgangslage": {"extracted": {"text": "Ein Satz mehr. " * 400}}},
+                   _Merkt(), 0, skills_dir=skills_dir)
+    assert gesehen["max_tokens"] > schmal
+    # Kein kuenstlicher Deckel mehr in der Anweisung – aber Ehrlichkeit bleibt.
     assert "KEINE Obergrenze" not in gesehen["user"]
-    assert "drei bis sechs" in gesehen["user"]
+    assert "drei bis sechs" not in gesehen["user"]
     assert "weitere_befunde" in gesehen["user"]
+
+
+def test_synthesebudget_folgt_der_zahl_der_befunde(skills_dir):
+    """Bei der Gesamtwuerdigung ist der Bedarf keine Schaetzung: die
+    Kapitelbefunde LIEGEN VOR und lassen sich zaehlen. Genau daran scheiterte
+    der letzte Lauf – acht Kapitel voller Befunde gegen 1500 feste Token."""
+    from app.domains.qualitaet.auftraggeber import synthese_budget
+
+    wenig = synthese_budget([{"befunde": [{"feststellung": "x"}] * 2}])
+    viel = synthese_budget([{"befunde": [{"feststellung": "x"}] * 8}] * 8)
+    assert viel > wenig
+    assert viel >= 2000, "ein voller PIA braucht mehr als die alte feste Zahl"
+
+
+def test_budget_bleibt_zeitlich_erzeugbar():
+    """Das Budget darf nicht ins Unendliche wachsen – was in der zur Verfuegung
+    stehenden Zeit nicht erzeugt ist, reisst den Worker, und dann ist der ganze
+    Schritt verloren statt nur gekuerzt."""
+    from app.domains.qualitaet.auftraggeber import (
+        KAPITEL_ZEITLIMIT, TOKEN_JE_SEKUNDE, synthese_budget,
+    )
+
+    riesig = synthese_budget([{"befunde": [{"feststellung": "x"}] * 200}] * 20)
+    assert riesig <= TOKEN_JE_SEKUNDE * KAPITEL_ZEITLIMIT
+
+
+def test_wiederholen_rechnet_mit_mehr_platz(skills_dir):
+    """Sonst waere «Schritt wiederholen» eine Wiederholung desselben
+    Misserfolgs – der Nutzer wartet 90 s auf exakt dieselbe Meldung."""
+    from app.domains.qualitaet.auftraggeber import kapitel_budget
+
+    inhalt = {"ausgangslage": {"extracted": {"text": "Satz. " * 200}}}
+    assert kapitel_budget(inhalt, nachschlag=1) > kapitel_budget(inhalt)
 
 
 def test_gescheiterter_schritt_kann_wiederholt_werden():
@@ -712,3 +756,22 @@ def test_gescheiterter_schritt_kann_wiederholt_werden():
         encoding="utf-8")
     assert "lauf-wiederholen" in vorlage
     assert "bereits geprüften Kapitel bleiben erhalten" in vorlage
+
+
+def test_am_deckel_verspricht_die_meldung_nichts_mehr():
+    """Wenn kein Platz mehr da ist, darf die Meldung nicht «beim Wiederholen
+    mehr Platz» versprechen – sonst wartet der Nutzer 90 s auf dasselbe."""
+    from app.domains.qualitaet.auftraggeber import (
+        TOKEN_DECKEL, _abschnitt_erklaeren,
+    )
+
+    abgeschnitten = "Die Antwort wurde abgeschnitten (Token-Budget zu klein)."
+    mit_luft = _abschnitt_erklaeren(abgeschnitten, 1500)
+    assert "mit mehr Platz" in mit_luft
+
+    voll = _abschnitt_erklaeren(abgeschnitten, TOKEN_DECKEL)
+    assert "mit mehr Platz" not in voll
+    assert "ausgereizt" in voll
+
+    # Andere Fehlergruende bleiben unberuehrt.
+    assert _abschnitt_erklaeren("kein JSON", 1500) == "kein JSON"

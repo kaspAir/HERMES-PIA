@@ -35,3 +35,7 @@ class PiaPruefung(Base):
     status = Column(String(20), default="laufend")     # laufend | fertig
     schritt = Column(Integer, default=0)               # nächster offener Schritt
     teilbefunde_json = Column(Text, nullable=True)     # je Kapitel gesammelt
+    # Wie oft der AKTUELLE Schritt schon an einer abgeschnittenen Antwort
+    # gescheitert ist. Der naechste Versuch bekommt entsprechend mehr Platz -
+    # sonst waere «Schritt wiederholen» eine Wiederholung desselben Misserfolgs.
+    nachschlag = Column(Integer, default=0)
