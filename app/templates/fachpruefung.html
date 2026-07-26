@@ -50,6 +50,15 @@
 
 {# ---- B · Befunde je Kapitel ---- #}
 <h2>Befunde je Kapitel ({{ protokoll.befunde | length }})</h2>
+{% if protokoll.weitere_befunde %}
+{# Eine gekuerzte Pruefung darf nie wie eine vollstaendige aussehen. #}
+<p class="warnbanner" role="alert">
+  <strong>Diese Prüfung ist gekürzt.</strong>
+  Es wurden {{ protokoll.weitere_befunde }} weitere Befunde gefunden, aber nicht
+  ausgegeben – die Ausgabelänge ist technisch begrenzt. Beheben Sie zuerst die
+  angezeigten und prüfen Sie danach erneut.
+</p>
+{% endif %}
 <table class="befundliste">
   <thead><tr><th>Kapitel</th><th>Gewicht</th><th>Feststellung</th>
              <th>Vorschlag</th><th></th></tr></thead>
@@ -96,7 +105,8 @@
 
 {# ---- D · Herausforderung ---- #}
 {% if protokoll.herausforderung %}
-<h2>Herausforderung an die Projektleitung</h2>
+<h2>Herausforderung an die Projektleitung
+  {%- if protokoll.weitere_fragen %} (+{{ protokoll.weitere_fragen }} nicht ausgegeben){% endif %}</h2>
 <p class="hinweis">
   Ausdrücklich als Fragen. Die Projektleitung darf begründet widersprechen – der
   Widerspruch wird festgehalten.

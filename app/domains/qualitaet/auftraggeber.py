@@ -35,6 +35,12 @@ EMPFEHLUNGEN = ("freigebbar", "mit vorbehalt", "nicht freigebbar")
 # Deshalb bewusst darunter bleiben und lieber ein knapperes Protokoll verlangen:
 MAX_TOKENS = 2500          # 4000 dauerte regelmaessig laenger als das Worker-Limit
 ZEITLIMIT = 95             # Sekunden, mit Luft fuer die Fehlerseite
+# Obergrenze der Ausgabe. Das ist eine TECHNISCHE Grenze (Zeit/Token), nicht die
+# Proportionalitaet, die die Methode meint - dort folgt die Laenge dem BEFUND.
+# Deshalb MUSS eine erreichte Grenze sich selbst melden (weitere_befunde), sonst
+# sieht eine gekuerzte Pruefung aus wie eine vollstaendige.
+MAX_BEFUNDE = 8
+MAX_FRAGEN = 4
 
 # Der System-Prompt haelt NUR das Ausgabeformat und die Grenzen fest. Die Methode
 # – Haltung, Leitfragen, Prüfraster – kommt vollstaendig aus dem Skill.
@@ -63,7 +69,8 @@ _SCHEMA = (
     '"empfehlung":"freigebbar|mit vorbehalt|nicht freigebbar",'
     '"begruendung":"",'
     '"auflagen":[{"offen":"","wer":"","bis_wann":""}],'
-    '"confidence":{"stufe":"hoch|mittel|tief","begrenzung":""}}'
+    '"confidence":{"stufe":"hoch|mittel|tief","begrenzung":""},'
+    '"weitere_befunde":0,"weitere_fragen":0}'
 )
 
 
@@ -155,6 +162,11 @@ def pruefe_fachlich(answers, llm, invarianten=None, nachweis=None, tenant_id=Non
         f"{json.dumps(eingang, ensure_ascii=False)[:14000]}\n\n"
         "Die unter 'invarianten_befunde' genannten Regeln sind BEREITS gemeldet – "
         "übernimm sie als bekannt und melde sie NICHT erneut.\n"
+        "Fasse dich knapp: je Feststellung ein bis zwei Sätze.\n"
+        f"Gib höchstens {MAX_BEFUNDE} Befunde und {MAX_FRAGEN} Fragen aus – die "
+        "WICHTIGSTEN zuerst. Hast du mehr gefunden, trage die Anzahl der nicht "
+        "ausgegebenen in 'weitere_befunde' bzw. 'weitere_fragen' ein. Eine "
+        "gekürzte Prüfung darf NIE wie eine vollständige aussehen.\n"
         f"Gib NUR JSON nach diesem Schema:\n{_SCHEMA}"
     )
     system = compose_system(SYSTEM, bundle)
@@ -190,6 +202,11 @@ def _bereinige(p):
                                  "«mit Vorbehalt» zurückgestuft.")
     else:
         p["empfehlung"] = empfehlung
+    for feld in ("weitere_befunde", "weitere_fragen"):
+        try:
+            p[feld] = max(0, int(p.get(feld) or 0))
+        except (TypeError, ValueError):
+            p[feld] = 0
     for liste in ("befunde", "querbezuege", "evidenz"):
         for eintrag in p.get(liste) or []:
             if isinstance(eintrag, dict):
