@@ -98,7 +98,8 @@ class LLMClient:
                          timeout=self.timeout, anbieter_key=self.anbieter_key)
         return kind
 
-    def complete(self, system, messages, max_tokens=1024, projekt=None, mandant=None):
+    def complete(self, system, messages, max_tokens=1024, projekt=None,
+                 mandant=None, timeout=None):
         if not self.available:
             raise RuntimeError("Weder PSEUDO_BASIS_URL noch Direktmodus konfiguriert - "
                                "es werden keine Projektinhalte an ein LLM gesendet.")
@@ -123,8 +124,18 @@ class LLMClient:
                     "system": system,
                     "messages": messages,
                 },
-                timeout=self.timeout,
+                timeout=timeout or self.timeout,
             )
+        except requests.Timeout as e:
+            # Eigene Meldung: «nicht erreichbar» waere hier schlicht falsch und
+            # fuehrt die Fehlersuche in die Irre. Der Aufruf KAM an, er dauerte
+            # nur laenger als erlaubt.
+            grenze = timeout or self.timeout
+            raise PseudoNichtErreichbar(
+                f"Die Antwort kam nicht innerhalb von {grenze} Sekunden. Der Aufruf "
+                f"war zu umfangreich oder das Modell zu langsam – bitte erneut "
+                f"versuchen."
+            ) from e
         except requests.RequestException as e:
             # Kein stiller Ausweichweg zum Anbieter: lieber keine Extraktion als
             # eine ungeschuetzte.

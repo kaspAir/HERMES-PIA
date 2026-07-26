@@ -36,7 +36,7 @@ class _LLM:
         self.system = None
         self.user = None
 
-    def complete(self, system, messages, max_tokens=1024):
+    def complete(self, system, messages, max_tokens=1024, **kw):
         self.system = system
         self.user = messages[0]["content"]
         return self.antwort
@@ -243,3 +243,99 @@ def test_widerspruch_wird_festgehalten_und_befund_bleibt(app, monkeypatch):
     seite = c.get(f"/interview/{sid}/fachpruefung").get_data(as_text=True)
     assert "Bewusst so entschieden." in seite
     assert "Die Lösung ist bereits gesetzt" in seite   # der Befund BLEIBT stehen
+
+
+# ---- Unerwartete Fehler sind lesbar, nicht nackt ------------------------- #
+
+def test_unerwarteter_fehler_nennt_klasse_und_meldung(app):
+    """Vorher endete jeder unbehandelte Fehler als nacktes «Internal Server
+    Error» – man musste erst ins Serverlog, um zu wissen, wonach man sucht."""
+    class _Kaputt:
+        def complete(self, *a, **kw):
+            raise RuntimeError("etwas ging schief")
+
+    c, sid = _angemeldet(app)
+    app.interview_service.llm = _Kaputt()
+
+    def _explodiert(*a, **kw):
+        raise ValueError("Testfehler mit Aussage")
+
+    import app.web.ui_routes as routen
+    original = routen.fuehre_fachpruefung
+    routen.fuehre_fachpruefung = _explodiert
+    try:
+        # Wie ein Browser: dann HTML mit lesbarer Meldung.
+        r = c.post(f"/interview/{sid}/fachpruefung",
+                   headers={"Accept": "text/html,application/xhtml+xml"})
+        # Wie ein Client ohne HTML-Wunsch: dann JSON mit denselben Angaben.
+        j = c.post(f"/interview/{sid}/fachpruefung", headers={"Accept": "application/json"})
+    finally:
+        routen.fuehre_fachpruefung = original
+
+    assert r.status_code == 500
+    seite = r.get_data(as_text=True)
+    assert "ValueError" in seite
+    assert "Testfehler mit Aussage" in seite
+    assert "nichts verloren" in seite
+
+    assert j.status_code == 500
+    assert j.get_json()["error"] == "ValueError"
+
+
+def test_http_fehler_bleiben_http_fehler(app):
+    """Der Auffang-Handler darf 404/403 nicht in 500 verwandeln."""
+    c, _ = _angemeldet(app)
+    assert c.get("/interview/99999").status_code in (403, 404)
+
+
+# ---- Worker-Timeout: der teuerste Aufruf der Anwendung -------------------- #
+#
+# Auf dev hat gunicorn den Worker ERSCHOSSEN (WORKER TIMEOUT, --timeout 120),
+# waehrend die Pruefung auf das Modell wartete. Dann greift keine Fehlerseite
+# mehr - der Prozess stirbt. Also muss der Aufruf VORHER aufgeben.
+
+def test_zeitlimit_liegt_unter_dem_worker_limit():
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+    from app.domains.qualitaet.auftraggeber import ZEITLIMIT
+
+    ctl = Path(BASE_DIR, "deploy", "hermes_ctl.sh").read_text(encoding="utf-8")
+    import re
+    worker = int(re.search(r"--timeout (\d+)", ctl).group(1))
+    assert ZEITLIMIT < worker, (
+        f"Das Zeitlimit der Pruefung ({ZEITLIMIT}s) muss unter dem "
+        f"gunicorn-Worker-Limit ({worker}s) liegen - sonst stirbt der Prozess, "
+        f"bevor eine Fehlerseite erscheinen kann.")
+    assert worker - ZEITLIMIT >= 20        # Luft fuers Rendern
+
+
+def test_pruefung_gibt_ihr_zeitlimit_mit(skills_dir):
+    gesehen = {}
+
+    class _Merkt:
+        def complete(self, system, messages, max_tokens=1024, timeout=None):
+            gesehen.update(max_tokens=max_tokens, timeout=timeout)
+            return json.dumps(_PROTOKOLL)
+
+    pruefe_fachlich({}, _Merkt(), skills_dir=skills_dir)
+    from app.domains.qualitaet.auftraggeber import MAX_TOKENS, ZEITLIMIT
+    assert gesehen["timeout"] == ZEITLIMIT
+    assert gesehen["max_tokens"] == MAX_TOKENS
+
+
+def test_zeitueberschritt_nennt_die_ursache(monkeypatch):
+    """«nicht erreichbar» waere falsch - der Aufruf kam an, er dauerte zu lange."""
+    import requests
+
+    from app.domains.llm.client import LLMClient
+    from app.domains.llm.errors import PseudoNichtErreichbar
+
+    def _zu_lange(*a, **kw):
+        raise requests.Timeout("read timed out")
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post", _zu_lange)
+    with pytest.raises(PseudoNichtErreichbar) as e:
+        LLMClient(basis_url="http://x/anthropic").complete("s", [], timeout=95)
+    assert "95 Sekunden" in str(e.value)
+    assert "nicht erreichbar" not in str(e.value)
