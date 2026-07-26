@@ -241,3 +241,28 @@ Start ein.
 ⚠️ **Nur mit Testdaten.** Im Direktmodus verlassen Namen und Fallbezüge den Host
 ungeschützt. Auf test (Kundenumgebung), integration und Produktion hat er nichts
 zu suchen.
+
+## Baseline der Invarianten-Prüfung
+
+Ausgangsmessung, gegen die spätere Verbesserungen gemessen werden
+(Invarianten-Katalog Abschnitt 13). Läuft **nur über die in HERMES PIA erzeugten
+PIAs** – dort liegen die strukturierten Daten vor, also greifen beide Prüfebenen.
+Der Altbestand bleibt bewusst draussen: er ist überwiegend HERMES 5.1, eine
+Messung darauf zeigt die Methodengeneration statt der Regelgüte.
+
+Auf dem Server, je Stufe:
+
+```bash
+cd ~/methodos-dev && ../venv/bin/python scripts/baseline_invarianten.py
+```
+
+Mit CSV für den Vorher/Nachher-Vergleich:
+
+```bash
+cd ~/methodos-dev && ../venv/bin/python scripts/baseline_invarianten.py --csv ~/baseline-$(date +%F).csv
+```
+
+Die Auswertung nennt je Regel, wie oft sie ausgelöst hat und in wie vielen PIAs.
+**Regeln, die nie oder immer auslösen, sind Kandidaten zur Überarbeitung** – die
+einen tragen nichts bei, die anderen sind zu scharf oder zeigen einen echten
+Systemfehler.
