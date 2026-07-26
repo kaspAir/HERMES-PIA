@@ -1032,3 +1032,29 @@ input:focus, select:focus, textarea:focus {
   padding: .05rem .3rem;
   border-radius: 4px;
 }
+
+/* ===== Qualitätsprüfung (Invarianten) ===== */
+/* Waehrend der Erstellung nur ein Hinweis – zusammengeklappt, damit er nicht
+   drängt. Verbindlich wird die Pruefung erst vor der Ausgabe. */
+.qualitaet-hinweis {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-followup);
+  border-radius: var(--radius);
+  padding: .6rem .9rem;
+  margin-bottom: 1rem;
+}
+.qualitaet-hinweis summary { cursor: pointer; font-weight: 600; }
+.qualitaet-hinweis ul { margin: .6rem 0 0; padding-left: 1.2rem; }
+.qualitaet-hinweis li { margin: .25rem 0; line-height: 1.45; }
+.qualitaet-hinweis code,
+.befundliste code {
+  font-family: var(--font-mono); font-size: .85em;
+  color: var(--color-muted);
+}
+.befundliste { width: 100%; border-collapse: collapse; margin: .5rem 0 1.5rem; }
+.befundliste th, .befundliste td {
+  border-bottom: 1px solid var(--color-border);
+  padding: .45rem .6rem; text-align: left; vertical-align: top;
+}
+.befundliste th { background: var(--color-bg); font-weight: 600; }

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Ausgabe nicht möglich – offene Befunde{% endblock %}
+{% block content %}
+<h1>Der PIA ist noch nicht ausgabefähig</h1>
+
+<p class="hinweis">
+  Die Invarianten-Prüfung hat <strong>{{ ergebnis.muss|length }}</strong>
+  Muss-Befund{{ '' if ergebnis.muss|length == 1 else 'e' }} gefunden. Sie betreffen
+  Angaben, die HERMES 2022 verlangt oder die sich widersprechen – beides lässt sich
+  am erzeugten Dokument nicht mehr korrigieren, sondern nur an den Daten.
+</p>
+
+<h2>Zu beheben ({{ ergebnis.muss|length }})</h2>
+<table class="befundliste">
+  <thead><tr><th>Regel</th><th>Fundstelle</th><th>Befund</th></tr></thead>
+  <tbody>
+  {% for b in ergebnis.muss %}
+    <tr><td><code>{{ b.regel }}</code></td><td>{{ b.fundstelle }}</td><td>{{ b.meldung }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if ergebnis.vorbehalte %}
+<h2>Vorbehalte ({{ ergebnis.vorbehalte|length }})</h2>
+<p class="hinweis">Diese verhindern die Ausgabe nicht – sie werden als Auflage geführt.</p>
+<ul>
+  {% for b in ergebnis.vorbehalte %}<li><code>{{ b.regel }}</code> {{ b.meldung }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if ergebnis.hinweise %}
+<h2>Hinweise ({{ ergebnis.hinweise|length }})</h2>
+<ul>
+  {% for b in ergebnis.hinweise %}<li><code>{{ b.regel }}</code> {{ b.meldung }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if ergebnis.offene_regeln %}
+<h2>Nicht prüfbar ({{ ergebnis.offene_regeln|length }})</h2>
+<p class="hinweis">
+  Diese Regeln des Katalogs können mit dem heutigen Datenmodell noch nicht geprüft
+  werden. Sie sind hier aufgeführt, damit nicht der Eindruck entsteht, sie seien
+  erfüllt.
+</p>
+<ul>
+  {% for b in ergebnis.offene_regeln %}
+  <li><code>{{ b.regel }}</code> {{ b.meldung }} <em>({{ b.grund }})</em></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<p class="form-actions">
+  <a href="{{ url_for('ui.interview_workspace', session_id=session.id) }}"
+     class="btn-primary">Zurück zum Interview</a>
+  {# Notausgang fuer die Entwicklung – im Alltag soll man die Befunde beheben. #}
+  <a href="{{ url_for('ui.interview_download', session_id=session.id,
+                      filename=filename, trotzdem=1) }}"
+     class="btn-link">Trotzdem herunterladen (unvollständig)</a>
+</p>
+{% endblock %}
