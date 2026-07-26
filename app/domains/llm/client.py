@@ -11,6 +11,7 @@ einen leichten, kurzlebigen Ableger je Session. Den Kontext auf dem gemeinsamen
 Client zu setzen waere falsch -- er wuerde zwischen parallelen Anfragen lecken.
 """
 import logging
+import time
 
 import requests
 
@@ -126,6 +127,11 @@ class LLMClient:
             kopf["X-Pseudo-Anwendung"] = self.anwendung
             kopf["X-Pseudo-Mandant"] = str(mandant or k_mandant or self.mandant)
             kopf["X-Pseudo-Projekt"] = str(projekt or k_projekt or self.projekt)
+        # JEDER Aufruf wird gemessen: Ziel, Dauer, Ergebnis. Ohne diese Zahlen
+        # bleibt bei einem Haenger unklar, WO die Zeit hingeht - und man raet.
+        begonnen = time.monotonic()
+        log.info("LLM-Aufruf -> %s (max_tokens=%s, Zeitlimit=%s)",
+                 ziel, max_tokens, _zeitlimit(timeout or self.timeout))
         try:
             resp = requests.post(
                 ziel,
@@ -139,6 +145,8 @@ class LLMClient:
                 timeout=_zeitlimit(timeout or self.timeout),
             )
         except requests.Timeout as e:
+            log.warning("LLM-Aufruf ABGEBROCHEN nach %.1fs (Zeitlimit) -> %s",
+                        time.monotonic() - begonnen, ziel)
             # Eigene Meldung: «nicht erreichbar» waere hier schlicht falsch und
             # fuehrt die Fehlersuche in die Irre. Der Aufruf KAM an, er dauerte
             # nur laenger als erlaubt.
@@ -156,6 +164,8 @@ class LLMClient:
                 f"{dienst} nicht erreichbar ({e.__class__.__name__})."
             ) from e
 
+        log.info("LLM-Antwort in %.1fs: HTTP %s von %s",
+                 time.monotonic() - begonnen, resp.status_code, ziel)
         self.letzter_status = resp.headers.get("X-Pseudo-Status", "")
         if resp.status_code != 200:
             self._melde_fehler(resp)
