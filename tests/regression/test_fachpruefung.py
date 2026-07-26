@@ -202,10 +202,42 @@ def test_pruefer_veraendert_den_pia_nicht(app, monkeypatch):
     app.interview_service.llm = _LLM()
     monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
                         lambda *a, **kw: _bundle())
-    c.post(f"/interview/{sid}/fachpruefung")
+    _lauf_durch(c, sid)
 
     db2 = SessionLocal()
     assert db2.get(InterviewSession, sid).answers_json == inhalt   # unveraendert
+
+
+def _mit_inhalt(sid):
+    """Ohne Inhalt wird ein Kapitel uebersprungen (kein Befund) – das ist richtig,
+    macht aber jeden Test wirkungslos, der Befunde erwartet."""
+    from app.domains.interview.models import InterviewSession
+    from app.shared.database import SessionLocal
+    db = SessionLocal()
+    s = db.get(InterviewSession, sid)
+    s.answers_json = json.dumps({
+        "ausgangslage": {"extracted": {"text": "Die Lösung steht bereits fest."}},
+        "ziele": {"extracted": [{"kategorie": "Systemziel", "beschreibung": "A",
+                                 "messgroesse": "m", "prioritaet": "Hoch"}]},
+    })
+    db.commit()
+    return sid
+
+
+def _lauf_id(sid):
+    from app.domains.qualitaet.service import letzte_fachpruefung
+    return letzte_fachpruefung(sid).id
+
+
+def _lauf_durch(c, sid, max_schritte=20):
+    """Startet den Lauf und arbeitet alle Schritte ab – wie es der Browser tut."""
+    c.post(f"/interview/{sid}/fachpruefung")
+    pid = _lauf_id(sid)
+    for _ in range(max_schritte):
+        r = c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
+        if r.status_code != 200 or r.get_json().get("fertig"):
+            return r
+    raise AssertionError("Lauf wurde nicht fertig")
 
 
 def _bundle():
@@ -216,10 +248,11 @@ def _bundle():
 
 def test_protokoll_wird_angezeigt_mit_empfehlung(app, monkeypatch):
     c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
     app.interview_service.llm = _LLM()
     monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
                         lambda *a, **kw: _bundle())
-    c.post(f"/interview/{sid}/fachpruefung")
+    _lauf_durch(c, sid)
     seite = c.get(f"/interview/{sid}/fachpruefung").get_data(as_text=True)
     assert "Empfehlung an den Auftraggeber" in seite
     assert "keine Freigabe" in seite
@@ -230,10 +263,11 @@ def test_protokoll_wird_angezeigt_mit_empfehlung(app, monkeypatch):
 def test_widerspruch_wird_festgehalten_und_befund_bleibt(app, monkeypatch):
     """Briefing 5.1: die Ablehnung wird festgehalten – nicht wegdiskutiert."""
     c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
     app.interview_service.llm = _LLM()
     monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
                         lambda *a, **kw: _bundle())
-    c.post(f"/interview/{sid}/fachpruefung")
+    _lauf_durch(c, sid)
 
     from app.domains.qualitaet.service import letzte_fachpruefung
     zeile = letzte_fachpruefung(sid)
@@ -262,8 +296,8 @@ def test_unerwarteter_fehler_nennt_klasse_und_meldung(app):
         raise ValueError("Testfehler mit Aussage")
 
     import app.web.ui_routes as routen
-    original = routen.fuehre_fachpruefung
-    routen.fuehre_fachpruefung = _explodiert
+    original = routen.starte_fachpruefung
+    routen.starte_fachpruefung = _explodiert
     try:
         # Wie ein Browser: dann HTML mit lesbarer Meldung.
         r = c.post(f"/interview/{sid}/fachpruefung",
@@ -271,7 +305,7 @@ def test_unerwarteter_fehler_nennt_klasse_und_meldung(app):
         # Wie ein Client ohne HTML-Wunsch: dann JSON mit denselben Angaben.
         j = c.post(f"/interview/{sid}/fachpruefung", headers={"Accept": "application/json"})
     finally:
-        routen.fuehre_fachpruefung = original
+        routen.starte_fachpruefung = original
 
     assert r.status_code == 500
     seite = r.get_data(as_text=True)
@@ -367,13 +401,15 @@ def test_kein_json_nennt_den_anfang_der_antwort(skills_dir):
 
 def test_grund_erscheint_auf_der_fehlerseite(app, monkeypatch):
     c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
     app.interview_service.llm = _LLM("Kein JSON hier.")
     monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
                         lambda *a, **kw: _bundle())
-    r = c.post(f"/interview/{sid}/fachpruefung",
-               headers={"Accept": "text/html"})
+    c.post(f"/interview/{sid}/fachpruefung")
+    r = c.post(f"/interview/{sid}/fachpruefung/schritt",
+               data={"pruefung_id": _lauf_id(sid)})
     assert r.status_code == 502
-    assert "kein JSON" in r.get_data(as_text=True)
+    assert "kein JSON" in r.get_json()["fehler"]
 
 
 # ---- Eine gekuerzte Pruefung darf nie vollstaendig aussehen -------------- #
@@ -389,16 +425,21 @@ def test_erreichte_obergrenze_wird_gemeldet(skills_dir):
     assert protokoll["weitere_fragen"] == 3
 
 
-def test_kuerzung_ist_auf_der_seite_sichtbar(app, monkeypatch):
+def test_kuerzung_eines_kapitels_ist_auf_der_seite_sichtbar(app, monkeypatch):
+    """Kapitelweise entfaellt die Gesamt-Obergrenze. Reisst ein EINZELNES Kapitel
+    sein Budget, muss das trotzdem sichtbar sein."""
     c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
     p = dict(_PROTOKOLL, weitere_befunde=12)
     app.interview_service.llm = _LLM(json.dumps(p))
     monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
                         lambda *a, **kw: _bundle())
-    c.post(f"/interview/{sid}/fachpruefung")
+    _lauf_durch(c, sid)
     seite = c.get(f"/interview/{sid}/fachpruefung").get_data(as_text=True)
     assert "Prüfung ist gekürzt" in seite
-    assert "12 weitere Befunde" in seite
+    # Die Zahl ist die SUMME ueber die Kapitel - nicht die eines einzelnen.
+    import re as _re
+    assert _re.search(r"\d+ weitere Befunde", seite)
 
 
 def test_ohne_kuerzung_kein_warnhinweis(app, monkeypatch):
@@ -406,7 +447,7 @@ def test_ohne_kuerzung_kein_warnhinweis(app, monkeypatch):
     app.interview_service.llm = _LLM()          # weitere_befunde fehlt -> 0
     monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
                         lambda *a, **kw: _bundle())
-    c.post(f"/interview/{sid}/fachpruefung")
+    _lauf_durch(c, sid)
     seite = c.get(f"/interview/{sid}/fachpruefung").get_data(as_text=True)
     assert "gekürzt" not in seite
 
@@ -417,3 +458,86 @@ def test_das_modell_wird_zur_meldung_der_kuerzung_angehalten(skills_dir):
     assert "weitere_befunde" in llm.user
     assert "NIE wie eine vollständige aussehen" in llm.user
     assert "höchstens" in llm.user          # die Grenze steht wirklich drin
+
+
+# ---- Kapitelweiser Lauf -------------------------------------------------- #
+#
+# Ein einziger grosser Aufruf riss das Worker-Zeitlimit und erzwang eine
+# kuenstliche Obergrenze. Kapitelweise ist jeder Schritt kurz - und die Laenge
+# des Protokolls folgt wieder dem BEFUND.
+
+def test_jeder_schritt_bleibt_weit_unter_dem_worker_limit():
+    from pathlib import Path
+    import re as _re
+
+    from app.config import BASE_DIR
+    from app.domains.qualitaet.auftraggeber import KAPITEL_ZEITLIMIT
+
+    ctl = Path(BASE_DIR, "deploy", "hermes_ctl.sh").read_text(encoding="utf-8")
+    worker = int(_re.search(r"--timeout (\d+)", ctl).group(1))
+    assert KAPITEL_ZEITLIMIT * 2 <= worker      # reichlich Luft je Schritt
+
+
+def test_lauf_geht_schrittweise_und_meldet_fortschritt(app, monkeypatch):
+    from app.domains.qualitaet.auftraggeber import schritte
+    c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
+    app.interview_service.llm = _LLM()
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+
+    c.post(f"/interview/{sid}/fachpruefung")
+    pid = _lauf_id(sid)
+    gesamt = len(schritte())
+
+    erster = c.post(f"/interview/{sid}/fachpruefung/schritt",
+                    data={"pruefung_id": pid}).get_json()
+    assert erster["schritt"] == 1 and erster["gesamt"] == gesamt
+    assert erster["fertig"] is False
+    assert erster["naechstes"]                 # der Name des naechsten Schritts
+
+    for _ in range(gesamt):
+        z = c.post(f"/interview/{sid}/fachpruefung/schritt",
+                   data={"pruefung_id": pid}).get_json()
+        if z["fertig"]:
+            break
+    assert z["fertig"] is True
+
+
+def test_leere_kapitel_werden_uebersprungen_ohne_aufruf(app, monkeypatch):
+    """Bearbeitungsstand statt leeres Dokument – und spart einen LLM-Aufruf."""
+    from app.domains.qualitaet.auftraggeber import pruefe_kapitel
+
+    class _Zaehlt:
+        aufrufe = 0
+        def complete(self, *a, **kw):
+            _Zaehlt.aufrufe += 1
+            return json.dumps({"befunde": [], "gut": []})
+
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    teil, _, grund = pruefe_kapitel({}, _Zaehlt(), 0)
+    assert teil["uebersprungen"] is True
+    assert _Zaehlt.aufrufe == 0
+    assert grund == ""
+
+
+def test_ein_gescheiterter_schritt_verliert_die_bisherigen_nicht(app, monkeypatch):
+    """Der Lauf ist fortsetzbar – sonst faengt man nach jedem Aussetzer von vorn an."""
+    c, sid = _angemeldet(app)
+    _mit_inhalt(sid)
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    app.interview_service.llm = _LLM()
+    c.post(f"/interview/{sid}/fachpruefung")
+    pid = _lauf_id(sid)
+    c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
+
+    app.interview_service.llm = _LLM("kaputt")          # zweiter Schritt scheitert
+    r = c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
+    assert r.status_code == 502
+
+    from app.domains.qualitaet.service import letzte_fachpruefung
+    zeile = letzte_fachpruefung(sid)
+    assert zeile.schritt == 1                          # der erste bleibt erledigt
+    assert json.loads(zeile.teilbefunde_json)          # sein Ergebnis auch

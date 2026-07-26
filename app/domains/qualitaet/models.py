@@ -27,3 +27,11 @@ class PiaPruefung(Base):
     # Begründete Ablehnungen des Nutzers je Befund (Briefing 5.1, Widerspruch).
     widersprueche_json = Column(Text, nullable=True)
     erstellt_am = Column(DateTime, default=datetime.utcnow)
+
+    # ---- Kapitelweiser Lauf ------------------------------------------- #
+    # Die Prüfung läuft in Schritten: je Kapitel ein kurzer Aufruf, am Schluss
+    # eine Synthese. So bleibt JEDER Schritt weit unter dem Worker-Zeitlimit,
+    # und die Ausgabelänge muss nicht künstlich gedeckelt werden.
+    status = Column(String(20), default="laufend")     # laufend | fertig
+    schritt = Column(Integer, default=0)               # nächster offener Schritt
+    teilbefunde_json = Column(Text, nullable=True)     # je Kapitel gesammelt

@@ -108,3 +108,92 @@ def widerspruch(pruefung_id, befund_index, begruendung, urheber=""):
     zeile.widersprueche_json = _json.dumps(bestand, ensure_ascii=False)
     db.commit()
     return zeile
+
+
+# ---- Kapitelweiser Lauf der Fachpruefung --------------------------------- #
+
+def starte_fachpruefung(session):
+    """Legt einen neuen Lauf an (Schritt 0). Ein alter Lauf bleibt erhalten."""
+    import json as _json
+
+    from app.domains.qualitaet.models import PiaPruefung
+    from app.shared.database import SessionLocal
+
+    db = SessionLocal()
+    zeile = PiaPruefung(session_id=session.id,
+                        pia_version=getattr(session, "doc_version", None),
+                        status="laufend", schritt=0,
+                        teilbefunde_json=_json.dumps([]))
+    db.add(zeile)
+    db.commit()
+    db.refresh(zeile)
+    return zeile
+
+
+def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
+                         nachweis=None, tenant_id=None):
+    """Führt GENAU EINEN Schritt aus. Rückgabe: (zustand, grund).
+
+    So bleibt jeder HTTP-Aufruf kurz – das Worker-Zeitlimit ist damit kein Thema
+    mehr, und die Ausgabelänge muss nicht gedeckelt werden.
+    """
+    import json as _json
+
+    from app.domains.qualitaet.auftraggeber import (
+        GRUPPEN, baue_protokoll, pruefe_kapitel, schritte, synthese,
+    )
+    from app.domains.qualitaet.models import PiaPruefung
+    from app.shared.database import SessionLocal
+
+    db = SessionLocal()
+    zeile = db.get(PiaPruefung, pruefung_id)
+    if zeile is None:
+        return None, "Der Prüflauf wurde nicht gefunden."
+    if zeile.status == "fertig":
+        return _zustand(zeile), ""
+
+    if answers is None:
+        answers = _json.loads(getattr(session, "answers_json", None) or "{}")
+    invarianten = pruefe_session(session, answers=answers, tarife=tarife)
+    teile = _json.loads(zeile.teilbefunde_json or "[]")
+    index = zeile.schritt or 0
+
+    if index < len(GRUPPEN):
+        teil, versionen, grund = pruefe_kapitel(
+            answers, llm, index, invarianten=invarianten, tenant_id=tenant_id)
+        if teil is None:
+            return None, grund
+        teile.append(teil)
+        zeile.teilbefunde_json = _json.dumps(teile, ensure_ascii=False)
+        zeile.skill_versionen_json = _json.dumps(versionen, ensure_ascii=False)
+        zeile.schritt = index + 1
+        db.commit()
+        return _zustand(zeile), ""
+
+    # Letzter Schritt: Gesamtwürdigung.
+    gesamt, versionen, grund = synthese(
+        teile, answers, llm, invarianten=invarianten, nachweis=nachweis,
+        tenant_id=tenant_id)
+    if gesamt is None:
+        return None, grund
+    protokoll = baue_protokoll(teile, gesamt)
+    zeile.protokoll_json = _json.dumps(protokoll, ensure_ascii=False)
+    zeile.empfehlung = protokoll.get("empfehlung")
+    zeile.skill_versionen_json = _json.dumps(versionen, ensure_ascii=False)
+    zeile.schritt = len(schritte())
+    zeile.status = "fertig"
+    db.commit()
+    return _zustand(zeile), ""
+
+
+def _zustand(zeile):
+    from app.domains.qualitaet.auftraggeber import schritte
+    namen = schritte()
+    index = min(zeile.schritt or 0, len(namen) - 1)
+    return {
+        "pruefung_id": zeile.id,
+        "schritt": zeile.schritt or 0,
+        "gesamt": len(namen),
+        "naechstes": namen[index] if zeile.status != "fertig" else "",
+        "fertig": zeile.status == "fertig",
+    }

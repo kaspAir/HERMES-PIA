@@ -61,6 +61,17 @@ def _migrate_db(engine):
                 conn.execute(text("ALTER TABLE methoden_vorlage ADD COLUMN mapping_json TEXT"))
                 conn.commit()
 
+    # pia_pruefung: kapitelweiser Lauf (nachträglich ergänzt).
+    if "pia_pruefung" in inspector.get_table_names():
+        pp = {c["name"] for c in inspector.get_columns("pia_pruefung")}
+        with engine.connect() as conn:
+            for spalte, typ in (("status", "VARCHAR(20)"), ("schritt", "INTEGER"),
+                                ("teilbefunde_json", "TEXT")):
+                if spalte not in pp:
+                    conn.execute(text(
+                        f"ALTER TABLE pia_pruefung ADD COLUMN {spalte} {typ}"))
+            conn.commit()
+
     # corpus_chunks: strukturierte Initialisierungs-Dauer (nachträglich ergänzt).
     if "corpus_chunks" in inspector.get_table_names():
         cc_cols = {c["name"] for c in inspector.get_columns("corpus_chunks")}

@@ -213,3 +213,165 @@ def _bereinige(p):
                 g = str(eintrag.get("gewicht", "")).strip().capitalize()
                 eintrag["gewicht"] = g if g in ("Muss", "Vorbehalt", "Hinweis") else "Hinweis"
     return p
+
+
+# ---- Kapitelweiser Lauf --------------------------------------------------- #
+#
+# Ein einziger grosser Aufruf riss das gunicorn-Worker-Zeitlimit (120 s) und
+# zwang zu einer kuenstlichen Obergrenze der Ausgabe. Kapitelweise ist jeder
+# Schritt kurz, das Zeitlimit kein Thema mehr - und die Laenge des Protokolls
+# folgt wieder dem BEFUND statt einem Token-Deckel.
+
+# Je Gruppe: Anzeigename + die Abschnitts-IDs, die dazugehoeren. Die
+# Pruefkriterien stehen NICHT hier, sondern im Skill (Pruefraster) - eine Quelle.
+GRUPPEN = [
+    ("Ausgangslage", ["ausgangslage"]),
+    ("Ziele", ["ziele"]),
+    ("Rahmenbedingungen", ["rahmenbedingungen"]),
+    ("Ressourcen", ["personalaufwand", "sachmittel", "kosten"]),
+    ("Ergebnisse und Termine", ["termine"]),
+    ("Projektorganisation", ["projektorganisation"]),
+    ("Kommunikation", ["kommunikation"]),
+    ("Risiken", ["risiken"]),
+]
+
+# Je Kapitel reicht ein Bruchteil des frueheren Budgets - deshalb ist es schnell.
+KAPITEL_TOKENS = 1200
+KAPITEL_ZEITLIMIT = 60
+SYNTHESE_TOKENS = 1500
+
+_KAPITEL_SCHEMA = ('{"befunde":[{"kapitel":"","kriterium":"","feststellung":"",'
+                   '"gewicht":"Muss|Vorbehalt|Hinweis","vorschlag":""}],"gut":[""],'
+                   '"weitere_befunde":0}')
+
+_SYNTHESE_SCHEMA = (
+    '{"gegenstand":{"umfang":"","nicht_geprueft":""},'
+    '"querbezuege":[{"feststellung":"","gewicht":"Muss|Vorbehalt|Hinweis"}],'
+    '"evidenz":[{"feststellung":"","gewicht":"Muss|Vorbehalt|Hinweis"}],'
+    '"herausforderung":[{"frage":"","begruendung":""}],'
+    '"empfehlung":"freigebbar|mit vorbehalt|nicht freigebbar","begruendung":"",'
+    '"auflagen":[{"offen":"","wer":"","bis_wann":""}],'
+    '"confidence":{"stufe":"hoch|mittel|tief","begrenzung":""}}')
+
+
+def schritte():
+    """Alle Schritte des Laufs: die Kapitel, dann die Synthese."""
+    return [name for name, _ in GRUPPEN] + ["Gesamtwürdigung"]
+
+
+def _auszug(answers, sids):
+    return {sid: v for sid, v in _pia_kompakt(answers).items() if sid in sids}
+
+
+def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
+                   skills_dir=None):
+    """Prüft EIN Kapitel. Rückgabe: (teilbefund, versionen, grund)."""
+    if llm is None:
+        return None, [], "Kein Sprachmodell konfiguriert."
+    if not 0 <= index < len(GRUPPEN):
+        return None, [], f"Unbekannter Schritt {index}."
+    bundle = load_skills(BEREICH, tenant_id=tenant_id, skills_dir=skills_dir,
+                         only={SKILL})
+    if not bundle:
+        return None, [], (f"Der Skill «{SKILL}» wurde nicht gefunden. Erwartet unter "
+                          f"skills/base/{SKILL}/SKILL.md")
+
+    name, sids = GRUPPEN[index]
+    inhalt = _auszug(answers, sids)
+    if not inhalt:
+        # Nicht bearbeitet -> kein Befund. Geprüft wird gegen den Bearbeitungsstand.
+        return {"kapitel": name, "befunde": [], "gut": [], "uebersprungen": True}, \
+            bundle.versions, ""
+
+    user = (
+        f"Prüfe AUSSCHLIESSLICH das Kapitel «{name}» dieses PIA nach dem Prüfraster "
+        f"der Methode. Andere Kapitel beurteilst du hier NICHT – sie werden separat "
+        f"geprüft.\n\n"
+        f"{json.dumps(inhalt, ensure_ascii=False)[:6000]}\n\n"
+        f"Bereits gemeldete Regelbefunde (nicht wiederholen): "
+        f"{json.dumps(_befunde_kompakt(invarianten), ensure_ascii=False)}\n"
+        "Fasse dich knapp: je Feststellung ein bis zwei Sätze. Nur was du am "
+        "vorliegenden Inhalt belegen kannst.\n"
+        f"Gib NUR JSON nach diesem Schema:\n{_KAPITEL_SCHEMA}"
+    )
+    try:
+        roh = llm.complete(compose_system(SYSTEM, bundle),
+                           [{"role": "user", "content": user}],
+                           max_tokens=KAPITEL_TOKENS, timeout=KAPITEL_ZEITLIMIT)
+    except PseudoFehler:
+        raise
+    except Exception as e:      # noqa: BLE001
+        log.exception("Kapitelprüfung «%s» fehlgeschlagen", name)
+        return None, bundle.versions, f"{e.__class__.__name__}: {e}"
+
+    teil, grund = _json_aus(roh)
+    if teil is None:
+        log.warning("Kapitel «%s» ohne Protokoll: %s | %.300r", name, grund, roh)
+        return None, bundle.versions, grund
+    teil["kapitel"] = name
+    for b in teil.get("befunde") or []:
+        if isinstance(b, dict):
+            b.setdefault("kapitel", name)
+    return teil, bundle.versions, ""
+
+
+def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
+             tenant_id=None, skills_dir=None):
+    """Querbezüge, Evidenz, Herausforderung und Empfehlung – braucht das
+    Gesamtbild und läuft deshalb NACH den Kapiteln."""
+    if llm is None:
+        return None, [], "Kein Sprachmodell konfiguriert."
+    bundle = load_skills(BEREICH, tenant_id=tenant_id, skills_dir=skills_dir,
+                         only={SKILL})
+    if not bundle:
+        return None, [], f"Der Skill «{SKILL}» wurde nicht gefunden."
+
+    # Nur das Nötige: die Kapitelbefunde in Kurzform, nicht der ganze PIA.
+    kurz = [{"kapitel": t.get("kapitel"),
+             "befunde": [f"{b.get('gewicht')}: {b.get('feststellung')}"
+                         for b in (t.get("befunde") or [])]}
+            for t in teilbefunde]
+    user = (
+        "Die Kapitel sind einzeln geprüft. Bilde jetzt das Gesamturteil: "
+        "Querbezüge zwischen den Kapiteln, Evidenz (Soll gegen Ist), drei bis "
+        "fünf Herausforderungen an die Projektleitung und die Empfehlung.\n\n"
+        f"Kapitelbefunde:\n{json.dumps(kurz, ensure_ascii=False)[:6000]}\n\n"
+        f"Ziele und Ergebnisse zum Abgleich:\n"
+        f"{json.dumps(_auszug(answers, ['ziele', 'termine']), ensure_ascii=False)[:3000]}\n\n"
+        f"Herkunft je Kapitel (Evidenz):\n{json.dumps(nachweis or '(nicht geführt)', ensure_ascii=False)[:2000]}\n\n"
+        "Wiederhole die Kapitelbefunde NICHT – sie stehen bereits im Protokoll.\n"
+        f"Gib NUR JSON nach diesem Schema:\n{_SYNTHESE_SCHEMA}"
+    )
+    try:
+        roh = llm.complete(compose_system(SYSTEM, bundle),
+                           [{"role": "user", "content": user}],
+                           max_tokens=SYNTHESE_TOKENS, timeout=KAPITEL_ZEITLIMIT)
+    except PseudoFehler:
+        raise
+    except Exception as e:      # noqa: BLE001
+        log.exception("Synthese fehlgeschlagen")
+        return None, bundle.versions, f"{e.__class__.__name__}: {e}"
+
+    teil, grund = _json_aus(roh)
+    if teil is None:
+        log.warning("Synthese ohne Protokoll: %s | %.300r", grund, roh)
+        return None, bundle.versions, grund
+    return teil, bundle.versions, ""
+
+
+def baue_protokoll(teilbefunde, gesamt):
+    """Fügt Kapitelbefunde und Synthese zum Protokoll A–E zusammen."""
+    befunde, gut = [], []
+    for t in teilbefunde:
+        befunde.extend(t.get("befunde") or [])
+        gut.extend(t.get("gut") or [])
+    p = dict(gesamt or {})
+    p["befunde"] = befunde
+    p["gut"] = [g for g in gut if str(g).strip()]
+    p.setdefault("gegenstand", {"umfang": "", "nicht_geprueft": ""})
+    # Kapitelweise entfaellt die Gesamt-Obergrenze. Reisst ein EINZELNES Kapitel
+    # sein Budget, bleibt der Hinweis erhalten - still unvollstaendig soll die
+    # Pruefung nie sein.
+    p["weitere_befunde"] = sum(int(t.get("weitere_befunde") or 0) for t in teilbefunde)
+    p["weitere_fragen"] = 0
+    return _bereinige(p)
