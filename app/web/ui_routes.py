@@ -22,7 +22,8 @@ from app.domains.llm.errors import (
     RueckersetzungUnvollstaendig,
 )
 from app.domains.qualitaet.service import (
-    fuehre_fachpruefung, letzte_fachpruefung, pruefe_session, widerspruch,
+    fachpruefung_schritt, letzte_fachpruefung, pruefe_session,
+    starte_fachpruefung, widerspruch,
 )
 from app.domains.stt.kontext import kontext_fuer_diktat
 from app.domains.method.template_structure import (
@@ -1380,24 +1381,34 @@ def pseudo_entscheide():
 @bp.post("/interview/<int:session_id>/fachpruefung")
 @permission_required("write")
 def interview_fachpruefung(session_id):
+    """Startet einen kapitelweisen Lauf. Die Schritte holt der Browser einzeln ab –
+    so bleibt jeder Aufruf weit unter dem Worker-Zeitlimit."""
     session = _load_session(session_id)
-    svc = current_app.interview_service
-    if not svc.llm:
+    if not current_app.interview_service.llm:
         return render_template("pseudo_fehler.html", art="konfiguration",
                                meldung="Ohne Sprachmodell ist keine fachliche "
-                                       "Pruefung moeglich."), 500
+                                       "Prüfung möglich."), 500
+    zeile = starte_fachpruefung(session)
+    return redirect(url_for("ui.interview_fachpruefung_zeigen",
+                            session_id=session_id, lauf=zeile.id))
+
+
+@bp.post("/interview/<int:session_id>/fachpruefung/schritt")
+@permission_required("write")
+def interview_fachpruefung_schritt(session_id):
+    """EIN Schritt (ein Kapitel oder die Gesamtwürdigung). Antwortet als JSON,
+    damit der Browser den Fortschritt anzeigen kann."""
+    session = _load_session(session_id)
+    svc = current_app.interview_service
     answers = json.loads(session.answers_json or "{}")
-    zeile, _, grund = fuehre_fachpruefung(
-        session, svc.llm, answers=answers, tarife=_tarife_for_session(session),
+    zustand, grund = fachpruefung_schritt(
+        int(request.form.get("pruefung_id", 0) or 0), session, svc.llm,
+        answers=answers, tarife=_tarife_for_session(session),
         nachweis=svc.build_nachweis(session, answers),
         tenant_id=getattr(session, "org_id", None))
-    if zeile is None:
-        # Der GRUND steht auf der Seite - sonst ist nicht erkennbar, ob der Skill
-        # fehlt, das Modell nichts lieferte oder die Antwort abgeschnitten wurde.
-        return render_template("pseudo_fehler.html", art="antwort",
-                               meldung=grund or "Die fachliche Prüfung lieferte kein "
-                                                "auswertbares Protokoll."), 502
-    return redirect(url_for("ui.interview_fachpruefung_zeigen", session_id=session_id))
+    if zustand is None:
+        return jsonify({"fehler": grund or "Der Schritt ist fehlgeschlagen."}), 502
+    return jsonify(zustand)
 
 
 @bp.get("/interview/<int:session_id>/fachpruefung")
@@ -1406,8 +1417,11 @@ def interview_fachpruefung_zeigen(session_id):
     session = _load_session(session_id)
     zeile = letzte_fachpruefung(session_id)
     protokoll = json.loads(zeile.protokoll_json) if zeile and zeile.protokoll_json else None
+    from app.domains.qualitaet.auftraggeber import schritte as _schritte
     return render_template(
         "fachpruefung.html", session=session, pruefung=zeile, protokoll=protokoll,
+        laeuft=bool(zeile and zeile.status != "fertig"),
+        schrittnamen=_schritte(),
         versionen=json.loads(zeile.skill_versionen_json or "[]") if zeile else [],
         widersprueche={w["befund"]: w for w in
                        (json.loads(zeile.widersprueche_json or "[]") if zeile else [])},

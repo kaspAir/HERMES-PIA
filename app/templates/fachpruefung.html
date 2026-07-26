@@ -10,8 +10,91 @@
   es entscheidet nicht, ändert nichts am PIA und spricht keine Freigabe aus.
 </p>
 
-{% if not protokoll %}
+{% if laeuft %}
+  {# Kapitelweiser Lauf: der Browser holt Schritt fuer Schritt ab. Jeder Aufruf
+     ist kurz - deshalb ist das Worker-Zeitlimit kein Thema mehr. #}
+  <div class="lauf" id="lauf"
+       data-endpoint="{{ url_for('ui.interview_fachpruefung_schritt', session_id=session.id) }}"
+       data-pruefung="{{ pruefung.id }}"
+       data-gesamt="{{ schrittnamen | length }}"
+       data-start="{{ pruefung.schritt or 0 }}">
+    <div class="lauf-kopf">
+      <strong id="lauf-titel">Prüfung läuft …</strong>
+      <span id="lauf-zaehler" class="fussnote"></span>
+    </div>
+    <div class="progress-bar-wrap"><div class="progress-bar" id="lauf-balken" style="width:0"></div></div>
+    <ol class="lauf-schritte">
+      {% for name in schrittnamen %}
+      <li id="schritt-{{ loop.index0 }}"><span class="lauf-punkt">•</span> {{ name }}</li>
+      {% endfor %}
+    </ol>
+    <p class="fussnote" id="lauf-dauer"></p>
+    <p class="fehler" id="lauf-fehler" style="display:none"></p>
+  </div>
+  <script>
+  (function () {
+    var box = document.getElementById('lauf');
+    var gesamt = parseInt(box.dataset.gesamt, 10);
+    var balken = document.getElementById('lauf-balken');
+    var zaehler = document.getElementById('lauf-zaehler');
+    var titel = document.getElementById('lauf-titel');
+    var dauer = document.getElementById('lauf-dauer');
+    var fehler = document.getElementById('lauf-fehler');
+    var index = parseInt(box.dataset.start, 10) || 0;
+    var seit = null, ticker = null;
+
+    function markiere(i, zustand) {
+      var li = document.getElementById('schritt-' + i);
+      if (li) { li.className = zustand; }
+    }
+    function tick() {
+      // Innerhalb eines Schrittes gibt es keinen echten Fortschritt vom Modell -
+      // ehrlich ist die verstrichene Zeit statt eines erfundenen Balkens.
+      if (!seit) return;
+      dauer.textContent = 'läuft seit ' + Math.round((Date.now() - seit) / 1000) + ' s';
+    }
+    function schritt() {
+      if (index >= gesamt) { location.reload(); return; }
+      markiere(index, 'aktiv');
+      titel.textContent = 'Prüfung läuft: ' + (document.getElementById('schritt-' + index)
+                          || {textContent: ''}).textContent.trim();
+      zaehler.textContent = 'Schritt ' + (index + 1) + ' von ' + gesamt;
+      balken.style.width = Math.round(index / gesamt * 100) + '%';
+      seit = Date.now(); tick();
+      var daten = new FormData();
+      daten.append('pruefung_id', box.dataset.pruefung);
+      fetch(box.dataset.endpoint, {method: 'POST', body: daten})
+        .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+        .then(function (a) {
+          if (!a.ok) {
+            markiere(index, 'gescheitert');
+            fehler.textContent = a.d.fehler || 'Der Schritt ist fehlgeschlagen.';
+            fehler.style.display = ''; seit = null; dauer.textContent = '';
+            return;
+          }
+          markiere(index, 'erledigt');
+          index = a.d.schritt;
+          balken.style.width = Math.round(index / gesamt * 100) + '%';
+          if (a.d.fertig) { location.reload(); return; }
+          schritt();
+        })
+        .catch(function () {
+          markiere(index, 'gescheitert');
+          fehler.textContent = 'Verbindung unterbrochen – Seite neu laden, der Lauf setzt fort.';
+          fehler.style.display = ''; seit = null;
+        });
+    }
+    for (var i = 0; i < index; i++) { markiere(i, 'erledigt'); }
+    ticker = setInterval(tick, 1000);
+    schritt();
+  })();
+  </script>
+{% elif not protokoll %}
   <p>Für diesen PIA liegt noch keine fachliche Prüfung vor.</p>
+  <p class="fussnote">
+    Die Prüfung läuft kapitelweise – Sie sehen den Fortschritt und können den
+    Verlauf mitverfolgen.
+  </p>
   <form method="post" action="{{ url_for('ui.interview_fachpruefung', session_id=session.id) }}">
     <button type="submit" class="btn-primary">Prüfung durchführen</button>
   </form>
