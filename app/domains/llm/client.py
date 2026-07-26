@@ -28,6 +28,18 @@ from app.domains.llm.errors import (
 
 log = logging.getLogger("hermes.llm")
 
+# Ein SKALARES Zeitlimit ist in requests KEIN Gesamtlimit: derselbe Wert gilt
+# getrennt fuer den Verbindungsaufbau UND fuers Lesen. 60 s werden so zu 120 s -
+# und genau dort schiesst gunicorn den Worker ab (--timeout 120). Deshalb immer
+# als Paar (Verbindung, Lesen) uebergeben; der Verbindungsaufbau braucht Sekunden,
+# nicht Minuten.
+VERBINDUNGSLIMIT = 10
+
+
+def _zeitlimit(gesamt):
+    """(Verbindung, Lesen) – die Summe bleibt unter `gesamt` + wenigen Sekunden."""
+    return (VERBINDUNGSLIMIT, max(5, int(gesamt)))
+
 
 def _text_aus_antwort(data):
     """Liest den Text aus der Anbieterantwort – etwas duldsamer als noetig.
@@ -124,7 +136,7 @@ class LLMClient:
                     "system": system,
                     "messages": messages,
                 },
-                timeout=timeout or self.timeout,
+                timeout=_zeitlimit(timeout or self.timeout),
             )
         except requests.Timeout as e:
             # Eigene Meldung: «nicht erreichbar» waere hier schlicht falsch und
