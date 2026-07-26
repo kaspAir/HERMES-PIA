@@ -24,6 +24,21 @@
   eine ungeschützte. Bitte den Dienst starten und den Schritt wiederholen.
 </p>
 {% elif art == 'anbieter' %}
+{# Die Aussage ueber den Schutz haengt am Modus. Im Direktmodus zu behaupten, der
+   Text sei geschuetzt gewesen, waere schlicht falsch - und zwar an der Stelle,
+   an der Vertrauen am meisten zaehlt. #}
+{% if pseudo_aus %}
+<p class="hinweis">
+  Das Sprachmodell hat den Aufruf zurückgewiesen – der hinterlegte Schlüssel wird
+  nicht akzeptiert. <strong>Es ist kein Fehler Ihrer Eingabe</strong>, und Ihre
+  Eingabe ist nicht verloren. Prüfen Sie <code>ANTHROPIC_API_KEY</code>.
+</p>
+<p class="hinweis">
+  Hinweis: Die Pseudonymisierung ist derzeit <strong>abgeschaltet</strong>
+  (Entwicklungsmodus). Ihr Text wäre also ungeschützt gegangen, wenn der Schlüssel
+  gestimmt hätte.
+</p>
+{% else %}
 <p class="hinweis">
   Die Pseudonymisierung hat sauber gearbeitet – Ihr Text war bereits geschützt, als
   das Sprachmodell den Aufruf zurückwies. <strong>Es ist kein Datenschutzvorfall und
@@ -31,6 +46,7 @@
   kein gültiger Anbieterschlüssel hinterlegt. Ihre Eingabe ist nicht verloren –
   gehen Sie zurück und senden Sie sie erneut, sobald der Schlüssel stimmt.
 </p>
+{% endif %}
 {% if anbieter_meldung %}<p class="fehler">Meldung des Anbieters: {{ anbieter_meldung }}</p>{% endif %}
 {% elif art == 'antwort' %}
 <p class="hinweis">
