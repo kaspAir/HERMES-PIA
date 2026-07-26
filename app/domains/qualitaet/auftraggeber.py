@@ -28,6 +28,14 @@ BEREICH = "projektinitialisierungsauftrag"     # = applies_to des Skills
 
 EMPFEHLUNGEN = ("freigebbar", "mit vorbehalt", "nicht freigebbar")
 
+# Diese Pruefung erzeugt ein langes, strukturiertes Protokoll und ist damit der
+# TEUERSTE Aufruf der Anwendung. Gunicorn erlaubt je Anfrage 120 s
+# (deploy/hermes_ctl.sh --timeout 120); wird das ueberschritten, ERSCHIESST er
+# den Worker – dann greift keine Fehlerseite mehr, weil der Prozess stirbt.
+# Deshalb bewusst darunter bleiben und lieber ein knapperes Protokoll verlangen:
+MAX_TOKENS = 2500          # 4000 dauerte regelmaessig laenger als das Worker-Limit
+ZEITLIMIT = 95             # Sekunden, mit Luft fuer die Fehlerseite
+
 # Der System-Prompt haelt NUR das Ausgabeformat und die Grenzen fest. Die Methode
 # – Haltung, Leitfragen, Prüfraster – kommt vollstaendig aus dem Skill.
 SYSTEM = (
@@ -136,7 +144,8 @@ def pruefe_fachlich(answers, llm, invarianten=None, nachweis=None, tenant_id=Non
     )
     system = compose_system(SYSTEM, bundle)
     try:
-        roh = llm.complete(system, [{"role": "user", "content": user}], max_tokens=4000)
+        roh = llm.complete(system, [{"role": "user", "content": user}],
+                           max_tokens=MAX_TOKENS, timeout=ZEITLIMIT)
     except PseudoFehler:
         raise                      # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:              # noqa: BLE001 – lieber kein Protokoll als ein erfundenes
