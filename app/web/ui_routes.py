@@ -1401,8 +1401,11 @@ def interview_fachpruefung_schritt(session_id):
     session = _load_session(session_id)
     svc = current_app.interview_service
     answers = json.loads(session.answers_json or "{}")
+    # Formular ODER JSON annehmen - multipart wird bewusst nicht verwendet
+    # (der Hosting-Proxy laesst es nicht durch, siehe fachpruefung.html).
+    rumpf = request.get_json(silent=True) or request.form
     zustand, grund = fachpruefung_schritt(
-        int(request.form.get("pruefung_id", 0) or 0), session, svc.llm,
+        int(rumpf.get("pruefung_id", 0) or 0), session, svc.llm,
         answers=answers, tarife=_tarife_for_session(session),
         # Als FUNKTION: der Nachweis kostet selbst einen LLM-Aufruf und wird nur
         # im Syntheseschritt gebraucht. Vor jedem Kapitel berechnet, riss er
