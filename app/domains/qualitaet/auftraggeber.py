@@ -68,15 +68,29 @@ _SCHEMA = (
 
 
 def _json_aus(roh):
-    if not roh:
-        return None
+    """(protokoll, grund) – bei Misserfolg sagt `grund`, WARUM.
+
+    Die drei Faelle sind praktisch verschieden und brauchen verschiedene
+    Abhilfen: leere Antwort, gar kein JSON, oder ABGESCHNITTENES JSON (dann war
+    das Token-Budget zu klein). Frueher fuehrten alle drei zur selben
+    nichtssagenden Meldung.
+    """
+    if not roh or not roh.strip():
+        return None, "Das Modell hat nichts geliefert."
+    # Abgeschnitten? Die Klammerbilanz der GANZEN Antwort verraet es zuverlaessig.
+    # (Eine gierige Regex fände sonst ein Teilstueck mit schliessender Klammer und
+    # meldete «kein gültiges JSON» – richtig, aber nicht handlungsleitend.)
+    if roh.count("{") > roh.count("}"):
+        return None, ("Die Antwort wurde abgeschnitten (Token-Budget zu klein für "
+                      "dieses Protokoll).")
     m = re.search(r"\{.*\}", roh, re.DOTALL)
     if not m:
-        return None
+        return None, f"Die Antwort war kein JSON: {roh[:120]!r}"
     try:
-        return json.loads(m.group())
-    except (ValueError, TypeError):
-        return None
+        return json.loads(m.group()), ""
+    except (ValueError, TypeError) as e:
+        return None, (f"Die Antwort war kein gültiges JSON ({e}). "
+                      f"Beginn: {m.group()[:120]!r}")
 
 
 def _befunde_kompakt(ergebnis):
@@ -122,12 +136,13 @@ def pruefe_fachlich(answers, llm, invarianten=None, nachweis=None, tenant_id=Non
     Ohne LLM oder ohne Skill gibt es KEIN Protokoll – geraten wird nicht.
     """
     if llm is None:
-        return None, []
+        return None, [], "Kein Sprachmodell konfiguriert."
     bundle = load_skills(BEREICH, tenant_id=tenant_id, skills_dir=skills_dir,
                          only={SKILL})
     if not bundle:
         log.warning("Skill %s nicht gefunden – fachliche Prüfung nicht möglich.", SKILL)
-        return None, []
+        return None, [], (f"Der Skill «{SKILL}» wurde nicht gefunden. Erwartet unter "
+                          f"skills/base/{SKILL}/SKILL.md")
 
     eingang = {
         "pia": _pia_kompakt(answers),
@@ -148,14 +163,16 @@ def pruefe_fachlich(answers, llm, invarianten=None, nachweis=None, tenant_id=Non
                            max_tokens=MAX_TOKENS, timeout=ZEITLIMIT)
     except PseudoFehler:
         raise                      # MUSS durchschlagen (ANBINDUNG.md 6.2)
-    except Exception:              # noqa: BLE001 – lieber kein Protokoll als ein erfundenes
+    except Exception as e:         # noqa: BLE001 – lieber kein Protokoll als ein erfundenes
         log.exception("Fachliche Prüfung fehlgeschlagen")
-        return None, bundle.versions
+        return None, bundle.versions, f"{e.__class__.__name__}: {e}"
 
-    protokoll = _json_aus(roh)
+    protokoll, grund = _json_aus(roh)
     if not protokoll:
-        return None, bundle.versions
-    return _bereinige(protokoll), bundle.versions
+        log.warning("Fachprüfung ohne auswertbares Protokoll: %s | Antwort: %.400r",
+                    grund, roh)
+        return None, bundle.versions, grund
+    return _bereinige(protokoll), bundle.versions, ""
 
 
 def _bereinige(p):
