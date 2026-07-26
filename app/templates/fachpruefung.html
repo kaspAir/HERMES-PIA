@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Fachliche Prüfung – {{ session.project_name }}{% endblock %}
+{% block content %}
+
+<h1>Prüfung aus Auftraggeber-Sicht</h1>
+<p class="hinweis">
+  <strong>Fachliche</strong> Prüfung – nicht zu verwechseln mit der
+  Invarianten-Prüfung, die Form und Konsistenz regelbasiert prüft. Hier urteilt ein
+  Sprachmodell nach der hinterlegten Methode. Es <em>berät und fordert heraus</em>;
+  es entscheidet nicht, ändert nichts am PIA und spricht keine Freigabe aus.
+</p>
+
+{% if not protokoll %}
+  <p>Für diesen PIA liegt noch keine fachliche Prüfung vor.</p>
+  <form method="post" action="{{ url_for('ui.interview_fachpruefung', session_id=session.id) }}">
+    <button type="submit" class="btn-primary">Prüfung durchführen</button>
+  </form>
+{% else %}
+
+{# ---- E · Empfehlung: zuerst, weil sie die Frage des Auftraggebers ist ---- #}
+<div class="empfehlung empfehlung-{{ protokoll.empfehlung | replace(' ', '-') }}">
+  <div class="empfehlung-label">Empfehlung an den Auftraggeber</div>
+  <div class="empfehlung-wert">{{ protokoll.empfehlung | capitalize }}</div>
+  <p>{{ protokoll.begruendung }}</p>
+  {% if protokoll._hinweis %}<p class="fehler">{{ protokoll._hinweis }}</p>{% endif %}
+  <p class="fussnote">
+    Dies ist eine Empfehlung, keine Freigabe. Freigeben kann nur der Mensch in der
+    Rolle des Auftraggebers.
+  </p>
+</div>
+
+{% if protokoll.auflagen %}
+<h2>Auflagen bei Vorbehalt</h2>
+<table class="befundliste">
+  <thead><tr><th>Offen</th><th>Wer</th><th>Bis wann</th></tr></thead>
+  <tbody>
+  {% for a in protokoll.auflagen %}
+    <tr><td>{{ a.offen }}</td><td>{{ a.wer }}</td><td>{{ a.bis_wann }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# ---- A · Gegenstand ---- #}
+<h2>Gegenstand und Prüfumfang</h2>
+<p>{{ protokoll.gegenstand.umfang }}</p>
+{% if protokoll.gegenstand.nicht_geprueft %}
+<p class="hinweis">Nicht geprüft: {{ protokoll.gegenstand.nicht_geprueft }}</p>
+{% endif %}
+
+{# ---- B · Befunde je Kapitel ---- #}
+<h2>Befunde je Kapitel ({{ protokoll.befunde | length }})</h2>
+<table class="befundliste">
+  <thead><tr><th>Kapitel</th><th>Gewicht</th><th>Feststellung</th>
+             <th>Vorschlag</th><th></th></tr></thead>
+  <tbody>
+  {% for b in protokoll.befunde %}
+    <tr {% if widersprueche.get(loop.index0) %}class="widersprochen"{% endif %}>
+      <td>{{ b.kapitel }}<br><span class="fussnote">{{ b.kriterium }}</span></td>
+      <td>{{ b.gewicht }}</td>
+      <td>{{ b.feststellung }}</td>
+      {# Vorschlaege werden ANGEZEIGT, nicht angewandt (Briefing 5.1). #}
+      <td>{{ b.vorschlag }}</td>
+      <td>
+        {% if widersprueche.get(loop.index0) %}
+          <span class="fussnote">Widersprochen:
+            {{ widersprueche[loop.index0].begruendung }}</span>
+        {% else %}
+        <form method="post" class="widerspruch-form"
+              action="{{ url_for('ui.interview_fachpruefung_widerspruch', session_id=session.id) }}">
+          <input type="hidden" name="pruefung_id" value="{{ pruefung.id }}">
+          <input type="hidden" name="befund" value="{{ loop.index0 }}">
+          <input type="text" name="begruendung" placeholder="Begründet widersprechen …">
+          <button type="submit" class="btn-link">Widersprechen</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if protokoll.gut %}
+<h2>Was gut ist</h2>
+<ul>{% for g in protokoll.gut %}<li>{{ g }}</li>{% endfor %}</ul>
+{% endif %}
+
+{# ---- C · Querbezüge und Evidenz ---- #}
+{% if protokoll.querbezuege or protokoll.evidenz %}
+<h2>Querbezüge und Evidenz</h2>
+<ul>
+  {% for q in protokoll.querbezuege %}<li>[{{ q.gewicht }}] {{ q.feststellung }}</li>{% endfor %}
+  {% for e in protokoll.evidenz %}<li>[{{ e.gewicht }}] {{ e.feststellung }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{# ---- D · Herausforderung ---- #}
+{% if protokoll.herausforderung %}
+<h2>Herausforderung an die Projektleitung</h2>
+<p class="hinweis">
+  Ausdrücklich als Fragen. Die Projektleitung darf begründet widersprechen – der
+  Widerspruch wird festgehalten.
+</p>
+<ol>
+  {% for h in protokoll.herausforderung %}
+  <li><strong>{{ h.frage }}</strong><br><span class="fussnote">{{ h.begruendung }}</span></li>
+  {% endfor %}
+</ol>
+{% endif %}
+
+{% if protokoll.confidence %}
+<p class="fussnote">
+  Belastbarkeit der Prüfung: {{ protokoll.confidence.stufe }}.
+  {{ protokoll.confidence.begrenzung }}
+</p>
+{% endif %}
+
+<p class="fussnote">
+  Geprüft am {{ pruefung.erstellt_am.strftime('%d.%m.%Y %H:%M') }} · PIA-Version
+  {{ pruefung.pia_version or '–' }} ·
+  Methode: {% for v in versionen %}{{ v.name }} v{{ v.version }} ({{ v.scope }}){% if not loop.last %}, {% endif %}{% endfor %}
+</p>
+
+<p class="form-actions">
+  <a href="{{ url_for('ui.interview_workspace', session_id=session.id) }}"
+     class="btn-primary">Zurück zum Interview</a>
+  <form method="post" style="display:inline"
+        action="{{ url_for('ui.interview_fachpruefung', session_id=session.id) }}">
+    <button type="submit" class="btn-link">Erneut prüfen</button>
+  </form>
+</p>
+{% endif %}
+{% endblock %}

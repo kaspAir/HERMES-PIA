@@ -14,6 +14,7 @@ import app.domains.interview.models  # noqa: F401 – ensures models are registe
 import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registrieren
 import app.domains.projekt.models     # noqa: F401 – Projektstruktur-Tabellen registrieren
 import app.domains.ergebnisse.models   # noqa: F401 – Ergebnis-Entwuerfe-Tabelle registrieren
+import app.domains.qualitaet.models    # noqa: F401 – Pruefprotokoll-Tabelle registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
 from app.domains.praesentation.service import PraesentationService

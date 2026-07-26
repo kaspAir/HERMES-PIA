@@ -46,6 +46,10 @@
   </ul>
 </details>
 {% endif %}
+<p class="fussnote" style="margin:.3rem 0 1rem">
+  <a href="{{ url_for('ui.interview_fachpruefung_zeigen', session_id=session.id) }}">
+    Fachliche Prüfung aus Auftraggeber-Sicht &#8594;</a>
+</p>
 {% if projekt %}
 <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">
   &#8592; Projekt: {{ projekt.name }}</a>

@@ -1,0 +1,245 @@
+"""Beweist: die fachliche Prüfung aus Auftraggeber-Sicht (Stufe 4).
+
+Die vier Abnahmekriterien aus Briefing 5.3 sind einzeln geprüft:
+  1. Der Prüfer meldet KEINE Formfehler, welche die Invarianten schon gemeldet haben.
+  2. Der Prüfer verändert den PIA NICHT.
+  3. Die Ausgabe enthält immer eine Empfehlung, NIE eine Freigabe.
+  4. Die fachlichen Befunde tragen einen Kapitelbezug.
+"""
+import json
+
+import pytest
+
+from app.domains.qualitaet import pruefe
+from app.domains.qualitaet.auftraggeber import BEREICH, SKILL, pruefe_fachlich
+
+_PROTOKOLL = {
+    "gegenstand": {"umfang": "Kap. 1–7", "nicht_geprueft": "Recht"},
+    "befunde": [{"kapitel": "Kap. 1", "kriterium": "Vorfestlegung",
+                 "feststellung": "Die Lösung ist bereits gesetzt, aber nicht deklariert.",
+                 "gewicht": "Muss", "vorschlag": "Vorfestlegung offenlegen."}],
+    "gut": ["Die Ausgangslage nennt einen echten Auslöser."],
+    "querbezuege": [{"feststellung": "Ziel 2 hat kein Ergebnis.", "gewicht": "Muss"}],
+    "evidenz": [{"feststellung": "Kostenwert ohne Ableitung.", "gewicht": "Vorbehalt"}],
+    "herausforderung": [{"frage": "Was, wenn die Ablösung scheitert?",
+                         "begruendung": "Kein Rückfallszenario benannt."}],
+    "empfehlung": "mit vorbehalt", "begruendung": "Zwei offene Punkte.",
+    "auflagen": [{"offen": "Vorfestlegung", "wer": "PL", "bis_wann": "vor Freigabe"}],
+    "confidence": {"stufe": "mittel", "begrenzung": "Provenienz fehlt."},
+}
+
+
+class _LLM:
+    """Merkt sich den System-Prompt und liefert ein festes Protokoll."""
+    def __init__(self, antwort=None):
+        self.antwort = antwort if antwort is not None else json.dumps(_PROTOKOLL)
+        self.system = None
+        self.user = None
+
+    def complete(self, system, messages, max_tokens=1024):
+        self.system = system
+        self.user = messages[0]["content"]
+        return self.antwort
+
+
+@pytest.fixture
+def skills_dir(tmp_path):
+    """Der echte Skill liegt im Repo – hier eine Attrappe mit demselben Vertrag."""
+    d = tmp_path / "base" / SKILL
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        f'---\nname: {SKILL}\nversion: "1.0"\napplies_to: {BEREICH}\n---\n\n'
+        "METHODE-AUFTRAGGEBER\n", encoding="utf-8")
+    # Ein Skill eines ANDEREN Bereichs darf nie hereingeraten.
+    fremd = tmp_path / "base" / "rechtsgrundlagen-kartierung"
+    fremd.mkdir(parents=True)
+    (fremd / "SKILL.md").write_text(
+        '---\nname: rechtsgrundlagen-kartierung\nversion: "1.0"\n'
+        "applies_to: rechtsgrundlagenanalyse\n---\n\nFREMD\n", encoding="utf-8")
+    return tmp_path
+
+
+# ---- Der Skill wird GELADEN, nicht im Code nachgebaut --------------------- #
+
+def test_skill_wird_geladen_und_injiziert(skills_dir):
+    llm = _LLM()
+    pruefe_fachlich({"ausgangslage": {"extracted": {"text": "A"}}}, llm,
+                    skills_dir=skills_dir)
+    assert "METHODE-AUFTRAGGEBER" in llm.system
+    assert "FREMD" not in llm.system          # applies_to trennt hart
+
+
+def test_ohne_skill_keine_pruefung(tmp_path):
+    """Lieber kein Protokoll als ein im Code nachgebautes."""
+    protokoll, versionen = pruefe_fachlich({}, _LLM(), skills_dir=tmp_path)
+    assert protokoll is None and versionen == []
+
+
+def test_ohne_llm_keine_pruefung(skills_dir):
+    assert pruefe_fachlich({}, None, skills_dir=skills_dir) == (None, [])
+
+
+def test_versions_triple_wird_zurueckgegeben(skills_dir):
+    _, versionen = pruefe_fachlich({}, _LLM(), skills_dir=skills_dir)
+    assert versionen and versionen[0]["name"] == SKILL
+    assert versionen[0]["version"] == "1.0"
+
+
+# ---- Abnahme 1: Formfehler nicht doppelt melden -------------------------- #
+
+def test_invariantenbefunde_gehen_als_datenstruktur_mit(skills_dir):
+    """Briefing 5.1: als Datenstruktur, NICHT als Anzeigetext – sonst formuliert
+    das Modell sie um und meldet sie doch wieder."""
+    invarianten = pruefe({"ziele": {"extracted": [
+        {"kategorie": "Vorgehensziel", "beschreibung": "A", "messgroesse": "m",
+         "prioritaet": "Hoch"}]}})
+    llm = _LLM()
+    pruefe_fachlich({}, llm, invarianten=invarianten, skills_dir=skills_dir)
+
+    # Der Prompt enthaelt Nutzdaten UND Schema - nur das erste Objekt lesen.
+    eingang, _ = json.JSONDecoder().raw_decode(llm.user[llm.user.index("{"):])
+    befunde = eingang["invarianten_befunde"]
+    assert "D-030" in befunde["regeln"]           # die Regel-ID geht mit
+    assert befunde["muss"] >= 1
+    # Der Meldungstext NICHT – sonst waere die Versuchung da, ihn zu wiederholen.
+    assert "Systemziel" not in json.dumps(befunde)
+    assert "melde sie NICHT erneut" in llm.user
+
+
+def test_system_prompt_verbietet_doppelmeldung_und_umschreiben(skills_dir):
+    llm = _LLM()
+    pruefe_fachlich({}, llm, skills_dir=skills_dir)
+    assert "NICHT um" in llm.system                  # kein Umschreiben
+    assert "NIE eine Freigabe" in llm.system
+    assert "NICHT erneut" in llm.system              # keine Doppelmeldung
+
+
+# ---- Abnahme 3: immer Empfehlung, nie Freigabe --------------------------- #
+
+@pytest.mark.parametrize("gemeldet", ["freigegeben", "FREIGABE ERTEILT", "", "ja"])
+def test_unerlaubte_freigabe_wird_zur_empfehlung_zurueckgestuft(skills_dir, gemeldet):
+    """Deterministisches Sicherheitsnetz: der Prompt sagt es, aber hier haengt
+    eine Governance-Zusage dran – Verlassen ist besser als Vertrauen."""
+    p = dict(_PROTOKOLL, empfehlung=gemeldet)
+    protokoll, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
+    assert protokoll["empfehlung"] == "mit vorbehalt"
+    assert protokoll["_hinweis"]
+
+
+def test_gueltige_empfehlung_bleibt(skills_dir):
+    for wert in ("freigebbar", "mit vorbehalt", "nicht freigebbar"):
+        p = dict(_PROTOKOLL, empfehlung=wert)
+        protokoll, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
+        assert protokoll["empfehlung"] == wert
+
+
+def test_unbekanntes_gewicht_wird_zum_hinweis(skills_dir):
+    p = dict(_PROTOKOLL, befunde=[{"kapitel": "K", "kriterium": "x",
+                                   "feststellung": "y", "gewicht": "kritisch",
+                                   "vorschlag": "z"}])
+    protokoll, _ = pruefe_fachlich({}, _LLM(json.dumps(p)), skills_dir=skills_dir)
+    assert protokoll["befunde"][0]["gewicht"] == "Hinweis"
+
+
+# ---- Abnahme 4: Kapitelbezug --------------------------------------------- #
+
+def test_befunde_tragen_einen_kapitelbezug(skills_dir):
+    protokoll, _ = pruefe_fachlich({}, _LLM(), skills_dir=skills_dir)
+    assert all(b.get("kapitel") for b in protokoll["befunde"])
+
+
+def test_unlesbare_antwort_ergibt_kein_protokoll(skills_dir):
+    """Nichts erfinden: lieber kein Protokoll als ein geratenes."""
+    protokoll, versionen = pruefe_fachlich({}, _LLM("kein JSON"), skills_dir=skills_dir)
+    assert protokoll is None and versionen        # Versionen trotzdem bekannt
+
+
+# ---- Abnahme 2: der Pruefer veraendert den PIA NICHT --------------------- #
+
+@pytest.fixture
+def app(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + str(tmp_path / "f.db").replace("\\", "/")
+        SECRET_KEY = "x"
+        PSEUDO_BASIS_URL = ""
+
+    SessionLocal.remove()
+    anwendung = create_app(_Cfg)
+    SessionLocal.remove()
+    yield anwendung
+    SessionLocal.remove()
+
+
+def _angemeldet(app):
+    auth = app.auth_service
+    org = auth.create_org("Org")
+    auth.create_user("u@o.ch", "pw", role="org_admin", org_id=org.id,
+                     can_read=True, can_write=True, can_delete=True)
+    c = app.test_client()
+    c.post("/login", data={"email": "u@o.ch", "password": "pw"})
+    ort = c.post("/interview/start",
+                 data={"project_name": "P", "projektleiter": "X"}).headers["Location"]
+    return c, int(ort.rstrip("/").split("/")[-1])
+
+
+def test_pruefer_veraendert_den_pia_nicht(app, monkeypatch):
+    """Die tragende Invariante der Stufe: wer prueft, erzeugt nicht."""
+    from app.domains.interview.models import InterviewSession
+    from app.shared.database import SessionLocal
+
+    c, sid = _angemeldet(app)
+    inhalt = json.dumps({"ausgangslage": {"extracted": {"text": "Originaltext."}}})
+    db = SessionLocal()
+    s = db.get(InterviewSession, sid)
+    s.answers_json = inhalt
+    db.commit()
+
+    app.interview_service.llm = _LLM()
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    c.post(f"/interview/{sid}/fachpruefung")
+
+    db2 = SessionLocal()
+    assert db2.get(InterviewSession, sid).answers_json == inhalt   # unveraendert
+
+
+def _bundle():
+    from app.domains.skills.loader import SkillBundle
+    return SkillBundle(text="METHODE-AUFTRAGGEBER",
+                       versions=[{"name": SKILL, "version": "1.0", "scope": "base"}])
+
+
+def test_protokoll_wird_angezeigt_mit_empfehlung(app, monkeypatch):
+    c, sid = _angemeldet(app)
+    app.interview_service.llm = _LLM()
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    c.post(f"/interview/{sid}/fachpruefung")
+    seite = c.get(f"/interview/{sid}/fachpruefung").get_data(as_text=True)
+    assert "Empfehlung an den Auftraggeber" in seite
+    assert "keine Freigabe" in seite
+    assert "Kap. 1" in seite                       # Kapitelbezug sichtbar
+    assert "Vorfestlegung offenlegen" in seite     # Vorschlag wird ANGEZEIGT
+
+
+def test_widerspruch_wird_festgehalten_und_befund_bleibt(app, monkeypatch):
+    """Briefing 5.1: die Ablehnung wird festgehalten – nicht wegdiskutiert."""
+    c, sid = _angemeldet(app)
+    app.interview_service.llm = _LLM()
+    monkeypatch.setattr("app.domains.qualitaet.auftraggeber.load_skills",
+                        lambda *a, **kw: _bundle())
+    c.post(f"/interview/{sid}/fachpruefung")
+
+    from app.domains.qualitaet.service import letzte_fachpruefung
+    zeile = letzte_fachpruefung(sid)
+    c.post(f"/interview/{sid}/fachpruefung/widerspruch",
+           data={"pruefung_id": zeile.id, "befund": "0",
+                 "begruendung": "Bewusst so entschieden."})
+
+    seite = c.get(f"/interview/{sid}/fachpruefung").get_data(as_text=True)
+    assert "Bewusst so entschieden." in seite
+    assert "Die Lösung ist bereits gesetzt" in seite   # der Befund BLEIBT stehen

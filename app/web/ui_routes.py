@@ -21,7 +21,9 @@ from app.domains.llm.errors import (
     PseudonymisierungBlockiert,
     RueckersetzungUnvollstaendig,
 )
-from app.domains.qualitaet.service import pruefe_session
+from app.domains.qualitaet.service import (
+    fuehre_fachpruefung, letzte_fachpruefung, pruefe_session, widerspruch,
+)
 from app.domains.stt.kontext import kontext_fuer_diktat
 from app.domains.method.template_structure import (
     ZIEL_GENERISCH,
@@ -1367,3 +1369,59 @@ def pseudo_entscheide():
     if methode == "GET":
         return redirect(ziel)               # GET-Aufrufe tragen keinen Rumpf
     return render_template("pseudo_wiederholen.html", ziel=ziel, felder=felder)
+
+
+# ---- Stufe 4: fachliche Pruefung aus Auftraggeber-Sicht ------------------ #
+#
+# EIGENER Aufruf, getrennt von der Erzeugung (Briefing 5.1). Der Pruefer schreibt
+# nichts in den PIA: das Protokoll liegt in einer eigenen Tabelle, Vorschlaege
+# werden angezeigt und nicht angewandt, die Empfehlung nie automatisch umgesetzt.
+
+@bp.post("/interview/<int:session_id>/fachpruefung")
+@permission_required("write")
+def interview_fachpruefung(session_id):
+    session = _load_session(session_id)
+    svc = current_app.interview_service
+    if not svc.llm:
+        return render_template("pseudo_fehler.html", art="konfiguration",
+                               meldung="Ohne Sprachmodell ist keine fachliche "
+                                       "Pruefung moeglich."), 500
+    answers = json.loads(session.answers_json or "{}")
+    zeile, _ = fuehre_fachpruefung(
+        session, svc.llm, answers=answers, tarife=_tarife_for_session(session),
+        nachweis=svc.build_nachweis(session, answers),
+        tenant_id=getattr(session, "org_id", None))
+    if zeile is None:
+        return render_template("pseudo_fehler.html", art="antwort",
+                               meldung="Die fachliche Pruefung lieferte kein "
+                                       "auswertbares Protokoll."), 502
+    return redirect(url_for("ui.interview_fachpruefung_zeigen", session_id=session_id))
+
+
+@bp.get("/interview/<int:session_id>/fachpruefung")
+@permission_required("read")
+def interview_fachpruefung_zeigen(session_id):
+    session = _load_session(session_id)
+    zeile = letzte_fachpruefung(session_id)
+    protokoll = json.loads(zeile.protokoll_json) if zeile and zeile.protokoll_json else None
+    return render_template(
+        "fachpruefung.html", session=session, pruefung=zeile, protokoll=protokoll,
+        versionen=json.loads(zeile.skill_versionen_json or "[]") if zeile else [],
+        widersprueche={w["befund"]: w for w in
+                       (json.loads(zeile.widersprueche_json or "[]") if zeile else [])},
+    )
+
+
+@bp.post("/interview/<int:session_id>/fachpruefung/widerspruch")
+@permission_required("write")
+def interview_fachpruefung_widerspruch(session_id):
+    """Begruendete Ablehnung eines Befunds - sie wird FESTGEHALTEN, der Befund
+    bleibt stehen (Briefing 5.1)."""
+    _load_session(session_id)
+    pruefung_id = int(request.form.get("pruefung_id", 0) or 0)
+    index = int(request.form.get("befund", -1))
+    begruendung = (request.form.get("begruendung", "") or "").strip()
+    if pruefung_id and index >= 0 and begruendung:
+        widerspruch(pruefung_id, index, begruendung,
+                    urheber=getattr(current_user(), "email", "") or "")
+    return redirect(url_for("ui.interview_fachpruefung_zeigen", session_id=session_id))
