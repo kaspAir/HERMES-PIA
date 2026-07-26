@@ -44,11 +44,14 @@ def health():
     ohne sich durch ein Interview zu klicken. Nennt bewusst KEINE Geheimnisse.
     """
     llm = current_app.interview_service.llm
+    direkt = bool(llm) and getattr(llm, "direkt", False)
     return jsonify({
         "status": "ok",
         "service": "hermes-pia",
         "pseudonymisierung": {
-            "konfiguriert": bool(llm),
+            # 'aus' = Direktmodus: die Aufrufe gehen OHNE Pseudonymisierung raus.
+            "modus": "direkt (AUS)" if direkt else ("aktiv" if llm else "kein LLM"),
+            "konfiguriert": bool(llm) and not direkt,
             "basis_url": current_app.config.get("PSEUDO_BASIS_URL", "") or None,
             "anwendung": current_app.config.get("PSEUDO_ANWENDUNG", ""),
             # Ohne Dienst laeuft die Anwendung rein deterministisch: keine
@@ -227,6 +230,9 @@ def interview_workspace(session_id):
         # sein: sonst diktiert der Projektleiter ein ganzes Interview und merkt
         # erst am fertigen Dokument, dass sein Rohtext darin steht.
         llm_available=bool(svc.llm),
+        # Direktmodus muss im Interview SICHTBAR sein – sonst arbeitet jemand
+        # wochenlang ohne Pseudonymisierung, ohne es zu merken.
+        pseudo_aus=bool(svc.llm) and getattr(svc.llm, "direkt", False),
     )
 
 

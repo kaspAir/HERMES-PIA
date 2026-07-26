@@ -3,6 +3,17 @@
 {% block main_class %}wide{% endblock %}
 
 {% block content %}
+{% if pseudo_aus %}
+{# Entwicklungsmodus: die Pseudonymisierungsschicht ist abgeschaltet. Muss
+   sichtbar bleiben – sonst landen irgendwann echte Personendaten ungeschuetzt
+   beim Anbieter, ohne dass es jemand merkt. #}
+<div class="warnbanner" role="alert">
+  <strong>Pseudonymisierung ist abgeschaltet (Entwicklungsmodus).</strong>
+  Die Texte gehen <em>ungeschützt</em> an den Sprachmodell-Anbieter – Namen und
+  Fallbezüge inklusive. Nur mit Testdaten verwenden. Zum Einschalten
+  <code>PSEUDO_UMGEHEN</code> entfernen und <code>PSEUDO_BASIS_URL</code> setzen.
+</div>
+{% endif %}
 {% if not llm_available %}
 {# Ohne Dienst wird nichts formuliert und nichts extrahiert. Frueher lief das
    still weiter - der Rohtext landete im Dokument und niemand konnte erkennen,

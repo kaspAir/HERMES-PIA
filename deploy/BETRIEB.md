@@ -205,3 +205,39 @@ zurück – sie bricht nicht.
 den Host, nie Projekttext. Die Suchbegriffe bestimmt die Anwendung, nicht das
 Sprachmodell – ein modellgesteuerter Werkzeugaufruf könnte Projektinhalte an den
 externen Dienst tragen und würde die Pseudonymisierungsschicht umgehen.
+
+## Pseudonymisierung vorübergehend abschalten (nur Entwicklung)
+
+Wird an der **Fachlichkeit** gearbeitet (PIA-Inhalte, Prompts, Dokumentaufbau),
+steht die Schicht im Weg: jeder unsichere Name unterbricht mit einer Rückfrage.
+Für diesen Fall gibt es den **Direktmodus** – die Aufrufe gehen dann *ohne*
+Pseudonymisierung an den Anbieter.
+
+```
+PSEUDO_BASIS_URL=
+PSEUDO_UMGEHEN=1
+ANTHROPIC_API_KEY=sk-...
+```
+
+**Beide** Bedingungen müssen erfüllt sein: `PSEUDO_UMGEHEN=1` *und* ein Schlüssel.
+Ein vergessener Schlüssel in der `.env` allein schaltet die Schicht **nicht** ab –
+das wäre genau der Unfall, den es zu verhindern gilt. Ist `PSEUDO_BASIS_URL`
+gesetzt, gewinnt immer die Schicht, auch mit Schlüssel.
+
+Sichtbar ist der Zustand an drei Stellen: ein nicht wegklickbares Banner im
+Interview, `/health` meldet `"modus": "direkt (AUS)"`, und beim Start steht eine
+Warnung im Log.
+
+### Zurückschalten
+
+```
+PSEUDO_UMGEHEN=0
+PSEUDO_BASIS_URL=http://127.0.0.1:8040
+```
+
+Danach die Stufe **neu starten** – der Prozess friert die Umgebungsvariablen beim
+Start ein.
+
+⚠️ **Nur mit Testdaten.** Im Direktmodus verlassen Namen und Fallbezüge den Host
+ungeschützt. Auf test (Kundenumgebung), integration und Produktion hat er nichts
+zu suchen.

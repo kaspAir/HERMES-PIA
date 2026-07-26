@@ -54,21 +54,43 @@ _BLOCK = {
 
 # ---- Kriterium 1: kein eigener Anbieterschluessel mehr -------------------- #
 
-def test_kein_anthropic_key_und_kein_direkter_anbieterpfad():
-    """Solange die Anwendung einen eigenen Schluessel besaesse, waere das Umgehen
-    der Schicht nur verboten, nicht unmoeglich."""
-    from pathlib import Path
+def test_direktmodus_greift_nur_auf_ausdrueckliches_verlangen():
+    """Der Direktmodus umgeht die Schicht - er darf NIE zufaellig entstehen.
 
-    from app.config import BASE_DIR, Config
+    Frueher besass die Anwendung gar keinen Weg zum Anbieter. Fuer die Arbeit an
+    der Fachlichkeit gibt es ihn wieder, aber nur wenn ZWEI Bedingungen erfuellt
+    sind: PSEUDO_UMGEHEN=1 UND ein Anbieterschluessel. Ein vergessener Schluessel
+    in der .env darf die Pseudonymisierung nicht stillschweigend aushebeln."""
+    from app.config import Config
 
-    assert not hasattr(Config, "ANTHROPIC_API_KEY")
+    assert Config.PSEUDO_UMGEHEN is False        # Vorgabe: aus
+    # Der Embedding-Weg kennt weiterhin KEINEN eigenen Schluessel.
     assert not hasattr(Config, "VOYAGE_API_KEY")
 
-    for rel in ("app/domains/llm/client.py", "app/domains/corpus/embeddings.py"):
-        quelle = Path(BASE_DIR, rel).read_text(encoding="utf-8")
-        assert "api.anthropic.com" not in quelle
-        assert "api.voyageai.com" not in quelle
-        assert "x-api-key" not in quelle
+    from app.domains.llm.client import LLMClient
+    assert LLMClient(basis_url="http://x/anthropic").direkt is False
+    assert LLMClient(anbieter_key="").direkt is False
+    assert LLMClient(anbieter_key="k").direkt is True
+    # Ist die Schicht konfiguriert, gewinnt sie IMMER - auch mit Schluessel.
+    assert LLMClient(basis_url="http://x/anthropic", anbieter_key="k").direkt is False
+
+
+def test_schluessel_allein_schaltet_die_schicht_nicht_ab(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + str(tmp_path / "d.db").replace("\\", "/")
+        SECRET_KEY = "x"
+        PSEUDO_BASIS_URL = ""
+        ANTHROPIC_API_KEY = "sk-vergessen"
+        PSEUDO_UMGEHEN = False          # nicht verlangt -> KEIN Direktmodus
+
+    SessionLocal.remove()
+    app = create_app(_Cfg)
+    SessionLocal.remove()
+    assert app.interview_service.llm is None
 
 
 def test_ohne_dienst_kein_llm_client():
@@ -717,3 +739,58 @@ def test_anbieterfehler_bleibt_ein_pseudofehler(monkeypatch):
     with pytest.raises(PseudoFehler):
         _extract_free_text(LLMClient(basis_url="http://x/anthropic"),
                            "Ausgangslage", "Wir haben einen Serverraum.")
+
+
+# ---- Direktmodus (Entwicklung): abgeschaltet, aber SICHTBAR --------------- #
+
+@pytest.fixture
+def app_direkt(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + str(tmp_path / "direkt.db").replace("\\", "/")
+        SECRET_KEY = "x"
+        PSEUDO_BASIS_URL = ""
+        ANTHROPIC_API_KEY = "sk-test"
+        PSEUDO_UMGEHEN = True
+
+    SessionLocal.remove()
+    anwendung = create_app(_Cfg)
+    SessionLocal.remove()
+    yield anwendung
+    SessionLocal.remove()
+
+
+def test_direktmodus_sendet_an_den_anbieter_ohne_pseudo_kopfzeilen(monkeypatch):
+    gesehen = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        gesehen["url"] = url
+        gesehen["headers"] = headers
+        return _Resp({"content": [{"text": "ok"}]})
+
+    monkeypatch.setattr("app.domains.llm.client.requests.post", fake_post)
+    assert LLMClient(anbieter_key="sk-test").complete("s", []) == "ok"
+    assert gesehen["url"] == "https://api.anthropic.com/v1/messages"
+    assert gesehen["headers"]["x-api-key"] == "sk-test"
+    # Ohne Schicht sind die Pseudo-Kopfzeilen sinnlos - und wuerden nur taeuschen.
+    assert not [k for k in gesehen["headers"] if k.startswith("X-Pseudo")]
+
+
+def test_interview_zeigt_dass_die_pseudonymisierung_aus_ist(app_direkt):
+    """Sonst arbeitet jemand wochenlang ungeschuetzt, ohne es zu merken."""
+    c, sid = _angemeldet(app_direkt)
+    seite = c.get(f"/interview/{sid}").get_data(as_text=True)
+    assert "Pseudonymisierung ist abgeschaltet" in seite
+    assert "ungeschützt" in seite
+    # Die andere Warnung (gar kein LLM) darf NICHT zusaetzlich erscheinen.
+    assert "nicht aufbereitet" not in seite
+
+
+def test_health_meldet_den_direktmodus(app_direkt):
+    p = app_direkt.test_client().get("/health").get_json()["pseudonymisierung"]
+    assert p["modus"] == "direkt (AUS)"
+    assert p["konfiguriert"] is False
+    assert p["textformulierung_aktiv"] is True      # das LLM arbeitet ja
