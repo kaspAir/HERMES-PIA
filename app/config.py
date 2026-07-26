@@ -54,6 +54,16 @@ class Config:
     # landen. Sobald Organisationen durchgängig sind, tritt die org_id an die Stelle.
     PSEUDO_MANDANT = os.environ.get("PSEUDO_MANDANT", "standard")
 
+    # ---- Direktmodus: Pseudonymisierung ABSCHALTEN (nur Entwicklung) ------- #
+    # Wenn an der Fachlichkeit gearbeitet wird, steht die Schicht im Weg. Dann
+    # koennen die Aufrufe direkt an den Anbieter gehen – ABER nur, wenn beides
+    # gesetzt ist: PSEUDO_UMGEHEN=1 UND ein eigener Anbieterschluessel. Zwei
+    # Bedingungen bewusst: ein vergessener Schluessel in der .env darf die
+    # Schicht nicht stillschweigend aushebeln.
+    # Sichtbar: Warnbanner im Interview + /health meldet 'direkt'.
+    PSEUDO_UMGEHEN = os.environ.get("PSEUDO_UMGEHEN", "0") == "1"
+    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
     # Betreiber-Account (Super-Admin) – via .env / Umgebungsvariablen setzen.
     # Neuer Name HERMESPIA_*, alter Name METHODOS_* bleibt als Fallback gültig.
     SUPERADMIN_EMAIL = _env("HERMESPIA_SUPERADMIN_EMAIL", "METHODOS_SUPERADMIN_EMAIL")

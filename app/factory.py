@@ -118,12 +118,23 @@ def create_app(config_class=None):
     # Ohne konfigurierten Dienst gibt es KEINEN LLM-Client – nicht etwa einen
     # Ausweichweg zum Anbieter. Die Anwendung arbeitet dann rein deterministisch,
     # genau wie früher ohne Anbieterschlüssel.
-    llm_client = LLMClient(
-        basis_url=f"{pseudo_url}/anthropic",
-        model=app.config.get("LLM_MODEL"),
-        anwendung=pseudo_anwendung,
-        mandant=pseudo_mandant,
-    ) if pseudo_url else None
+    # Direktmodus nur, wenn AUSDRUECKLICH verlangt UND ein Schluessel da ist.
+    direkt_key = (app.config.get("ANTHROPIC_API_KEY", "")
+                  if app.config.get("PSEUDO_UMGEHEN") else "")
+    if pseudo_url:
+        llm_client = LLMClient(
+            basis_url=f"{pseudo_url}/anthropic",
+            model=app.config.get("LLM_MODEL"),
+            anwendung=pseudo_anwendung,
+            mandant=pseudo_mandant,
+        )
+    elif direkt_key:
+        app.logger.warning(
+            "PSEUDONYMISIERUNG ABGESCHALTET (PSEUDO_UMGEHEN=1): LLM-Aufrufe gehen "
+            "DIREKT an den Anbieter. Nur fuer die Entwicklung mit Testdaten.")
+        llm_client = LLMClient(model=app.config.get("LLM_MODEL"), anbieter_key=direkt_key)
+    else:
+        llm_client = None
     app.rag_service = RagService(VoyageEmbedder(
         basis_url=f"{pseudo_url}/voyage" if pseudo_url else "",
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),

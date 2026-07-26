@@ -57,10 +57,19 @@ def _text_aus_antwort(data):
     return ""
 
 
+# Direktweg zum Anbieter – NUR fuer die Entwicklung, siehe LLMClient.direkt.
+_ANBIETER_URL = "https://api.anthropic.com/v1/messages"
+
+
 class LLMClient:
     def __init__(self, basis_url=None, model=None, anwendung="hermes-pia",
-                 mandant="standard", projekt=None, timeout=90):
+                 mandant="standard", projekt=None, timeout=90, anbieter_key=""):
         self.basis_url = (basis_url or "").rstrip("/")
+        # DIREKTMODUS: umgeht die Pseudonymisierungsschicht. Ausschliesslich fuer
+        # die Entwicklung gedacht, wenn an der Fachlichkeit gearbeitet wird und
+        # die Schicht im Weg steht. Wird in der Factory nur gesetzt, wenn das
+        # Deployment es AUSDRUECKLICH verlangt (PSEUDO_UMGEHEN=1) – nie zufaellig.
+        self.anbieter_key = anbieter_key or ""
         self.model = model or "claude-sonnet-4-6"
         self.anwendung = anwendung
         self.mandant = mandant or ""
@@ -73,7 +82,12 @@ class LLMClient:
 
     @property
     def available(self):
-        return bool(self.basis_url)
+        return bool(self.basis_url or self.anbieter_key)
+
+    @property
+    def direkt(self):
+        """True = die Aufrufe gehen OHNE Pseudonymisierung an den Anbieter."""
+        return not self.basis_url and bool(self.anbieter_key)
 
     def fuer(self, projekt=None, mandant=None):
         """Kurzlebiger Ableger mit Anfragekontext -- pro Session, nie geteilt."""
@@ -81,25 +95,27 @@ class LLMClient:
                          anwendung=self.anwendung,
                          mandant=mandant or self.mandant,
                          projekt=str(projekt) if projekt else self.projekt,
-                         timeout=self.timeout)
+                         timeout=self.timeout, anbieter_key=self.anbieter_key)
         return kind
 
     def complete(self, system, messages, max_tokens=1024, projekt=None, mandant=None):
-        if not self.basis_url:
-            raise RuntimeError("PSEUDO_BASIS_URL fehlt - ohne Pseudonymisierungsdienst "
-                               "werden keine Projektinhalte an ein LLM gesendet.")
-        # Reihenfolge: ausdruecklicher Parameter > Anfragekontext > Vorgabe.
-        k_projekt, k_mandant = aktueller_kontext()
-        kopf = {
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-            "X-Pseudo-Anwendung": self.anwendung,
-            "X-Pseudo-Mandant": str(mandant or k_mandant or self.mandant),
-            "X-Pseudo-Projekt": str(projekt or k_projekt or self.projekt),
-        }
+        if not self.available:
+            raise RuntimeError("Weder PSEUDO_BASIS_URL noch Direktmodus konfiguriert - "
+                               "es werden keine Projektinhalte an ein LLM gesendet.")
+        kopf = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        if self.direkt:
+            ziel = _ANBIETER_URL
+            kopf["x-api-key"] = self.anbieter_key
+        else:
+            ziel = f"{self.basis_url}/v1/messages"
+            # Reihenfolge: ausdruecklicher Parameter > Anfragekontext > Vorgabe.
+            k_projekt, k_mandant = aktueller_kontext()
+            kopf["X-Pseudo-Anwendung"] = self.anwendung
+            kopf["X-Pseudo-Mandant"] = str(mandant or k_mandant or self.mandant)
+            kopf["X-Pseudo-Projekt"] = str(projekt or k_projekt or self.projekt)
         try:
             resp = requests.post(
-                f"{self.basis_url}/v1/messages",
+                ziel,
                 headers=kopf,
                 json={
                     "model": self.model,
@@ -112,8 +128,9 @@ class LLMClient:
         except requests.RequestException as e:
             # Kein stiller Ausweichweg zum Anbieter: lieber keine Extraktion als
             # eine ungeschuetzte.
+            dienst = "Anbieter" if self.direkt else "Pseudonymisierungsdienst"
             raise PseudoNichtErreichbar(
-                f"Pseudonymisierungsdienst nicht erreichbar ({e.__class__.__name__})."
+                f"{dienst} nicht erreichbar ({e.__class__.__name__})."
             ) from e
 
         self.letzter_status = resp.headers.get("X-Pseudo-Status", "")
