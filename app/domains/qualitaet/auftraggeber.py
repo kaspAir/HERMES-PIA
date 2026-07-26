@@ -276,6 +276,7 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
         return None, [], (f"Der Skill «{SKILL}» wurde nicht gefunden. Erwartet unter "
                           f"skills/base/{SKILL}/SKILL.md")
 
+    log.warning("Kapitelpruefung: Skill geladen (%s Zeichen)", len(bundle.text))
     name, sids = GRUPPEN[index]
     inhalt = _auszug(answers, sids)
     if not inhalt:

@@ -153,22 +153,33 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
     from app.domains.qualitaet.models import PiaPruefung
     from app.shared.database import SessionLocal
 
+    import time as _time
+    t0 = _time.monotonic()
+
+    def _takt(was):
+        # Bewusst WARNING: bei einem Haenger muss im Protokoll stehen, WELCHER
+        # Abschnitt die Zeit verbraucht - sonst raet man wieder.
+        log.warning("Fachpruefung-Schritt: %s nach %.1fs", was, _time.monotonic() - t0)
+
     db = SessionLocal()
     zeile = db.get(PiaPruefung, pruefung_id)
     if zeile is None:
         return None, "Der Prüflauf wurde nicht gefunden."
     if zeile.status == "fertig":
         return _zustand(zeile), ""
+    _takt("Lauf geladen")
 
     if answers is None:
         answers = _json.loads(getattr(session, "answers_json", None) or "{}")
     invarianten = pruefe_session(session, answers=answers, tarife=tarife)
+    _takt("Invarianten geprueft")
     teile = _json.loads(zeile.teilbefunde_json or "[]")
     index = zeile.schritt or 0
 
     if index < len(GRUPPEN):
         teil, versionen, grund = pruefe_kapitel(
             answers, llm, index, invarianten=invarianten, tenant_id=tenant_id)
+        _takt(f"Kapitel {index} geprueft")
         if teil is None:
             return None, grund
         teile.append(teil)
