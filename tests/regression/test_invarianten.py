@@ -296,3 +296,54 @@ def test_notausgang_liefert_das_dokument_trotzdem(app):
     r = c.get(f"/interview/{sid}/download/PIA.docx?trotzdem=1")
     assert r.status_code == 200
     assert r.headers["Content-Type"].startswith("application/vnd.openxml")
+
+
+# ---- Baseline-Lauf (Katalog 13, Briefing 4.5) ---------------------------- #
+
+def _lege_pia_an(app, name, answers):
+    from app.domains.interview.models import InterviewSession
+    from app.shared.database import SessionLocal
+    db = SessionLocal()
+    s = InterviewSession(method_id="hermes_pia", project_name=name,
+                         answers_json=json.dumps(answers))
+    db.add(s)
+    db.commit()
+    return s.id
+
+
+def test_baseline_ist_reproduzierbar(app, tmp_path, capsys):
+    """Abnahmekriterium 1 (Briefing 4.5): gleicher Bestand -> gleiche Befundzahlen."""
+    import importlib.util
+    from app.config import BASE_DIR
+
+    with app.app_context():
+        _lege_pia_an(app, "A", {"ziele": {"extracted": [
+            {"kategorie": "Vorgehensziel", "beschreibung": "x", "messgroesse": "m",
+             "prioritaet": "Hoch"}]}})
+        _lege_pia_an(app, "B", {"risiken": {"extracted": [
+            {"beschreibung": "R", "ew": "Hoch", "ag": "Mittel", "risikozahl": "4",
+             "massnahmen": "M", "verantwortung": "Projektleiter", "termin": "laufend"}]}})
+
+    spec = importlib.util.spec_from_file_location(
+        "_baseline", str(BASE_DIR / "scripts" / "baseline_invarianten.py"))
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+
+    url = app.config["DATABASE_URL"]
+    assert modul.lauf(url) == 0
+    erster = capsys.readouterr().out
+    assert modul.lauf(url) == 0
+    zweiter = capsys.readouterr().out
+    assert erster == zweiter, "Baseline ist nicht reproduzierbar"
+    assert "D-030" in erster and "D-072" in erster       # beide PIAs gemessen
+    assert "Baseline über 2 bearbeitete PIA" in erster
+
+
+def test_baseline_ohne_pias_bricht_sauber_ab(app):
+    import importlib.util
+    from app.config import BASE_DIR
+    spec = importlib.util.spec_from_file_location(
+        "_baseline2", str(BASE_DIR / "scripts" / "baseline_invarianten.py"))
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    assert modul.lauf(app.config["DATABASE_URL"]) == 1     # nichts zu messen
