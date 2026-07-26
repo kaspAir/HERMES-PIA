@@ -235,81 +235,22 @@ GRUPPEN = [
     ("Risiken", ["risiken"]),
 ]
 
-# --- Token-Budget: gerechnet, nicht geraten -------------------------------
-# Eine feste Zahl ist bei einer Pruefung, deren Umfang vom PIA abhaengt, immer
-# falsch: beim kleinen PIA bezahlt man Platz, den niemand braucht, beim grossen
-# reisst das Protokoll mittendrin ab. Beides ist passiert. Der Bedarf wird
-# deshalb aus dem gemessenen Umfang gerechnet - beim Kapitel aus der Laenge des
-# zu pruefenden Inhalts, bei der Gesamtwuerdigung aus der Zahl der Befunde, die
-# die Kapitel tatsaechlich geliefert haben (die steht dann fest).
-# Die Schaetzung darf ruhig zu gross ausfallen: `max_tokens` ist eine
-# OBERGRENZE, keine Reservation - abgerechnet wird, was das Modell wirklich
-# schreibt. Zu grosszuegig rechnen kostet also nichts, zu knapp rechnen kostet
-# einen gescheiterten Lauf. Deshalb der Sicherheitszuschlag.
-SICHERHEIT = 1.5
-TOKEN_GRUNDLAST = 600          # JSON-Rahmen, «gut»-Liste, Gegenstand
-TOKEN_JE_BEFUND = 160          # Kriterium + ein bis zwei Saetze + Vorschlag
-ZEICHEN_JE_BEFUND = 400        # so viel Inhalt ergibt erfahrungsgemaess ~1 Befund
-BEFUNDE_MIN, BEFUNDE_MAX = 3, 16
+# --- Grenzen: grosszuegig und EINE Regel ---------------------------------
+# Drei Anlaeufe an dieser Stelle waren drei zu viel. Deshalb jetzt schlicht:
+# `max_tokens` ist eine OBERGRENZE, keine Reservation - abgerechnet wird die
+# tatsaechlich erzeugte Ausgabe. Ein grosszuegiger Wert kostet also nichts und
+# nimmt der Ausgabelaenge jede kuenstliche Schranke.
+SCHRITT_TOKENS = 16000
+# Das Lese-Zeitlimit bleibt bewusst unter 120 s - so ueberlebt ein Schritt
+# JEDE Zwischenstelle in der Kette, auch eine, die noch auf dem alten Wert
+# steht (nginx proxy_read_timeout, PHP max_execution_time). Gemessen: bei
+# 121 s schnitt der Proxy ab, bevor die Anwendung eine Fehlerseite zeigen
+# konnte. Verbindungsaufbau (10 s) ist mitgerechnet.
+KAPITEL_ZEITLIMIT = 100
 
-SYNTHESE_GRUNDLAST = 900       # Empfehlung, Begruendung, Confidence, Gegenstand
-SYNTHESE_JE_BEFUND = 40        # jeder Kapitelbefund kann Querbezug/Auflage ausloesen
-
-# Obergrenze: nicht das Budget begrenzt uns, sondern die Zeit. Was in
-# KAPITEL_ZEITLIMIT nicht erzeugt ist, reisst den Worker - und dann ist der
-# ganze Schritt verloren statt nur gekuerzt.
-TOKEN_JE_SEKUNDE = 45          # gemessene Groessenordnung der Erzeugung
-KAPITEL_ZEITLIMIT = 90
-TOKEN_DECKEL = 4000
-
-# Nur noch Startwerte fuer den Fall ohne Messgroesse (z. B. leerer Inhalt).
-KAPITEL_TOKENS = 2500
-SYNTHESE_TOKENS = 1500
-
-
-def _gedeckelt(bedarf, nachschlag=0):
-    """Bedarf plus Nachschlag, begrenzt durch das, was zeitlich erzeugbar ist.
-
-    `nachschlag` zaehlt die bisherigen Fehlversuche dieses Schrittes: nach einer
-    abgeschnittenen Antwort bekommt der naechste Versuch mehr Platz. Sonst waere
-    «Schritt wiederholen» eine Wiederholung desselben Misserfolgs.
-    """
-    bedarf = int(bedarf * SICHERHEIT * (1 + 0.6 * max(0, int(nachschlag or 0))))
-    return max(800, min(bedarf, TOKEN_DECKEL, TOKEN_JE_SEKUNDE * KAPITEL_ZEITLIMIT))
-
-
-def am_deckel(budget):
-    """Ist das Budget bereits an der zeitlichen Obergrenze? Dann hilft
-    Wiederholen nicht mehr, und das muss die Meldung auch sagen."""
-    return budget >= min(TOKEN_DECKEL, TOKEN_JE_SEKUNDE * KAPITEL_ZEITLIMIT)
-
-
-def _abschnitt_erklaeren(grund, budget):
-    """Sagt bei abgeschnittener Antwort, was der naechste Schritt bringt."""
-    if "abgeschnitten" not in (grund or ""):
-        return grund
-    if am_deckel(budget):
-        return (grund + " Der Platz ist bereits ausgereizt – mehr passt nicht in "
-                "das Zeitfenster eines Schrittes. Beheben Sie zuerst die bereits "
-                "gemeldeten Befunde und prüfen Sie danach erneut.")
-    return grund + " Beim Wiederholen wird mit mehr Platz gerechnet."
-
-
-def kapitel_budget(inhalt, nachschlag=0):
-    """Token-Bedarf eines Kapitels – aus der Laenge des zu pruefenden Inhalts."""
-    zeichen = len(json.dumps(inhalt, ensure_ascii=False)) if inhalt else 0
-    befunde = max(BEFUNDE_MIN, min(BEFUNDE_MAX, round(zeichen / ZEICHEN_JE_BEFUND)))
-    return _gedeckelt(TOKEN_GRUNDLAST + befunde * TOKEN_JE_BEFUND, nachschlag)
-
-
-def synthese_budget(teilbefunde, nachschlag=0):
-    """Token-Bedarf der Gesamtwuerdigung – aus der Zahl der Kapitelbefunde.
-
-    Anders als beim Kapitel ist das keine Schaetzung: die Befunde liegen vor.
-    """
-    n = sum(len(t.get("befunde") or []) for t in (teilbefunde or [])
-            if isinstance(t, dict))
-    return _gedeckelt(SYNTHESE_GRUNDLAST + n * SYNTHESE_JE_BEFUND, nachschlag)
+# Nur noch fuer den einteiligen Altweg (pruefe_fachlich).
+KAPITEL_TOKENS = SCHRITT_TOKENS
+SYNTHESE_TOKENS = SCHRITT_TOKENS
 
 _KAPITEL_SCHEMA = ('{"befunde":[{"kapitel":"","kriterium":"","feststellung":"",'
                    '"gewicht":"Muss|Vorbehalt|Hinweis","vorschlag":""}],"gut":[""],'
@@ -326,8 +267,15 @@ _SYNTHESE_SCHEMA = (
 
 
 def schritte():
-    """Alle Schritte des Laufs: die Kapitel, dann die Synthese."""
-    return [name for name, _ in GRUPPEN] + ["Gesamtwürdigung"]
+    """Alle Schritte des Laufs.
+
+    EINE Regel traegt das Ganze: **je Schritt hoechstens ein Modellaufruf.**
+    Der Nachweis ist deshalb ein eigener Schritt und nicht mehr Vorarbeit der
+    Gesamtwuerdigung - zusammen sprengten die beiden Aufrufe das Zeitlimit des
+    Workers, und dann ist der ganze Schritt verloren statt nur gekuerzt.
+    """
+    return [name for name, _ in GRUPPEN] + ["Herkunft der Angaben",
+                                            "Gesamtwürdigung"]
 
 
 def _auszug(answers, sids):
@@ -335,7 +283,7 @@ def _auszug(answers, sids):
 
 
 def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
-                   skills_dir=None, nachschlag=0):
+                   skills_dir=None):
     """Prüft EIN Kapitel. Rückgabe: (teilbefund, versionen, grund)."""
     if llm is None:
         return None, [], "Kein Sprachmodell konfiguriert."
@@ -370,14 +318,10 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
         "vollständige aussehen.\n"
         f"Gib NUR JSON nach diesem Schema:\n{_KAPITEL_SCHEMA}"
     )
-    budget = kapitel_budget(inhalt, nachschlag)
-    log.warning("Kapitel «%s»: %d Zeichen Inhalt -> Budget %d Token%s",
-                name, len(json.dumps(inhalt, ensure_ascii=False)), budget,
-                f" (Nachschlag {nachschlag})" if nachschlag else "")
     try:
         roh = llm.complete(compose_system(SYSTEM, bundle),
                            [{"role": "user", "content": user}],
-                           max_tokens=budget, timeout=KAPITEL_ZEITLIMIT)
+                           max_tokens=SCHRITT_TOKENS, timeout=KAPITEL_ZEITLIMIT)
     except PseudoFehler:
         raise
     except Exception as e:      # noqa: BLE001
@@ -387,7 +331,7 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
     teil, grund = _json_aus(roh)
     if teil is None:
         log.warning("Kapitel «%s» ohne Protokoll: %s | %.300r", name, grund, roh)
-        return None, bundle.versions, _abschnitt_erklaeren(grund, budget)
+        return None, bundle.versions, grund
     teil["kapitel"] = name
     for b in teil.get("befunde") or []:
         if isinstance(b, dict):
@@ -396,7 +340,7 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
 
 
 def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
-             tenant_id=None, skills_dir=None, nachschlag=0):
+             tenant_id=None, skills_dir=None):
     """Querbezüge, Evidenz, Herausforderung und Empfehlung – braucht das
     Gesamtbild und läuft deshalb NACH den Kapiteln."""
     if llm is None:
@@ -422,15 +366,10 @@ def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
         "Wiederhole die Kapitelbefunde NICHT – sie stehen bereits im Protokoll.\n"
         f"Gib NUR JSON nach diesem Schema:\n{_SYNTHESE_SCHEMA}"
     )
-    budget = synthese_budget(teilbefunde, nachschlag)
-    log.warning("Gesamtwürdigung: %d Kapitelbefunde -> Budget %d Token%s",
-                sum(len(t.get("befunde") or []) for t in (teilbefunde or [])
-                    if isinstance(t, dict)), budget,
-                f" (Nachschlag {nachschlag})" if nachschlag else "")
     try:
         roh = llm.complete(compose_system(SYSTEM, bundle),
                            [{"role": "user", "content": user}],
-                           max_tokens=budget, timeout=KAPITEL_ZEITLIMIT)
+                           max_tokens=SCHRITT_TOKENS, timeout=KAPITEL_ZEITLIMIT)
     except PseudoFehler:
         raise
     except Exception as e:      # noqa: BLE001
@@ -440,7 +379,7 @@ def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
     teil, grund = _json_aus(roh)
     if teil is None:
         log.warning("Synthese ohne Protokoll: %s | %.300r", grund, roh)
-        return None, bundle.versions, _abschnitt_erklaeren(grund, budget)
+        return None, bundle.versions, grund
     return teil, bundle.versions, ""
 
 

@@ -87,7 +87,10 @@ hp_launch() {
     # halten und den naechsten Deploy/Watchdog blockieren.
     nohup gunicorn run:app \
       --bind "127.0.0.1:$HP_PORT" --workers "$HP_WORKERS" \
-      --timeout 120 --graceful-timeout 30 \
+      # 120 s waren zu knapp: ein Pruefschritt mit grosszuegigem Token-Budget
+      # darf laenger dauern, ohne dass gunicorn den Worker abschiesst (dann ist
+      # der ganze Schritt verloren statt nur gekuerzt).
+      --timeout 300 --graceful-timeout 30 \
       --max-requests 800 --max-requests-jitter 200 \
       --access-logfile "$HP_DIR/logs/access.log" \
       --error-logfile "$HP_DIR/logs/error.log" --capture-output \

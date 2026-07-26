@@ -45,7 +45,7 @@ bash ~/bin/hermes/hermes_ctl.sh watchdog       # alle Umgebungen prüfen/heilen 
 - `--max-requests 800 --max-requests-jitter 200`: Worker werden regelmässig
   recycelt → begrenzt Speicherwachstum aus der Docx/Pptx-Erzeugung (häufige
   Absturzursache bei langlaufenden Prozessen).
-- `--graceful-timeout 30`, `--timeout 120` (LLM-Aufrufe), `--capture-output`
+- `--graceful-timeout 30`, `--timeout 300` (LLM-Aufrufe; nginx proxy_read_timeout ebenso), `--capture-output`
   (Tracebacks landen in `logs/error.log`).
 
 ## Sicherheitsprinzipien (unverändert)

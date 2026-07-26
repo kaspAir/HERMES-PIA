@@ -140,10 +140,10 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
     So bleibt jeder HTTP-Aufruf kurz – das Worker-Zeitlimit ist damit kein Thema
     mehr, und die Ausgabelänge muss nicht gedeckelt werden.
 
-    `nachweis_fn` ist bewusst eine FUNKTION und wird nur im Syntheseschritt
-    gerufen: der Nachweis kostet selbst einen LLM-Aufruf (4096 Token). Vor jedem
-    Kapitel berechnet, sprengte er zusammen mit dem Kapitelaufruf das
-    Worker-Zeitlimit – und war achtmal umsonst.
+    **Je Schritt höchstens EIN Modellaufruf.** Der Nachweis kostet selbst einen –
+    er hat deshalb einen eigenen Schritt. Vor jedem Kapitel berechnet war er
+    achtmal umsonst; in den Syntheseschritt gepackt sprengte er zusammen mit
+    der Gesamtwürdigung das Worker-Zeitlimit (gemessen: Abbruch nach 121 s).
     """
     import json as _json
 
@@ -175,36 +175,44 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
     _takt("Invarianten geprueft")
     teile = _json.loads(zeile.teilbefunde_json or "[]")
     index = zeile.schritt or 0
-    nachschlag = zeile.nachschlag or 0
 
     if index < len(GRUPPEN):
         teil, versionen, grund = pruefe_kapitel(
-            answers, llm, index, invarianten=invarianten, tenant_id=tenant_id,
-            nachschlag=nachschlag)
+            answers, llm, index, invarianten=invarianten, tenant_id=tenant_id)
         _takt(f"Kapitel {index} geprueft")
         if teil is None:
-            return None, _merke_fehlversuch(db, zeile, grund)
+            return None, grund
         teile.append(teil)
-        zeile.nachschlag = 0
         zeile.teilbefunde_json = _json.dumps(teile, ensure_ascii=False)
         zeile.skill_versionen_json = _json.dumps(versionen, ensure_ascii=False)
         zeile.schritt = index + 1
         db.commit()
         return _zustand(zeile), ""
 
+    if index == len(GRUPPEN):
+        # Eigener Schritt: der Nachweis ist ein Modellaufruf fuer sich.
+        # Faellt er aus, laeuft die Gesamtwuerdigung ohne Evidenzgrundlage
+        # weiter - der Lauf darf daran nicht scheitern.
+        nachweis = None
+        if nachweis_fn is not None:
+            try:
+                nachweis = nachweis_fn()
+            except Exception:      # noqa: BLE001
+                log.warning("Nachweis nicht verfuegbar – Gesamtwuerdigung ohne "
+                            "Evidenzgrundlage.")
+        _takt("Nachweis erstellt")
+        zeile.nachweis_json = _json.dumps(nachweis, ensure_ascii=False) if nachweis else None
+        zeile.schritt = index + 1
+        db.commit()
+        return _zustand(zeile), ""
+
     # Letzter Schritt: Gesamtwürdigung.
-    nachweis = None
-    if nachweis_fn is not None:
-        try:
-            nachweis = nachweis_fn()
-        except Exception:      # noqa: BLE001 – ohne Nachweis laeuft die Synthese weiter
-            log.warning("Nachweis nicht verfuegbar – Synthese ohne Evidenzgrundlage.")
+    nachweis = _json.loads(zeile.nachweis_json) if zeile.nachweis_json else None
     gesamt, versionen, grund = synthese(
         teile, answers, llm, invarianten=invarianten, nachweis=nachweis,
-        tenant_id=tenant_id, nachschlag=nachschlag)
+        tenant_id=tenant_id)
     if gesamt is None:
-        return None, _merke_fehlversuch(db, zeile, grund)
-    zeile.nachschlag = 0
+        return None, grund
     protokoll = baue_protokoll(teile, gesamt)
     zeile.protokoll_json = _json.dumps(protokoll, ensure_ascii=False)
     zeile.empfehlung = protokoll.get("empfehlung")
@@ -213,16 +221,6 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
     zeile.status = "fertig"
     db.commit()
     return _zustand(zeile), ""
-
-
-def _merke_fehlversuch(db, zeile, grund):
-    """Haelt fest, dass dieser Schritt zu wenig Platz hatte – der naechste
-    Versuch rechnet dann mit mehr. Ohne das waere Wiederholen sinnlos."""
-    if "abgeschnitten" not in (grund or ""):
-        return grund
-    zeile.nachschlag = (zeile.nachschlag or 0) + 1
-    db.commit()
-    return grund
 
 
 def _zustand(zeile):

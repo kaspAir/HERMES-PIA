@@ -7,6 +7,7 @@ Die vier Abnahmekriterien aus Briefing 5.3 sind einzeln geprüft:
   4. Die fachlichen Befunde tragen einen Kapitelbezug.
 """
 import json
+from pathlib import Path
 
 import pytest
 
@@ -683,67 +684,8 @@ def test_schritt_nimmt_formular_und_json(app, monkeypatch, wie):
     assert r.get_json()["schritt"] == 1
 
 
-def test_budget_waechst_mit_dem_umfang_statt_fest_zu_sein(skills_dir):
-    """Eine feste Zahl ist bei einer Pruefung, deren Umfang vom PIA abhaengt,
-    immer falsch. Genau daran scheiterten 1200 UND 2500 Token."""
-    from app.domains.qualitaet.auftraggeber import kapitel_budget, pruefe_kapitel
-
-    klein = kapitel_budget({"ausgangslage": {"extracted": {"text": "kurz"}}})
-    gross = kapitel_budget({"ausgangslage": {"extracted": {"text": "Satz. " * 2000}}})
-    assert gross > klein * 2, "grosser Inhalt muss deutlich mehr Platz bekommen"
-
-    gesehen = {}
-
-    class _Merkt:
-        def complete(self, system, messages, max_tokens=1024, timeout=None, **kw):
-            gesehen.update(user=messages[0]["content"], max_tokens=max_tokens)
-            return json.dumps({"befunde": [], "gut": []})
-
-    # Ueber den ECHTEN Weg gemessen: mehr Inhalt -> mehr Platz. (Der Vergleich
-    # laeuft ueber pruefe_kapitel, weil der Inhalt dort erst verdichtet wird.)
-    pruefe_kapitel({"ausgangslage": {"extracted": {"text": "kurz"}}}, _Merkt(), 0,
-                   skills_dir=skills_dir)
-    schmal = gesehen["max_tokens"]
-    pruefe_kapitel({"ausgangslage": {"extracted": {"text": "Ein Satz mehr. " * 400}}},
-                   _Merkt(), 0, skills_dir=skills_dir)
-    assert gesehen["max_tokens"] > schmal
-    # Kein kuenstlicher Deckel mehr in der Anweisung – aber Ehrlichkeit bleibt.
-    assert "KEINE Obergrenze" not in gesehen["user"]
-    assert "drei bis sechs" not in gesehen["user"]
-    assert "weitere_befunde" in gesehen["user"]
 
 
-def test_synthesebudget_folgt_der_zahl_der_befunde(skills_dir):
-    """Bei der Gesamtwuerdigung ist der Bedarf keine Schaetzung: die
-    Kapitelbefunde LIEGEN VOR und lassen sich zaehlen. Genau daran scheiterte
-    der letzte Lauf – acht Kapitel voller Befunde gegen 1500 feste Token."""
-    from app.domains.qualitaet.auftraggeber import synthese_budget
-
-    wenig = synthese_budget([{"befunde": [{"feststellung": "x"}] * 2}])
-    viel = synthese_budget([{"befunde": [{"feststellung": "x"}] * 8}] * 8)
-    assert viel > wenig
-    assert viel >= 2000, "ein voller PIA braucht mehr als die alte feste Zahl"
-
-
-def test_budget_bleibt_zeitlich_erzeugbar():
-    """Das Budget darf nicht ins Unendliche wachsen – was in der zur Verfuegung
-    stehenden Zeit nicht erzeugt ist, reisst den Worker, und dann ist der ganze
-    Schritt verloren statt nur gekuerzt."""
-    from app.domains.qualitaet.auftraggeber import (
-        KAPITEL_ZEITLIMIT, TOKEN_JE_SEKUNDE, synthese_budget,
-    )
-
-    riesig = synthese_budget([{"befunde": [{"feststellung": "x"}] * 200}] * 20)
-    assert riesig <= TOKEN_JE_SEKUNDE * KAPITEL_ZEITLIMIT
-
-
-def test_wiederholen_rechnet_mit_mehr_platz(skills_dir):
-    """Sonst waere «Schritt wiederholen» eine Wiederholung desselben
-    Misserfolgs – der Nutzer wartet 90 s auf exakt dieselbe Meldung."""
-    from app.domains.qualitaet.auftraggeber import kapitel_budget
-
-    inhalt = {"ausgangslage": {"extracted": {"text": "Satz. " * 200}}}
-    assert kapitel_budget(inhalt, nachschlag=1) > kapitel_budget(inhalt)
 
 
 def test_gescheiterter_schritt_kann_wiederholt_werden():
@@ -758,20 +700,53 @@ def test_gescheiterter_schritt_kann_wiederholt_werden():
     assert "bereits geprüften Kapitel bleiben erhalten" in vorlage
 
 
-def test_am_deckel_verspricht_die_meldung_nichts_mehr():
-    """Wenn kein Platz mehr da ist, darf die Meldung nicht «beim Wiederholen
-    mehr Platz» versprechen – sonst wartet der Nutzer 90 s auf dasselbe."""
-    from app.domains.qualitaet.auftraggeber import (
-        TOKEN_DECKEL, _abschnitt_erklaeren,
-    )
+# ---- Die EINE Regel, die den Lauf traegt --------------------------------- #
 
-    abgeschnitten = "Die Antwort wurde abgeschnitten (Token-Budget zu klein)."
-    mit_luft = _abschnitt_erklaeren(abgeschnitten, 1500)
-    assert "mit mehr Platz" in mit_luft
+def test_je_schritt_hoechstens_ein_modellaufruf(app, monkeypatch):
+    """Gemessen: der Syntheseschritt machte ZWEI Aufrufe (Nachweis +
+    Gesamtwuerdigung) und riss nach 121 s das Worker-Zeitlimit. Seither hat der
+    Nachweis einen eigenen Schritt. Diese Regel darf nie wieder brechen."""
+    from app.domains.qualitaet import service as svc
+    from app.domains.qualitaet.auftraggeber import GRUPPEN, schritte
 
-    voll = _abschnitt_erklaeren(abgeschnitten, TOKEN_DECKEL)
-    assert "mit mehr Platz" not in voll
-    assert "ausgereizt" in voll
+    assert schritte()[len(GRUPPEN)] == "Herkunft der Angaben"
+    assert schritte()[-1] == "Gesamtwürdigung"
 
-    # Andere Fehlergruende bleiben unberuehrt.
-    assert _abschnitt_erklaeren("kein JSON", 1500) == "kein JSON"
+    quelle = Path(svc.__file__).read_text(encoding="utf-8")
+    # Im Syntheseschritt darf der Nachweis nur noch GELESEN werden.
+    nach_nachweisschritt = quelle.split("# Letzter Schritt")[1]
+    assert "nachweis_fn(" not in nach_nachweisschritt
+
+
+def test_zeitlimit_und_worker_limit_passen_zusammen():
+    """Das Lese-Zeitlimit muss samt Verbindungsaufbau in das Worker-Limit
+    passen – sonst stirbt der Prozess, und dann greift keine Fehlerseite."""
+    import re as _re
+
+    from app.config import BASE_DIR
+    from app.domains.llm.client import VERBINDUNGSLIMIT
+    from app.domains.qualitaet.auftraggeber import KAPITEL_ZEITLIMIT
+
+    ctl = Path(BASE_DIR, "deploy", "hermes_ctl.sh").read_text(encoding="utf-8")
+    worker = int(_re.search(r"--timeout (\d+)", ctl).group(1))
+    assert VERBINDUNGSLIMIT + KAPITEL_ZEITLIMIT + 15 <= worker
+
+    # Und unter der 120-s-Grenze, die in der Kette davor sitzt (nginx/PHP):
+    # ein Schritt muss auch dann durchkommen, wenn eine Zwischenstelle noch
+    # nicht umgestellt ist. Genau daran brach der Lauf nach 121 s ab.
+    assert VERBINDUNGSLIMIT + KAPITEL_ZEITLIMIT < 120
+
+    nginx = Path(BASE_DIR, "deploy", "nginx-hermespia.conf").read_text(encoding="utf-8")
+    for wert in _re.findall(r"proxy_read_timeout (\d+)s", nginx):
+        assert int(wert) >= worker - 60
+
+
+def test_budget_ist_grosszuegig_und_eine_einzige_zahl():
+    """Drei Anlaeufe an dieser Stelle waren drei zu viel. `max_tokens` ist eine
+    Obergrenze, keine Reservation – ein grosszuegiger Wert kostet nichts."""
+    from app.domains.qualitaet import auftraggeber as ag
+
+    assert ag.SCHRITT_TOKENS >= 16000
+    assert ag.KAPITEL_TOKENS == ag.SYNTHESE_TOKENS == ag.SCHRITT_TOKENS
+    quelle = Path(ag.__file__).read_text(encoding="utf-8")
+    assert "def kapitel_budget" not in quelle    # keine Rechnerei mehr
