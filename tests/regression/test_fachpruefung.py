@@ -898,12 +898,15 @@ def test_konsolidierung_ist_ein_eigener_schritt():
     assert s.index("Konsolidierung") < s.index("Gesamtwürdigung")
 
 
-def test_konsolidierung_loest_auf_und_gleicht_den_umfang_ab(skills_dir):
+def test_konsolidierung_zeigt_auf_nummern_statt_alles_neu_zu_schreiben(skills_dir):
+    """Gemessen: alle Befunde neu ausschreiben zu lassen sprengte das Zeitlimit –
+    und das Modell haette dabei nur abgeschrieben, was schon dasteht. Es zeigt
+    jetzt auf Nummern; das Zusammenfuehren macht der Code."""
     from app.domains.qualitaet.auftraggeber import konsolidiere
 
     teile = [
         {"kapitel": "Ziele", "befunde": [
-            {"kapitel": "Ziele", "feststellung": "Ziel 2 ohne Messgrösse",
+            {"kapitel": "Ziele", "feststellung": "Ziel 2 ohne Messgroesse",
              "gewicht": "Muss"}], "gut": []},
         {"kapitel": "Risiken", "befunde": [], "gut": [], "uebersprungen": True},
     ]
@@ -912,38 +915,87 @@ def test_konsolidierung_loest_auf_und_gleicht_den_umfang_ab(skills_dir):
     class _Merkt:
         def complete(self, system, messages, max_tokens=1024, timeout=None, **kw):
             gesehen["user"] = messages[0]["content"]
-            return json.dumps({
-                "befunde": [{"kapitel": "Ziele", "feststellung": "Ziel 2 ohne Messgrösse",
-                             "gewicht": "Muss"}],
-                "gut": [], "aufgeloeste_widersprueche": [],
-                "geprueft": ["Ziele"], "nicht_geprueft": ["Risiken"]})
+            return json.dumps({"zusammenfassungen": [],
+                               "aufgeloeste_widersprueche": [],
+                               "geprueft": ["Ziele"], "nicht_geprueft": ["Risiken"]})
 
     ergebnis, versionen, grund = konsolidiere(teile, _Merkt(), skills_dir=skills_dir)
     assert ergebnis and versionen and not grund
     assert ergebnis["nicht_geprueft"] == ["Risiken"]
-    # Der Schritt bekommt beides: was Inhalt hat und was nicht.
-    assert "kapitel_ohne_inhalt" in gesehen["user"]
-    assert "urteilst nicht neu" in gesehen["user"]
+    assert len(ergebnis["befunde"]) == 1        # unveraendert uebernommen
+    assert '"nr": 0' in gesehen["user"]         # nummeriert uebergeben
+    assert "melde NUR, was sich" in gesehen["user"]
+    assert "urteilst NICHT neu" in gesehen["user"]
 
 
-def test_konsolidierung_darf_keinen_muss_befund_verlieren(skills_dir):
-    """Sicherheitsnetz: verschluckt die Zusammenführung einen Muss-Befund, ohne
-    ihn verschmolzen zu haben, gelten die ursprünglichen Befunde."""
+def test_ein_leeres_ergebnis_ist_gueltig(skills_dir):
+    """Bei einem sauberen PIA gibt es nichts zusammenzufuehren – das darf den
+    Lauf nicht aufhalten."""
     from app.domains.qualitaet.auftraggeber import konsolidiere
 
     teile = [{"kapitel": "Ziele", "befunde": [
-        {"kapitel": "Ziele", "feststellung": "A fehlt", "gewicht": "Muss"},
-        {"kapitel": "Ziele", "feststellung": "B fehlt", "gewicht": "Muss"}], "gut": []}]
+        {"kapitel": "Ziele", "feststellung": "A", "gewicht": "Hinweis"}], "gut": ["gut"]}]
 
-    class _Verliert:
+    class _Leer:
         def complete(self, *a, **kw):
-            return json.dumps({"befunde": [
-                {"kapitel": "Ziele", "feststellung": "A fehlt", "gewicht": "Muss"}],
-                "gut": [], "geprueft": ["Ziele"], "nicht_geprueft": []})
+            return "{}"
 
-    ergebnis, _, _ = konsolidiere(teile, _Verliert(), skills_dir=skills_dir)
-    assert len(ergebnis["befunde"]) == 2, "kein Muss-Befund darf verschwinden"
-    assert ergebnis["_hinweis"]
+    ergebnis, _, grund = konsolidiere(teile, _Leer(), skills_dir=skills_dir)
+    assert not grund and len(ergebnis["befunde"]) == 1
+    assert ergebnis["gut"] == ["gut"]
+
+
+def test_kein_befund_kann_bei_der_zusammenfuehrung_verschwinden():
+    """Strukturell garantiert: was das Modell nicht erwaehnt, bleibt stehen.
+    Frueher musste ein Sicherheitsnetz das nachtraeglich reparieren."""
+    from app.domains.qualitaet.auftraggeber import _wende_zusammenfuehrung_an
+
+    befunde = [
+        {"kapitel": "Ziele", "feststellung": "A fehlt", "gewicht": "Muss"},
+        {"kapitel": "Termine", "feststellung": "B fehlt", "gewicht": "Vorbehalt"},
+        {"kapitel": "Risiken", "feststellung": "C fehlt", "gewicht": "Muss"},
+    ]
+    # Das Modell erfindet Unsinn: leere Antwort, Unsinnsnummern, Selbstgruppe.
+    for delta in ({}, {"zusammenfassungen": [{"nummern": [99]}]},
+                  {"zusammenfassungen": [{"nummern": [1]}]},
+                  {"zusammenfassungen": [{"nummern": ["x", None]}]}):
+        assert len(_wende_zusammenfuehrung_an(befunde, delta)) == 3
+
+
+def test_zusammenfassen_nimmt_das_schwerste_gewicht():
+    """Zwei Kapitel melden dieselbe Sache verschieden schwer – zusammenfassen
+    darf nie entschaerfen."""
+    from app.domains.qualitaet.auftraggeber import _wende_zusammenfuehrung_an
+
+    befunde = [
+        {"kapitel": "Ziele", "feststellung": "Nutzen unbelegt", "gewicht": "Hinweis"},
+        {"kapitel": "Ausgangslage", "feststellung": "Nutzen nicht belegt",
+         "gewicht": "Muss"},
+    ]
+    raus = _wende_zusammenfuehrung_an(befunde, {"zusammenfassungen": [
+        {"nummern": [0, 1], "feststellung": "Der Nutzen ist nirgends belegt"}]})
+    assert len(raus) == 1
+    assert raus[0]["gewicht"] == "Muss"
+    assert raus[0]["zusammengefasst_aus"] == ["Ziele", "Ausgangslage"]
+    assert raus[0]["feststellung"] == "Der Nutzen ist nirgends belegt"
+
+
+def test_widerlegter_befund_wird_zurueckgestuft_nicht_geloescht():
+    """Wer widerlegt wurde, soll das nachlesen koennen."""
+    from app.domains.qualitaet.auftraggeber import _wende_zusammenfuehrung_an
+
+    befunde = [
+        {"kapitel": "Termine", "feststellung": "Start fehlt", "gewicht": "Muss",
+         "kriterium": "Vollstaendigkeit"},
+        {"kapitel": "Ergebnisse", "feststellung": "Start ist genannt",
+         "gewicht": "Hinweis"},
+    ]
+    raus = _wende_zusammenfuehrung_an(befunde, {"aufgeloeste_widersprueche": [
+        {"nummern": [0, 1], "worum": "Startdatum", "aufloesung": "Es steht da",
+         "gilt": 1}]})
+    assert len(raus) == 2, "nichts wird geloescht"
+    assert raus[0]["gewicht"] == "Hinweis"
+    assert "widerlegt" in raus[0]["kriterium"]
 
 
 # ---- Kleinigkeiten -------------------------------------------------------- #

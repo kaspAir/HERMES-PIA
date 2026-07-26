@@ -266,7 +266,7 @@ SCHRITT_TOKENS = 16000
 # Hostings, sondern gunicorns STANDARD-Timeout - eine Kommentarzeile mitten in
 # einem mit \ fortgesetzten Befehl hatte das --timeout im Startskript
 # auskommentiert. Ein Test verbietet solche Kommentare jetzt.
-KAPITEL_ZEITLIMIT = 100
+KAPITEL_ZEITLIMIT = 240
 
 # Nur noch fuer den einteiligen Altweg (pruefe_fachlich).
 KAPITEL_TOKENS = SCHRITT_TOKENS
@@ -362,12 +362,97 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
     return teil, bundle.versions, ""
 
 
+# Die Zusammenfuehrung liefert nur die AENDERUNGEN, nicht die Befunde neu.
+# Grund: alle Befunde noch einmal ausschreiben zu lassen dauerte bei einem
+# grossen PIA laenger als das Zeitlimit - und das Modell haette dabei nur
+# abgeschrieben, was ohnehin schon dasteht. So bleibt die Antwort klein und
+# schnell. Der wichtigere Nebeneffekt: ein Befund KANN nicht mehr
+# verlorengehen, weil ihn niemand neu schreiben muss.
 _KONSOLIDIERUNG_SCHEMA = (
-    '{"befunde":[{"kapitel":"","kriterium":"","feststellung":"",'
-    '"gewicht":"Muss|Vorbehalt|Hinweis","vorschlag":"","zusammengefasst_aus":[""]}],'
-    '"gut":[""],'
-    '"aufgeloeste_widersprueche":[{"worum":"","aufloesung":""}],'
+    '{"zusammenfassungen":[{"nummern":[0,1],"feststellung":"",'
+    '"vorschlag":""}],'
+    '"aufgeloeste_widersprueche":[{"nummern":[0,1],"worum":"","aufloesung":"",'
+    '"gilt":0}],'
     '"geprueft":[""],"nicht_geprueft":[""]}')
+
+_GEWICHT_RANG = {"Hinweis": 0, "Vorbehalt": 1, "Muss": 2}
+
+
+def _wende_zusammenfuehrung_an(befunde, delta):
+    """Wendet die Änderungen auf die Befundliste an – deterministisch.
+
+    Was das Modell nicht erwähnt, bleibt unverändert stehen. Ein Befund kann
+    hier also nicht verschwinden; er kann nur mit anderen zu einem
+    zusammengefasst werden, und dann steht dran, aus welchen Kapiteln er kommt.
+    """
+    def nummern_von(eintrag):
+        raus = []
+        for n in eintrag.get("nummern") or []:
+            try:
+                i = int(n)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= i < len(befunde) and i not in raus:
+                raus.append(i)
+        return raus
+
+    ersetzt, verbraucht = {}, set()
+    for z in (delta.get("zusammenfassungen") or []):
+        if not isinstance(z, dict):
+            continue
+        nummern = [i for i in nummern_von(z) if i not in verbraucht]
+        if len(nummern) < 2:
+            continue          # eine «Zusammenfassung» aus einem Befund ist keine
+        quelle = [befunde[i] for i in nummern]
+        kapitel = []
+        for b in quelle:
+            k = b.get("kapitel")
+            if k and k not in kapitel:
+                kapitel.append(k)
+        # Das schwerste Gewicht der Gruppe gilt – Zusammenfassen darf nie
+        # entschärfen.
+        schwerste = max((str(b.get("gewicht", "")).capitalize() for b in quelle),
+                        key=lambda g: _GEWICHT_RANG.get(g, 0))
+        ersetzt[min(nummern)] = {
+            "kapitel": " / ".join(kapitel),
+            "kriterium": quelle[0].get("kriterium", ""),
+            "feststellung": z.get("feststellung") or quelle[0].get("feststellung", ""),
+            "gewicht": schwerste,
+            "vorschlag": z.get("vorschlag") or quelle[0].get("vorschlag", ""),
+            "zusammengefasst_aus": kapitel,
+        }
+        verbraucht.update(nummern)
+
+    # Widerspruch: der Befund, der laut Auflösung NICHT gilt, wird zum Hinweis
+    # zurückgestuft – gelöscht wird er nicht. Wer widerlegt wurde, soll das
+    # nachlesen können.
+    widerlegt = set()
+    for w in (delta.get("aufgeloeste_widersprueche") or []):
+        if not isinstance(w, dict):
+            continue
+        try:
+            gilt = int(w.get("gilt"))
+        except (TypeError, ValueError):
+            continue
+        for i in nummern_von(w):
+            if i != gilt:
+                widerlegt.add(i)
+
+    raus = []
+    for i, b in enumerate(befunde):
+        if i in ersetzt:
+            raus.append(ersetzt[i])
+        elif i in verbraucht:
+            continue
+        elif i in widerlegt:
+            abgestuft = dict(b)
+            abgestuft["gewicht"] = "Hinweis"
+            abgestuft["kriterium"] = ((b.get("kriterium") or "")
+                                      + " (bei der Zusammenführung widerlegt)").strip()
+            raus.append(abgestuft)
+        else:
+            raus.append(b)
+    return raus
 
 
 def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
@@ -376,11 +461,10 @@ def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
     Kapitelweise Prüfung hat einen Preis: jedes Kapitel urteilt für sich, kennt
     die anderen nicht und kann ihnen widersprechen oder dasselbe ein zweites Mal
     melden. Dieser Schritt löst Widersprüche auf, fasst Doppelbefunde zusammen
-    und gleicht den Prüfumfang gegen die TATSÄCHLICH vorliegenden Kapitel ab –
-    er ist die Zusammenführung, die zwischen Teil und Ganzem fehlte.
+    und gleicht den Prüfumfang gegen die TATSÄCHLICH vorliegenden Kapitel ab.
 
-    Er urteilt nicht neu: er darf zusammenfassen und auflösen, aber keinen
-    Befund erfinden und keinen Muss-Befund fallen lassen.
+    Das Modell entscheidet nur, WAS zusammengehört – es zeigt auf Nummern. Das
+    Zusammenführen selbst macht `_wende_zusammenfuehrung_an`.
     """
     if llm is None:
         return None, [], "Kein Sprachmodell konfiguriert."
@@ -389,29 +473,37 @@ def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
     if not bundle:
         return None, [], f"Der Skill «{SKILL}» wurde nicht gefunden."
 
+    befunde = [b for t in teilbefunde if isinstance(t, dict)
+               for b in (t.get("befunde") or []) if isinstance(b, dict)]
+    gut = [g for t in teilbefunde if isinstance(t, dict)
+           for g in (t.get("gut") or []) if str(g).strip()]
     vorhanden = [t.get("kapitel") for t in teilbefunde
                  if isinstance(t, dict) and not t.get("uebersprungen")]
     leer = [t.get("kapitel") for t in teilbefunde
             if isinstance(t, dict) and t.get("uebersprungen")]
-    roh = {"kapitel_mit_inhalt": vorhanden, "kapitel_ohne_inhalt": leer,
-           "befunde": [b for t in teilbefunde if isinstance(t, dict)
-                       for b in (t.get("befunde") or [])],
-           "gut": [g for t in teilbefunde if isinstance(t, dict)
-                   for g in (t.get("gut") or [])]}
+
+    # Nummeriert – so kann das Modell auf Befunde ZEIGEN, statt sie abzuschreiben.
+    liste = [{"nr": i, "kapitel": b.get("kapitel"), "gewicht": b.get("gewicht"),
+              "feststellung": b.get("feststellung")}
+             for i, b in enumerate(befunde)]
 
     user = (
         "Die Kapitel sind einzeln geprüft worden – jedes ohne Kenntnis der "
-        "anderen. Führe die Befunde jetzt zusammen:\n"
-        "1. WIDERSPRÜCHE auflösen: sagen zwei Befunde Gegenteiliges, entscheide "
-        "begründet und halte die Auflösung fest.\n"
-        "2. DOPPELBEFUNDE zusammenfassen: dieselbe Sache aus zwei Kapiteln wird "
-        "EIN Befund; nenne in 'zusammengefasst_aus' die betroffenen Kapitel.\n"
-        "3. PRÜFUMFANG abgleichen: 'geprueft' sind die Kapitel mit Inhalt, "
-        "'nicht_geprueft' die ohne. Behaupte nichts über Kapitel ohne Inhalt.\n\n"
-        "HARTE REGELN: Du urteilst nicht neu. Du erfindest keinen Befund. Kein "
-        "Muss-Befund darf verschwinden – er darf nur mit einem anderen "
-        "verschmelzen. Bleiben zwei Befunde verschieden, bleiben es zwei.\n\n"
-        f"{json.dumps(roh, ensure_ascii=False)}\n\n"
+        "anderen. Sieh die nummerierten Befunde durch und melde NUR, was sich "
+        "ändert. Befunde, die du nicht erwähnst, bleiben unverändert stehen.\n"
+        "1. DOPPELBEFUNDE: nennt dieselbe Sache in mehreren Kapiteln, gib die "
+        "Nummern und eine gemeinsame Feststellung.\n"
+        "2. WIDERSPRÜCHE: sagen zwei Befunde Gegenteiliges, gib die Nummern, "
+        "worum es geht, die begründete Auflösung und in 'gilt' die Nummer des "
+        "Befundes, der bestehen bleibt.\n"
+        "3. PRÜFUMFANG: 'geprueft' sind die Kapitel mit Inhalt, 'nicht_geprueft' "
+        "die ohne. Behaupte nichts über Kapitel ohne Inhalt.\n\n"
+        "Du urteilst NICHT neu und erfindest keinen Befund. Findest du nichts "
+        "zusammenzuführen, gib leere Listen zurück – das ist ein gültiges "
+        "Ergebnis und bei einem sauberen PIA der Normalfall.\n\n"
+        f"Befunde:\n{json.dumps(liste, ensure_ascii=False)}\n"
+        f"Kapitel mit Inhalt: {json.dumps(vorhanden, ensure_ascii=False)}\n"
+        f"Kapitel ohne Inhalt: {json.dumps(leer, ensure_ascii=False)}\n\n"
         f"Gib NUR eine Antwort nach diesem Aufbau:\n{_KONSOLIDIERUNG_SCHEMA}"
     )
     try:
@@ -424,28 +516,24 @@ def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
         log.exception("Konsolidierung fehlgeschlagen")
         return None, bundle.versions, f"{e.__class__.__name__}: {e}"
 
-    teil, grund = _json_aus(antwort)
-    if teil is None:
+    delta, grund = _json_aus(antwort)
+    if delta is None:
         log.warning("Konsolidierung ohne Ergebnis: %s | %.300r", grund, antwort)
         return None, bundle.versions, grund
 
-    # Sicherheitsnetz: kein Muss-Befund darf beim Zusammenfassen verlorengehen.
-    vorher = [b for b in roh["befunde"]
-              if str(b.get("gewicht", "")).capitalize() == "Muss"]
-    nachher = [b for b in (teil.get("befunde") or [])
-               if isinstance(b, dict)
-               and str(b.get("gewicht", "")).capitalize() == "Muss"]
-    if len(nachher) < len(vorher):
-        fehlend = {str(b.get("feststellung", ""))[:80] for b in vorher} -                   {str(b.get("feststellung", ""))[:80] for b in nachher}
-        zusammengefasst = {z for b in (teil.get("befunde") or [])
-                           if isinstance(b, dict)
-                           for z in (b.get("zusammengefasst_aus") or [])}
-        if fehlend and not zusammengefasst:
-            log.warning("Konsolidierung liess Muss-Befunde weg – Originale bleiben.")
-            teil["befunde"] = roh["befunde"]
-            teil["_hinweis"] = ("Die Zusammenführung hätte Muss-Befunde weggelassen; "
-                                "es gelten deshalb die ursprünglichen Befunde.")
-    return teil, bundle.versions, ""
+    ergebnis = {
+        "befunde": _wende_zusammenfuehrung_an(befunde, delta),
+        "gut": gut,
+        "aufgeloeste_widersprueche": [
+            {"worum": w.get("worum", ""), "aufloesung": w.get("aufloesung", "")}
+            for w in (delta.get("aufgeloeste_widersprueche") or [])
+            if isinstance(w, dict) and (w.get("worum") or w.get("aufloesung"))],
+        "geprueft": delta.get("geprueft") or vorhanden,
+        "nicht_geprueft": delta.get("nicht_geprueft") or leer,
+    }
+    log.warning("Konsolidierung: %d Befunde -> %d", len(befunde),
+                len(ergebnis["befunde"]))
+    return ergebnis, bundle.versions, ""
 
 
 def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
