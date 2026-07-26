@@ -794,3 +794,21 @@ def test_health_meldet_den_direktmodus(app_direkt):
     assert p["modus"] == "direkt (AUS)"
     assert p["konfiguriert"] is False
     assert p["textformulierung_aktiv"] is True      # das LLM arbeitet ja
+
+
+def test_anbieterfehler_behauptet_im_direktmodus_keinen_schutz(app_direkt):
+    """Im Direktmodus war der Text NICHT geschuetzt - das darf die Seite nicht
+    behaupten. Falsche Zusicherungen im Datenschutz kosten mehr als ein Fehler."""
+    from app.domains.llm.errors import PseudoAnbieterFehler
+
+    class _Abgelehnt:
+        def complete(self, *a, **kw):
+            raise PseudoAnbieterFehler(anbieter_meldung="invalid x-api-key", status=401)
+
+    app_direkt.interview_service.llm = _Abgelehnt()
+    c, sid = _angemeldet(app_direkt)
+    seite = c.post(f"/interview/{sid}/answer",
+                   data={"raw_text": "Ein Diktat."}).get_data(as_text=True)
+    assert "war bereits geschützt" not in seite
+    assert "abgeschaltet" in seite
+    assert "ANTHROPIC_API_KEY" in seite

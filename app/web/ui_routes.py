@@ -37,6 +37,19 @@ from app.web.auth import (
 bp = Blueprint("ui", __name__)
 
 
+def _pseudonymisierung_aus():
+    """Laeuft die Anwendung ohne Pseudonymisierung (Direktmodus)?
+
+    Bewusst aus der KONFIGURATION beantwortet und nicht aus der Client-Instanz:
+    die Frage ist eine Eigenschaft des Deployments, nicht eines Objekts. Vorher
+    stand dieselbe getattr-Abfrage an drei Stellen - und driftete auseinander,
+    sobald eine davon einen anderen Client sah.
+    """
+    return (bool(current_app.config.get("PSEUDO_UMGEHEN"))
+            and bool(current_app.config.get("ANTHROPIC_API_KEY"))
+            and not (current_app.config.get("PSEUDO_BASIS_URL") or "").strip())
+
+
 @bp.get("/health")
 def health():
     """Betriebszustand – auch, ob die Pseudonymisierungsschicht steht.
@@ -45,7 +58,7 @@ def health():
     ohne sich durch ein Interview zu klicken. Nennt bewusst KEINE Geheimnisse.
     """
     llm = current_app.interview_service.llm
-    direkt = bool(llm) and getattr(llm, "direkt", False)
+    direkt = _pseudonymisierung_aus()
     return jsonify({
         "status": "ok",
         "service": "hermes-pia",
@@ -236,7 +249,7 @@ def interview_workspace(session_id):
         llm_available=bool(svc.llm),
         # Direktmodus muss im Interview SICHTBAR sein – sonst arbeitet jemand
         # wochenlang ohne Pseudonymisierung, ohne es zu merken.
-        pseudo_aus=bool(svc.llm) and getattr(svc.llm, "direkt", False),
+        pseudo_aus=_pseudonymisierung_aus(),
     )
 
 
@@ -1295,11 +1308,13 @@ def _pseudo_konfiguration(exc):
 
 @bp.app_errorhandler(PseudoAnbieterFehler)
 def _pseudo_anbieter(exc):
-    """Kein Pseudonymisierungsproblem: der Text war bereits geschuetzt."""
+    """Der Anbieter hat abgelehnt. OB der Text dabei geschuetzt war, haengt am
+    Modus - die Seite darf das nicht pauschal behaupten."""
     current_app.logger.error("Anbieter hat abgelehnt (%s): %s",
                              exc.status, exc.anbieter_meldung or exc)
     return render_template("pseudo_fehler.html", art="anbieter", meldung=str(exc),
-                           anbieter_meldung=exc.anbieter_meldung), 502
+                           anbieter_meldung=exc.anbieter_meldung,
+                           pseudo_aus=_pseudonymisierung_aus()), 502
 
 
 @bp.app_errorhandler(PseudoAntwortUnlesbar)
