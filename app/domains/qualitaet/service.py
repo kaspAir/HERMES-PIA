@@ -148,7 +148,7 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
     import json as _json
 
     from app.domains.qualitaet.auftraggeber import (
-        GRUPPEN, baue_protokoll, pruefe_kapitel, schritte, synthese,
+        GRUPPEN, baue_protokoll, konsolidiere, pruefe_kapitel, schritte, synthese,
     )
     from app.domains.qualitaet.models import PiaPruefung
     from app.shared.database import SessionLocal
@@ -190,9 +190,21 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
         return _zustand(zeile), ""
 
     if index == len(GRUPPEN):
-        # Eigener Schritt: der Nachweis ist ein Modellaufruf fuer sich.
-        # Faellt er aus, laeuft die Gesamtwuerdigung ohne Evidenzgrundlage
-        # weiter - der Lauf darf daran nicht scheitern.
+        # Zusammenfuehrung VOR dem Gesamturteil: Widersprueche aufloesen,
+        # Doppelbefunde verschmelzen, Pruefumfang gegen die tatsaechlich
+        # vorliegenden Kapitel abgleichen. Kapitelweise geprueft kennt kein
+        # Kapitel die anderen - diese Luecke schliesst der Schritt.
+        zus, versionen, grund = konsolidiere(teile, llm, tenant_id=tenant_id)
+        _takt("Konsolidiert")
+        if zus is None:
+            return None, grund
+        zeile.konsolidiert_json = _json.dumps(zus, ensure_ascii=False)
+        zeile.skill_versionen_json = _json.dumps(versionen, ensure_ascii=False)
+        zeile.schritt = index + 1
+        db.commit()
+        return _zustand(zeile), ""
+
+    if index == len(GRUPPEN) + 1:
         # Der Nachweis ist ZUSATZLICHE Evidenz, keine Voraussetzung. Faellt er
         # aus – aus welchem Grund auch immer – laeuft die Gesamtwuerdigung ohne
         # ihn weiter und weist das aus. Der Lauf darf daran nie haengenbleiben.
@@ -212,17 +224,22 @@ def fachpruefung_schritt(pruefung_id, session, llm, answers=None, tarife=None,
         db.commit()
         return _zustand(zeile), ""
 
-    # Letzter Schritt: Gesamtwürdigung.
+    # Letzter Schritt: Gesamtwürdigung – auf den KONSOLIDIERTEN Befunden.
     try:
         nachweis = _json.loads(zeile.nachweis_json) if zeile.nachweis_json else None
     except ValueError:
         nachweis = None
+    try:
+        zusammengefuehrt = (_json.loads(zeile.konsolidiert_json)
+                            if zeile.konsolidiert_json else None)
+    except ValueError:
+        zusammengefuehrt = None
     gesamt, versionen, grund = synthese(
         teile, answers, llm, invarianten=invarianten, nachweis=nachweis,
-        tenant_id=tenant_id)
+        tenant_id=tenant_id, konsolidiert=zusammengefuehrt)
     if gesamt is None:
         return None, grund
-    protokoll = baue_protokoll(teile, gesamt)
+    protokoll = baue_protokoll(teile, gesamt, konsolidiert=zusammengefuehrt)
     zeile.protokoll_json = _json.dumps(protokoll, ensure_ascii=False)
     zeile.empfehlung = protokoll.get("empfehlung")
     zeile.skill_versionen_json = _json.dumps(versionen, ensure_ascii=False)

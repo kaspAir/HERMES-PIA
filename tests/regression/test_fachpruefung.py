@@ -391,13 +391,15 @@ def test_abgeschnittene_antwort_wird_als_solche_erkannt(skills_dir):
     """Der haeufigste Fall, wenn das Token-Budget nicht reicht."""
     halb = '{"gegenstand":{"umfang":"a"},"befunde":[{"kapitel":"Kap. 1","fest'
     _, _, grund = pruefe_fachlich({}, _LLM(halb), skills_dir=skills_dir)
-    assert "abgeschnitten" in grund and "Token-Budget" in grund
+    assert "unvollständig" in grund
+    # Der Grund benennt die Sache, ohne Implementierungsbegriff.
+    assert "Token" not in grund
 
 
 def test_kein_json_nennt_den_anfang_der_antwort(skills_dir):
     _, _, grund = pruefe_fachlich({}, _LLM("Das kann ich nicht beurteilen."),
                                   skills_dir=skills_dir)
-    assert "kein JSON" in grund and "Das kann ich nicht" in grund
+    assert "nicht auswertbar" in grund
 
 
 def test_grund_erscheint_auf_der_fehlerseite(app, monkeypatch):
@@ -410,7 +412,7 @@ def test_grund_erscheint_auf_der_fehlerseite(app, monkeypatch):
     r = c.post(f"/interview/{sid}/fachpruefung/schritt",
                data={"pruefung_id": _lauf_id(sid)})
     assert r.status_code == 502
-    assert "kein JSON" in r.get_json()["fehler"]
+    assert "nicht auswertbar" in r.get_json()["fehler"]
 
 
 # ---- Eine gekuerzte Pruefung darf nie vollstaendig aussehen -------------- #
@@ -581,7 +583,11 @@ def test_nachweis_wird_nur_im_syntheseschritt_geholt(app, monkeypatch):
         c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
     assert aufrufe["n"] == 0, "Der Nachweis darf die Kapitelschritte nicht belasten"
 
-    # Erst die Gesamtwuerdigung braucht ihn - genau einmal.
+    # Auch die Konsolidierung braucht ihn nicht.
+    c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
+    assert aufrufe["n"] == 0
+
+    # Erst der Nachweisschritt holt ihn - genau einmal.
     c.post(f"/interview/{sid}/fachpruefung/schritt", data={"pruefung_id": pid})
     assert aufrufe["n"] == 1
 
@@ -709,7 +715,7 @@ def test_je_schritt_hoechstens_ein_modellaufruf(app, monkeypatch):
     from app.domains.qualitaet import service as svc
     from app.domains.qualitaet.auftraggeber import GRUPPEN, schritte
 
-    assert schritte()[len(GRUPPEN)] == "Herkunft der Angaben"
+    assert schritte()[len(GRUPPEN) + 1] == "Herkunft der Angaben"
     assert schritte()[-1] == "Gesamtwürdigung"
 
     quelle = Path(svc.__file__).read_text(encoding="utf-8")
@@ -787,7 +793,7 @@ def test_oberflaeche_unterscheidet_serverfehler_von_verbindungsabbruch():
     assert "r.text()" in v
     assert "return r.json()" not in v and ".then(r => r.json())" not in v
     assert "'Accept': 'application/json'" in v
-    assert "nicht mit " in v                          # nennt HTTP-Status + Rumpf
+    assert "Der Server meldete einen Fehler (Code " in v
 
 
 def test_nachweis_blockiert_den_lauf_nie(app, monkeypatch):
@@ -839,3 +845,153 @@ def test_nachweis_der_pruefung_braucht_kein_modell(app, monkeypatch):
     # Fürs DOKUMENT bleibt die ausformulierte Fassung erhalten.
     svc.build_nachweis(session, answers)
     assert gerufen == [1]
+
+
+# ---- Prio 1a: der Eingang wird NIE gekuerzt ------------------------------- #
+
+def test_der_pruefeingang_wird_nie_gekuerzt(skills_dir):
+    """Ein beschnittener Eingang macht die Prüfung inhaltlich falsch: das Modell
+    hält den Ausschnitt für das Ganze und meldet als «fehlend», was nur nicht
+    übergeben wurde. Auch «kürzen und markieren» ist keine Lösung – dann urteilt
+    der Prüfer über etwas anderes als das, was vorliegt."""
+    from app.domains.qualitaet.auftraggeber import _pia_kompakt, pruefe_kapitel
+
+    langer_text = ("Ein sehr ausführlicher Satz. " * 500).strip()   # ~14 000 Zeichen
+    viele_zeilen = [{"rolle": f"R{i}", "pt": str(i)} for i in range(120)]
+    answers = {"ausgangslage": {"extracted": {"text": langer_text}},
+               "personalaufwand": {"extracted": viele_zeilen}}
+
+    kompakt = _pia_kompakt(answers)
+    assert kompakt["ausgangslage"] == langer_text, "Text darf nicht beschnitten werden"
+    assert len(kompakt["personalaufwand"]) == 120, "keine Zeile darf wegfallen"
+
+    gesehen = {}
+
+    class _Merkt:
+        def complete(self, system, messages, max_tokens=1024, timeout=None, **kw):
+            gesehen["user"] = messages[0]["content"]
+            return json.dumps({"befunde": [], "gut": []})
+
+    pruefe_kapitel(answers, _Merkt(), 0, skills_dir=skills_dir)
+    assert langer_text in gesehen["user"], "der Kapitelinhalt geht vollständig mit"
+    assert "VOLLSTÄNDIG übergeben" in gesehen["user"]
+
+
+def test_kein_abschneiden_im_modul():
+    """Wächter gegen die Rückkehr der Beschneidung."""
+    from pathlib import Path
+
+    from app.domains.qualitaet import auftraggeber as ag
+    quelle = Path(ag.__file__).read_text(encoding="utf-8")
+    import re as _re
+    treffer = _re.findall(r"ensure_ascii=False\)\[:\d+\]", quelle)
+    assert not treffer, f"Eingang wird wieder beschnitten: {treffer}"
+
+
+# ---- Prio 1b: Konsolidierung --------------------------------------------- #
+
+def test_konsolidierung_ist_ein_eigener_schritt():
+    from app.domains.qualitaet.auftraggeber import GRUPPEN, schritte
+
+    s = schritte()
+    assert s[len(GRUPPEN)] == "Konsolidierung"
+    assert s.index("Konsolidierung") < s.index("Gesamtwürdigung")
+
+
+def test_konsolidierung_loest_auf_und_gleicht_den_umfang_ab(skills_dir):
+    from app.domains.qualitaet.auftraggeber import konsolidiere
+
+    teile = [
+        {"kapitel": "Ziele", "befunde": [
+            {"kapitel": "Ziele", "feststellung": "Ziel 2 ohne Messgrösse",
+             "gewicht": "Muss"}], "gut": []},
+        {"kapitel": "Risiken", "befunde": [], "gut": [], "uebersprungen": True},
+    ]
+    gesehen = {}
+
+    class _Merkt:
+        def complete(self, system, messages, max_tokens=1024, timeout=None, **kw):
+            gesehen["user"] = messages[0]["content"]
+            return json.dumps({
+                "befunde": [{"kapitel": "Ziele", "feststellung": "Ziel 2 ohne Messgrösse",
+                             "gewicht": "Muss"}],
+                "gut": [], "aufgeloeste_widersprueche": [],
+                "geprueft": ["Ziele"], "nicht_geprueft": ["Risiken"]})
+
+    ergebnis, versionen, grund = konsolidiere(teile, _Merkt(), skills_dir=skills_dir)
+    assert ergebnis and versionen and not grund
+    assert ergebnis["nicht_geprueft"] == ["Risiken"]
+    # Der Schritt bekommt beides: was Inhalt hat und was nicht.
+    assert "kapitel_ohne_inhalt" in gesehen["user"]
+    assert "urteilst nicht neu" in gesehen["user"]
+
+
+def test_konsolidierung_darf_keinen_muss_befund_verlieren(skills_dir):
+    """Sicherheitsnetz: verschluckt die Zusammenführung einen Muss-Befund, ohne
+    ihn verschmolzen zu haben, gelten die ursprünglichen Befunde."""
+    from app.domains.qualitaet.auftraggeber import konsolidiere
+
+    teile = [{"kapitel": "Ziele", "befunde": [
+        {"kapitel": "Ziele", "feststellung": "A fehlt", "gewicht": "Muss"},
+        {"kapitel": "Ziele", "feststellung": "B fehlt", "gewicht": "Muss"}], "gut": []}]
+
+    class _Verliert:
+        def complete(self, *a, **kw):
+            return json.dumps({"befunde": [
+                {"kapitel": "Ziele", "feststellung": "A fehlt", "gewicht": "Muss"}],
+                "gut": [], "geprueft": ["Ziele"], "nicht_geprueft": []})
+
+    ergebnis, _, _ = konsolidiere(teile, _Verliert(), skills_dir=skills_dir)
+    assert len(ergebnis["befunde"]) == 2, "kein Muss-Befund darf verschwinden"
+    assert ergebnis["_hinweis"]
+
+
+# ---- Kleinigkeiten -------------------------------------------------------- #
+
+def test_auflagen_wiederholen_keine_muss_befunde():
+    from app.domains.qualitaet.auftraggeber import baue_protokoll
+
+    gesamt = {"empfehlung": "mit vorbehalt", "auflagen": [
+        {"offen": "Vorfestlegung auf die Lösung offenlegen", "wer": "PL"},
+        {"offen": "Termin mit dem Amt vereinbaren", "wer": "AG"}]}
+    konsolidiert = {"befunde": [
+        {"kapitel": "Ausgangslage", "gewicht": "Muss",
+         "feststellung": "Die Vorfestlegung auf die Lösung ist nicht offengelegt"}]}
+    p = baue_protokoll([], gesamt, konsolidiert=konsolidiert)
+    offen = [a["offen"] for a in p["auflagen"]]
+    assert "Termin mit dem Amt vereinbaren" in offen
+    assert not any("Vorfestlegung" in o for o in offen), "Dublette zum Muss-Befund"
+
+
+def test_auflagen_ueberschrift_folgt_der_empfehlung():
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+    v = Path(BASE_DIR, "app", "templates", "fachpruefung.html").read_text(
+        encoding="utf-8")
+    assert "Zu behebende Punkte" in v
+    assert "Auflagen bei Vorbehalt" in v
+
+
+def test_nutzertexte_ohne_implementierungsbegriffe():
+    """«JSON», «Token» und Konsorten gehören ins Protokoll, nicht auf den
+    Bildschirm des Projektleiters."""
+    from app.domains.qualitaet.auftraggeber import _json_aus
+
+    for roh in ("", "kein Objekt", '{"a": ', '{"a": 1,,}'):
+        _, grund = _json_aus(roh)
+        for wort in ("JSON", "Token", "Schema", "parse"):
+            assert wort.lower() not in grund.lower(), f"{wort!r} in «{grund}»"
+
+
+def test_befunde_werden_priorisiert_dargestellt():
+    """Muss vollständig und zuerst, Vorbehalte gruppiert, Hinweise einklappbar –
+    dann trifft eine Kürzung der Darstellung nie einen Muss-Befund."""
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+    v = Path(BASE_DIR, "app", "templates", "fachpruefung.html").read_text(
+        encoding="utf-8")
+    assert "equalto', 'Muss'" in v.replace('"', "'")
+    assert "<details" in v and "Hinweise" in v
+    assert v.index("Muss (") < v.index("Vorbehalte (") < v.index("Hinweise (")

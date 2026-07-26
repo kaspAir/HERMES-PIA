@@ -39,3 +39,5 @@ class PiaPruefung(Base):
     # zwischengespeichert - die Gesamtwuerdigung liest ihn, statt ihn selbst
     # zu erzeugen. Zwei Modellaufrufe in einer Anfrage rissen das Zeitlimit.
     nachweis_json = Column(Text, nullable=True)
+    # Ergebnis der Zusammenfuehrung (Widersprueche, Doppelbefunde, Pruefumfang).
+    konsolidiert_json = Column(Text, nullable=True)

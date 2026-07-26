@@ -56,6 +56,8 @@ SYSTEM = (
     "Unsicheres benennst du als unsicher.\n"
     "- Du bleibst proportional: ein kleiner, sauberer PIA verdient eine kurze Prüfung.\n"
     "Antworte AUSSCHLIESSLICH mit validem JSON nach dem vorgegebenen Schema."
+    # (Diese Zeile richtet sich an das Modell, nicht an den Nutzer - dort ist
+    # der Fachbegriff korrekt und noetig.)
 )
 
 _SCHEMA = (
@@ -82,22 +84,25 @@ def _json_aus(roh):
     das Token-Budget zu klein). Frueher fuehrten alle drei zur selben
     nichtssagenden Meldung.
     """
+    # Die Meldungen gehen dem NUTZER auf den Bildschirm - deshalb ohne
+    # Implementierungsbegriffe («JSON», «Token»). Was ich zur Fehlersuche
+    # brauche, steht im Protokoll, nicht in der Meldung.
     if not roh or not roh.strip():
-        return None, "Das Modell hat nichts geliefert."
+        return None, "Die Prüfung hat kein Ergebnis geliefert."
     # Abgeschnitten? Die Klammerbilanz der GANZEN Antwort verraet es zuverlaessig.
     # (Eine gierige Regex fände sonst ein Teilstueck mit schliessender Klammer und
     # meldete «kein gültiges JSON» – richtig, aber nicht handlungsleitend.)
     if roh.count("{") > roh.count("}"):
-        return None, ("Die Antwort wurde abgeschnitten (Token-Budget zu klein für "
-                      "dieses Protokoll).")
+        return None, ("Das Ergebnis ist unvollständig geblieben – die Prüfung "
+                      "wurde mitten im Schreiben abgebrochen.")
     m = re.search(r"\{.*\}", roh, re.DOTALL)
     if not m:
-        return None, f"Die Antwort war kein JSON: {roh[:120]!r}"
+        return None, "Das Ergebnis war nicht auswertbar."
     try:
         return json.loads(m.group()), ""
     except (ValueError, TypeError) as e:
-        return None, (f"Die Antwort war kein gültiges JSON ({e}). "
-                      f"Beginn: {m.group()[:120]!r}")
+        log.warning("Ergebnis nicht lesbar (%s): %.200r", e, m.group())
+        return None, "Das Ergebnis war nicht vollständig auswertbar."
 
 
 def _befunde_kompakt(ergebnis):
@@ -120,7 +125,19 @@ def _befunde_kompakt(ergebnis):
 
 
 def _pia_kompakt(answers):
-    """Der PIA-Inhalt in kompakter Form – nur was fachlich beurteilt wird."""
+    """Der PIA-Inhalt für die Prüfung – VOLLSTAENDIG. Es wird NICHTS gekürzt.
+
+    Frueher wurden Texte auf 2500 Zeichen und Tabellen auf 25 Zeilen beschnitten.
+    Das machte die Pruefung inhaltlich FALSCH: das Modell beurteilt dann einen
+    Ausschnitt, haelt ihn fuer das Ganze und meldet als «fehlend», was nur nicht
+    uebergeben wurde. Kapitelweise geprueft passt der volle Inhalt ohnehin in
+    einen Aufruf.
+
+    Auch ein «gekuerzt, aber markiert» gibt es hier nicht: sobald gekuerzt wird,
+    urteilt der Pruefer ueber etwas anderes als das, was vorliegt. Waere ein
+    Kapitel wirklich zu gross, muss der Aufruf mit einem klaren Fehler scheitern
+    - nicht mit einem stillen Ausschnitt.
+    """
     out = {}
     for sid, eintrag in (answers or {}).items():
         if sid.startswith("_") or not isinstance(eintrag, dict):
@@ -129,10 +146,10 @@ def _pia_kompakt(answers):
         if isinstance(ex, dict):
             text = (ex.get("text") or "").strip()
             if text:
-                out[sid] = text[:2500]
+                out[sid] = text
         elif isinstance(ex, list) and ex:
-            out[sid] = [{k: str(v)[:200] for k, v in r.items() if str(v).strip()}
-                        for r in ex if isinstance(r, dict)][:25]
+            out[sid] = [{k: str(v) for k, v in r.items() if str(v).strip()}
+                        for r in ex if isinstance(r, dict)]
     return out
 
 
@@ -159,7 +176,7 @@ def pruefe_fachlich(answers, llm, invarianten=None, nachweis=None, tenant_id=Non
     }
     user = (
         "Prüfe den folgenden PIA aus Auftraggeber-Sicht nach der Methode.\n\n"
-        f"{json.dumps(eingang, ensure_ascii=False)[:14000]}\n\n"
+        f"{json.dumps(eingang, ensure_ascii=False)}\n\n"
         "Die unter 'invarianten_befunde' genannten Regeln sind BEREITS gemeldet – "
         "übernimm sie als bekannt und melde sie NICHT erneut.\n"
         "Fasse dich knapp: je Feststellung ein bis zwei Sätze.\n"
@@ -277,8 +294,8 @@ def schritte():
     Gesamtwuerdigung - zusammen sprengten die beiden Aufrufe das Zeitlimit des
     Workers, und dann ist der ganze Schritt verloren statt nur gekuerzt.
     """
-    return [name for name, _ in GRUPPEN] + ["Herkunft der Angaben",
-                                            "Gesamtwürdigung"]
+    return ([name for name, _ in GRUPPEN]
+            + ["Konsolidierung", "Herkunft der Angaben", "Gesamtwürdigung"])
 
 
 def _auszug(answers, sids):
@@ -310,7 +327,10 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
         f"Prüfe AUSSCHLIESSLICH das Kapitel «{name}» dieses PIA nach dem Prüfraster "
         f"der Methode. Andere Kapitel beurteilst du hier NICHT – sie werden separat "
         f"geprüft.\n\n"
-        f"{json.dumps(inhalt, ensure_ascii=False)[:6000]}\n\n"
+        f"{json.dumps(inhalt, ensure_ascii=False)}\n\n"
+        "Der Kapitelinhalt oben ist VOLLSTÄNDIG übergeben. Trägt ein Feld die "
+        "Angabe '_gekuerzt', ist genau dieses Feld unvollständig – dann beurteile "
+        "seine Vollständigkeit NICHT.\n"
         f"Bereits gemeldete Regelbefunde (nicht wiederholen): "
         f"{json.dumps(_befunde_kompakt(invarianten), ensure_ascii=False)}\n"
         "Fasse dich knapp: je Feststellung ein bis zwei Sätze, kein Vorwort. Nur "
@@ -342,10 +362,96 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
     return teil, bundle.versions, ""
 
 
+_KONSOLIDIERUNG_SCHEMA = (
+    '{"befunde":[{"kapitel":"","kriterium":"","feststellung":"",'
+    '"gewicht":"Muss|Vorbehalt|Hinweis","vorschlag":"","zusammengefasst_aus":[""]}],'
+    '"gut":[""],'
+    '"aufgeloeste_widersprueche":[{"worum":"","aufloesung":""}],'
+    '"geprueft":[""],"nicht_geprueft":[""]}')
+
+
+def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
+    """Räumt die Kapitelbefunde auf, BEVOR das Gesamturteil gebildet wird.
+
+    Kapitelweise Prüfung hat einen Preis: jedes Kapitel urteilt für sich, kennt
+    die anderen nicht und kann ihnen widersprechen oder dasselbe ein zweites Mal
+    melden. Dieser Schritt löst Widersprüche auf, fasst Doppelbefunde zusammen
+    und gleicht den Prüfumfang gegen die TATSÄCHLICH vorliegenden Kapitel ab –
+    er ist die Zusammenführung, die zwischen Teil und Ganzem fehlte.
+
+    Er urteilt nicht neu: er darf zusammenfassen und auflösen, aber keinen
+    Befund erfinden und keinen Muss-Befund fallen lassen.
+    """
+    if llm is None:
+        return None, [], "Kein Sprachmodell konfiguriert."
+    bundle = load_skills(BEREICH, tenant_id=tenant_id, skills_dir=skills_dir,
+                         only={SKILL})
+    if not bundle:
+        return None, [], f"Der Skill «{SKILL}» wurde nicht gefunden."
+
+    vorhanden = [t.get("kapitel") for t in teilbefunde
+                 if isinstance(t, dict) and not t.get("uebersprungen")]
+    leer = [t.get("kapitel") for t in teilbefunde
+            if isinstance(t, dict) and t.get("uebersprungen")]
+    roh = {"kapitel_mit_inhalt": vorhanden, "kapitel_ohne_inhalt": leer,
+           "befunde": [b for t in teilbefunde if isinstance(t, dict)
+                       for b in (t.get("befunde") or [])],
+           "gut": [g for t in teilbefunde if isinstance(t, dict)
+                   for g in (t.get("gut") or [])]}
+
+    user = (
+        "Die Kapitel sind einzeln geprüft worden – jedes ohne Kenntnis der "
+        "anderen. Führe die Befunde jetzt zusammen:\n"
+        "1. WIDERSPRÜCHE auflösen: sagen zwei Befunde Gegenteiliges, entscheide "
+        "begründet und halte die Auflösung fest.\n"
+        "2. DOPPELBEFUNDE zusammenfassen: dieselbe Sache aus zwei Kapiteln wird "
+        "EIN Befund; nenne in 'zusammengefasst_aus' die betroffenen Kapitel.\n"
+        "3. PRÜFUMFANG abgleichen: 'geprueft' sind die Kapitel mit Inhalt, "
+        "'nicht_geprueft' die ohne. Behaupte nichts über Kapitel ohne Inhalt.\n\n"
+        "HARTE REGELN: Du urteilst nicht neu. Du erfindest keinen Befund. Kein "
+        "Muss-Befund darf verschwinden – er darf nur mit einem anderen "
+        "verschmelzen. Bleiben zwei Befunde verschieden, bleiben es zwei.\n\n"
+        f"{json.dumps(roh, ensure_ascii=False)}\n\n"
+        f"Gib NUR eine Antwort nach diesem Aufbau:\n{_KONSOLIDIERUNG_SCHEMA}"
+    )
+    try:
+        antwort = llm.complete(compose_system(SYSTEM, bundle),
+                               [{"role": "user", "content": user}],
+                               max_tokens=SCHRITT_TOKENS, timeout=KAPITEL_ZEITLIMIT)
+    except PseudoFehler:
+        raise
+    except Exception as e:      # noqa: BLE001
+        log.exception("Konsolidierung fehlgeschlagen")
+        return None, bundle.versions, f"{e.__class__.__name__}: {e}"
+
+    teil, grund = _json_aus(antwort)
+    if teil is None:
+        log.warning("Konsolidierung ohne Ergebnis: %s | %.300r", grund, antwort)
+        return None, bundle.versions, grund
+
+    # Sicherheitsnetz: kein Muss-Befund darf beim Zusammenfassen verlorengehen.
+    vorher = [b for b in roh["befunde"]
+              if str(b.get("gewicht", "")).capitalize() == "Muss"]
+    nachher = [b for b in (teil.get("befunde") or [])
+               if isinstance(b, dict)
+               and str(b.get("gewicht", "")).capitalize() == "Muss"]
+    if len(nachher) < len(vorher):
+        fehlend = {str(b.get("feststellung", ""))[:80] for b in vorher} -                   {str(b.get("feststellung", ""))[:80] for b in nachher}
+        zusammengefasst = {z for b in (teil.get("befunde") or [])
+                           if isinstance(b, dict)
+                           for z in (b.get("zusammengefasst_aus") or [])}
+        if fehlend and not zusammengefasst:
+            log.warning("Konsolidierung liess Muss-Befunde weg – Originale bleiben.")
+            teil["befunde"] = roh["befunde"]
+            teil["_hinweis"] = ("Die Zusammenführung hätte Muss-Befunde weggelassen; "
+                                "es gelten deshalb die ursprünglichen Befunde.")
+    return teil, bundle.versions, ""
+
+
 def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
-             tenant_id=None, skills_dir=None):
+             tenant_id=None, skills_dir=None, konsolidiert=None):
     """Querbezüge, Evidenz, Herausforderung und Empfehlung – braucht das
-    Gesamtbild und läuft deshalb NACH den Kapiteln."""
+    Gesamtbild und läuft deshalb NACH den Kapiteln und NACH der Konsolidierung."""
     if llm is None:
         return None, [], "Kein Sprachmodell konfiguriert."
     bundle = load_skills(BEREICH, tenant_id=tenant_id, skills_dir=skills_dir,
@@ -362,10 +468,10 @@ def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
         "Die Kapitel sind einzeln geprüft. Bilde jetzt das Gesamturteil: "
         "Querbezüge zwischen den Kapiteln, Evidenz (Soll gegen Ist), drei bis "
         "fünf Herausforderungen an die Projektleitung und die Empfehlung.\n\n"
-        f"Kapitelbefunde:\n{json.dumps(kurz, ensure_ascii=False)[:6000]}\n\n"
+        f"Kapitelbefunde:\n{json.dumps(kurz, ensure_ascii=False)}\n\n"
         f"Ziele und Ergebnisse zum Abgleich:\n"
-        f"{json.dumps(_auszug(answers, ['ziele', 'termine']), ensure_ascii=False)[:3000]}\n\n"
-        f"Herkunft je Kapitel (Evidenz):\n{json.dumps(nachweis or '(nicht geführt)', ensure_ascii=False)[:2000]}\n\n"
+        f"{json.dumps(_auszug(answers, ['ziele', 'termine']), ensure_ascii=False)}\n\n"
+        f"Herkunft je Kapitel (Evidenz):\n{json.dumps(nachweis or '(nicht geführt)', ensure_ascii=False)}\n\n"
         "Wiederhole die Kapitelbefunde NICHT – sie stehen bereits im Protokoll.\n"
         f"Gib NUR JSON nach diesem Schema:\n{_SYNTHESE_SCHEMA}"
     )
@@ -386,15 +492,50 @@ def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
     return teil, bundle.versions, ""
 
 
-def baue_protokoll(teilbefunde, gesamt):
-    """Fügt Kapitelbefunde und Synthese zum Protokoll A–E zusammen."""
-    befunde, gut = [], []
-    for t in teilbefunde:
-        befunde.extend(t.get("befunde") or [])
-        gut.extend(t.get("gut") or [])
+def _ohne_dubletten_zu_befunden(auflagen, befunde):
+    """Auflagen, die nur einen Muss-Befund wiederholen, fallen weg.
+
+    Beobachtet: die Auflagenliste war eine zweite Fassung derselben
+    Muss-Befunde. Eine Auflage soll nennen, was ZUSAETZLICH zu tun ist – sonst
+    liest man dieselbe Sache zweimal und haelt sie fuer zwei.
+    """
+    def kern(text):
+        return set(re.findall(r"\w{5,}", str(text or "").lower()))
+
+    muss = [kern(b.get("feststellung")) for b in befunde
+            if isinstance(b, dict)
+            and str(b.get("gewicht", "")).capitalize() == "Muss"]
+    behalten = []
+    for a in auflagen or []:
+        if not isinstance(a, dict):
+            continue
+        k = kern(a.get("offen"))
+        # Deutliche Ueberlappung = dieselbe Sache, anders formuliert.
+        if k and any(len(k & m) >= max(2, int(len(k) * 0.6)) for m in muss):
+            continue
+        behalten.append(a)
+    return behalten
+
+
+def baue_protokoll(teilbefunde, gesamt, konsolidiert=None):
+    """Fügt Kapitelbefunde, Konsolidierung und Synthese zum Protokoll A–E zusammen."""
     p = dict(gesamt or {})
-    p["befunde"] = befunde
-    p["gut"] = [g for g in gut if str(g).strip()]
+    if konsolidiert and konsolidiert.get("befunde"):
+        # Die zusammengefuehrte Fassung ist die massgebliche: dort sind
+        # Widersprueche aufgeloest und Doppelbefunde verschmolzen.
+        p["befunde"] = [b for b in konsolidiert["befunde"] if isinstance(b, dict)]
+        p["gut"] = [g for g in (konsolidiert.get("gut") or []) if str(g).strip()]
+        p["aufgeloeste_widersprueche"] = konsolidiert.get("aufgeloeste_widersprueche") or []
+        if konsolidiert.get("_hinweis"):
+            p.setdefault("_hinweis", konsolidiert["_hinweis"])
+    else:
+        befunde, gut = [], []
+        for t in teilbefunde:
+            befunde.extend(t.get("befunde") or [])
+            gut.extend(t.get("gut") or [])
+        p["befunde"] = befunde
+        p["gut"] = [g for g in gut if str(g).strip()]
+    p["auflagen"] = _ohne_dubletten_zu_befunden(p.get("auflagen"), p["befunde"])
     p.setdefault("gegenstand", {"umfang": "", "nicht_geprueft": ""})
     # Kapitelweise entfaellt die Gesamt-Obergrenze. Reisst ein EINZELNES Kapitel
     # sein Budget, bleibt der Hinweis erhalten - still unvollstaendig soll die

@@ -102,8 +102,11 @@
           if (!a.ok || !a.d) {
             return scheitern(a.d
               ? (a.d.fehler || 'Der Schritt ist fehlgeschlagen.')
-              : ('Der Server antwortete mit HTTP ' + a.status + ' und nicht mit '
-                 + 'JSON: ' + a.text.replace(/<[^>]*>/g, ' ').trim().slice(0, 300)));
+              // Fuer den Nutzer lesbar, ohne Implementierungsbegriffe. Die
+              // technische Fassung steht im Serverprotokoll.
+              : ('Der Server meldete einen Fehler (Code ' + a.status + '): '
+                 + a.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+                        .trim().slice(0, 200)));
           }
           markiere(index, 'erledigt');
           index = a.d.schritt;
@@ -153,7 +156,11 @@
 </div>
 
 {% if protokoll.auflagen %}
-<h2>Auflagen bei Vorbehalt</h2>
+{# «Auflagen bei Vorbehalt» passt nicht, wenn nicht freigegeben werden kann –
+   dann sind es Punkte, die zuerst behoben werden muessen. #}
+<h2>{% if protokoll.empfehlung == 'nicht freigebbar' %}Zu behebende Punkte
+    {%- elif protokoll.empfehlung == 'freigebbar' %}Empfohlene nächste Schritte
+    {%- else %}Auflagen bei Vorbehalt{% endif %}</h2>
 <table class="befundliste">
   <thead><tr><th>Offen</th><th>Wer</th><th>Bis wann</th></tr></thead>
   <tbody>
@@ -172,36 +179,43 @@
 {% endif %}
 
 {# ---- B · Befunde je Kapitel ---- #}
-<h2>Befunde je Kapitel ({{ protokoll.befunde | length }})</h2>
+{# Priorisiert statt gedeckelt: Muss VOLLSTAENDIG und zuerst, Vorbehalte
+   nach Kapitel gruppiert, Hinweise eingeklappt. So trifft eine Kuerzung der
+   Darstellung nie einen Muss-Befund. #}
+{% set muss = protokoll.befunde | selectattr('gewicht', 'equalto', 'Muss') | list %}
+{% set vorbehalte = protokoll.befunde | selectattr('gewicht', 'equalto', 'Vorbehalt') | list %}
+{% set hinweise = protokoll.befunde | selectattr('gewicht', 'equalto', 'Hinweis') | list %}
+
+<h2>Befunde ({{ protokoll.befunde | length }})</h2>
 {% if protokoll.weitere_befunde %}
-{# Eine gekuerzte Pruefung darf nie wie eine vollstaendige aussehen. #}
 <p class="warnbanner" role="alert">
   <strong>Diese Prüfung ist gekürzt.</strong>
   Es wurden {{ protokoll.weitere_befunde }} weitere Befunde gefunden, aber nicht
-  ausgegeben – die Ausgabelänge ist technisch begrenzt. Beheben Sie zuerst die
-  angezeigten und prüfen Sie danach erneut.
+  ausgegeben. Beheben Sie zuerst die angezeigten und prüfen Sie danach erneut.
 </p>
 {% endif %}
+
+{% macro befundtabelle(liste) %}
 <table class="befundliste">
-  <thead><tr><th>Kapitel</th><th>Gewicht</th><th>Feststellung</th>
-             <th>Vorschlag</th><th></th></tr></thead>
+  <thead><tr><th>Kapitel</th><th>Feststellung</th><th>Vorschlag</th><th></th></tr></thead>
   <tbody>
-  {% for b in protokoll.befunde %}
-    <tr {% if widersprueche.get(loop.index0) %}class="widersprochen"{% endif %}>
-      <td>{{ b.kapitel }}<br><span class="fussnote">{{ b.kriterium }}</span></td>
-      <td>{{ b.gewicht }}</td>
+  {% for b in liste %}
+    {% set i = protokoll.befunde.index(b) %}
+    <tr {% if widersprueche.get(i) %}class="widersprochen"{% endif %}>
+      <td>{{ b.kapitel }}<br><span class="fussnote">{{ b.kriterium }}</span>
+        {%- if b.zusammengefasst_aus %}<br><span class="fussnote">
+          zusammengefasst aus: {{ b.zusammengefasst_aus | join(', ') }}</span>{% endif %}</td>
       <td>{{ b.feststellung }}</td>
       {# Vorschlaege werden ANGEZEIGT, nicht angewandt (Briefing 5.1). #}
       <td>{{ b.vorschlag }}</td>
       <td>
-        {% if widersprueche.get(loop.index0) %}
-          <span class="fussnote">Widersprochen:
-            {{ widersprueche[loop.index0].begruendung }}</span>
+        {% if widersprueche.get(i) %}
+          <span class="fussnote">Widersprochen: {{ widersprueche[i].begruendung }}</span>
         {% else %}
         <form method="post" class="widerspruch-form"
               action="{{ url_for('ui.interview_fachpruefung_widerspruch', session_id=session.id) }}">
           <input type="hidden" name="pruefung_id" value="{{ pruefung.id }}">
-          <input type="hidden" name="befund" value="{{ loop.index0 }}">
+          <input type="hidden" name="befund" value="{{ i }}">
           <input type="text" name="begruendung" placeholder="Begründet widersprechen …">
           <button type="submit" class="btn-link">Widersprechen</button>
         </form>
@@ -211,6 +225,33 @@
   {% endfor %}
   </tbody>
 </table>
+{% endmacro %}
+
+{% if muss %}
+<h3 class="gewicht-muss">Muss ({{ muss | length }}) – vor der Freigabe zu klären</h3>
+{{ befundtabelle(muss) }}
+{% endif %}
+
+{% if vorbehalte %}
+<h3 class="gewicht-vorbehalt">Vorbehalte ({{ vorbehalte | length }})</h3>
+{{ befundtabelle(vorbehalte) }}
+{% endif %}
+
+{% if hinweise %}
+<details class="hinweis-block">
+  <summary>Hinweise ({{ hinweise | length }}) anzeigen</summary>
+  {{ befundtabelle(hinweise) }}
+</details>
+{% endif %}
+
+{% if protokoll.aufgeloeste_widersprueche %}
+<h3>Bei der Zusammenführung aufgelöst</h3>
+<ul class="fussnote">
+  {% for w in protokoll.aufgeloeste_widersprueche %}
+  <li><strong>{{ w.worum }}</strong> – {{ w.aufloesung }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
 
 {% if protokoll.gut %}
 <h2>Was gut ist</h2>

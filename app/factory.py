@@ -68,7 +68,8 @@ def _migrate_db(engine):
             for spalte, typ in (("status", "VARCHAR(20)"), ("schritt", "INTEGER"),
                                 ("teilbefunde_json", "TEXT"),
                                 ("nachschlag", "INTEGER"),
-                                ("nachweis_json", "TEXT")):
+                                ("nachweis_json", "TEXT"),
+                                ("konsolidiert_json", "TEXT")):
                 if spalte not in pp:
                     conn.execute(text(
                         f"ALTER TABLE pia_pruefung ADD COLUMN {spalte} {typ}"))
