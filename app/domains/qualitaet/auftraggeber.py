@@ -235,8 +235,11 @@ GRUPPEN = [
     ("Risiken", ["risiken"]),
 ]
 
-# Je Kapitel reicht ein Bruchteil des frueheren Budgets - deshalb ist es schnell.
-KAPITEL_TOKENS = 1200
+# Je Kapitel ein eigener, kurzer Aufruf. 1200 Token waren zu knapp - die
+# Ausgangslage eines echten PIA sprengte sie. 2500 Token brauchen typisch
+# 25-40 s Generierung und bleiben damit klar im Zeitlimit (60 s Lesen, Summe
+# hoechstens 70 s gegen 120 s Worker-Limit).
+KAPITEL_TOKENS = 2500
 KAPITEL_ZEITLIMIT = 60
 SYNTHESE_TOKENS = 1500
 
@@ -291,8 +294,12 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
         f"{json.dumps(inhalt, ensure_ascii=False)[:6000]}\n\n"
         f"Bereits gemeldete Regelbefunde (nicht wiederholen): "
         f"{json.dumps(_befunde_kompakt(invarianten), ensure_ascii=False)}\n"
-        "Fasse dich knapp: je Feststellung ein bis zwei Sätze. Nur was du am "
-        "vorliegenden Inhalt belegen kannst.\n"
+        "Fasse dich knapp: je Feststellung ein bis zwei Sätze, kein Vorwort. Nur "
+        "was du am vorliegenden Inhalt belegen kannst.\n"
+        "Führe für DIESES Kapitel die wichtigsten Befunde auf – in aller Regel "
+        "reichen drei bis sechs. Hast du mehr gefunden, nenne die wichtigsten und "
+        "trage die Zahl der übrigen in 'weitere_befunde' ein. Eine gekürzte "
+        "Prüfung darf nie wie eine vollständige aussehen.\n"
         f"Gib NUR JSON nach diesem Schema:\n{_KAPITEL_SCHEMA}"
     )
     try:

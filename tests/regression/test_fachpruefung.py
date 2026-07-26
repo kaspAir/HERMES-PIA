@@ -676,3 +676,39 @@ def test_schritt_nimmt_formular_und_json(app, monkeypatch, wie):
                    json={"pruefung_id": pid})
     assert r.status_code == 200
     assert r.get_json()["schritt"] == 1
+
+
+def test_kapitelbudget_reicht_und_anweisung_passt_dazu(skills_dir):
+    """Gemessen: 1200 Token reichten fuer die Ausgangslage eines echten PIA nicht.
+    Und die Anweisung «es gibt KEINE Obergrenze» widersprach dem Budget -
+    das Modell schrieb bis zum Abschnitt."""
+    from app.domains.qualitaet.auftraggeber import KAPITEL_TOKENS, pruefe_kapitel
+
+    assert KAPITEL_TOKENS >= 2000
+
+    gesehen = {}
+
+    class _Merkt:
+        def complete(self, system, messages, max_tokens=1024, timeout=None, **kw):
+            gesehen.update(user=messages[0]["content"], max_tokens=max_tokens)
+            return json.dumps({"befunde": [], "gut": []})
+
+    pruefe_kapitel({"ausgangslage": {"extracted": {"text": "T"}}}, _Merkt(), 0,
+                   skills_dir=skills_dir)
+    assert gesehen["max_tokens"] == KAPITEL_TOKENS
+    # Kein Widerspruch mehr: praktische Grenze JE KAPITEL statt «keine Obergrenze».
+    assert "KEINE Obergrenze" not in gesehen["user"]
+    assert "drei bis sechs" in gesehen["user"]
+    assert "weitere_befunde" in gesehen["user"]
+
+
+def test_gescheiterter_schritt_kann_wiederholt_werden():
+    """Der Lauf ist fortsetzbar – das muss die Oberflaeche auch anbieten,
+    statt den Nutzer zum Neuladen zu zwingen."""
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+    vorlage = Path(BASE_DIR, "app", "templates", "fachpruefung.html").read_text(
+        encoding="utf-8")
+    assert "lauf-wiederholen" in vorlage
+    assert "bereits geprüften Kapitel bleiben erhalten" in vorlage

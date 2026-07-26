@@ -30,6 +30,11 @@
     </ol>
     <p class="fussnote" id="lauf-dauer"></p>
     <p class="fehler" id="lauf-fehler" style="display:none"></p>
+    <p id="lauf-neu" style="display:none">
+      <button type="button" class="btn-primary" id="lauf-wiederholen">
+        Schritt wiederholen</button>
+      <span class="fussnote">Die bereits geprüften Kapitel bleiben erhalten.</span>
+    </p>
   </div>
   <script>
   (function () {
@@ -75,7 +80,9 @@
           if (!a.ok) {
             markiere(index, 'gescheitert');
             fehler.textContent = a.d.fehler || 'Der Schritt ist fehlgeschlagen.';
-            fehler.style.display = ''; seit = null; dauer.textContent = '';
+            fehler.style.display = '';
+            document.getElementById('lauf-neu').style.display = '';
+            seit = null; dauer.textContent = '';
             return;
           }
           markiere(index, 'erledigt');
@@ -90,6 +97,13 @@
           fehler.style.display = ''; seit = null;
         });
     }
+    document.getElementById('lauf-wiederholen').addEventListener('click', function () {
+      // Der Lauf ist fortsetzbar: der gescheiterte Schritt wird einfach erneut
+      // versucht, die bereits geprueften Kapitel bleiben gespeichert.
+      fehler.style.display = 'none';
+      document.getElementById('lauf-neu').style.display = 'none';
+      schritt();
+    });
     for (var i = 0; i < index; i++) { markiere(i, 'erledigt'); }
     ticker = setInterval(tick, 1000);
     schritt();
