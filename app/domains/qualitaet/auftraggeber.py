@@ -368,14 +368,44 @@ def pruefe_kapitel(answers, llm, index, invarianten=None, tenant_id=None,
 # abgeschrieben, was ohnehin schon dasteht. So bleibt die Antwort klein und
 # schnell. Der wichtigere Nebeneffekt: ein Befund KANN nicht mehr
 # verlorengehen, weil ihn niemand neu schreiben muss.
+# Die Zusammenfuehrung liefert nur die AENDERUNGEN, nicht die Befunde neu.
+# Grund: alle Befunde noch einmal ausschreiben zu lassen dauerte bei einem
+# grossen PIA laenger als das Zeitlimit - und das Modell haette dabei nur
+# abgeschrieben, was ohnehin schon dasteht. Der wichtigere Nebeneffekt: ein
+# Befund KANN nicht mehr verlorengehen, weil ihn niemand neu schreiben muss.
+#
+# Bewusst KEIN 'vorschlag' im Schema: die Konsolidierung ist ein DENKSCHRITT,
+# kein Autor. Sie hat dem Projektleiter nichts zu sagen - sonst landen
+# Redaktionsanweisungen («Befund 17 und 30 zusammenführen») in der Ausgabe.
+# Der Vorschlag bleibt der des urspruenglichen Befundes.
 _KONSOLIDIERUNG_SCHEMA = (
-    '{"zusammenfassungen":[{"nummern":[0,1],"feststellung":"",'
-    '"vorschlag":""}],'
+    '{"zusammenfassungen":[{"nummern":[0,1],"feststellung":""}],'
     '"aufgeloeste_widersprueche":[{"nummern":[0,1],"worum":"","aufloesung":"",'
     '"gilt":0}],'
+    '"praezisierte_lobe":[{"nr":0,"text":""}],'
     '"geprueft":[""],"nicht_geprueft":[""]}')
 
 _GEWICHT_RANG = {"Hinweis": 0, "Vorbehalt": 1, "Muss": 2}
+
+# Woran man erkennt, dass ein Text ueber die PRUEFUNG spricht statt ueber den
+# PIA. Solche Texte gehen nie an den Leser - dort steht dann der urspruengliche
+# Wortlaut. Der Leser sieht die internen Nummern nirgends; ein Verweis darauf
+# ist fuer ihn wertlos.
+_REDAKTION = re.compile(
+    r"befund(?:e|es|s)?\s*(?:nr\.?\s*)?\d+"      # «Befund 17»
+    r"|nummer\s*\d+"
+    r"|zusammen(?:legung|führung|fuehrung|fassen|führen|fuehren|zulegen)"
+    r"|gewicht\s*:"
+    r"|als schwerster befund"
+    r"|komplex kennzeichnen"
+    r"|\bempfohlen\b.*\bbefund"
+    r"|\bbefund\b.*\bbleibt\b.*\bleitend\b",
+    re.IGNORECASE)
+
+
+def _spricht_ueber_die_pruefung(text):
+    """Redet der Text ueber die Prüfung statt über den PIA?"""
+    return bool(_REDAKTION.search(str(text or "")))
 
 
 def _wende_zusammenfuehrung_an(befunde, delta):
@@ -383,7 +413,7 @@ def _wende_zusammenfuehrung_an(befunde, delta):
 
     Was das Modell nicht erwähnt, bleibt unverändert stehen. Ein Befund kann
     hier also nicht verschwinden; er kann nur mit anderen zu einem
-    zusammengefasst werden, und dann steht dran, aus welchen Kapiteln er kommt.
+    zusammengefasst werden, und dann nennt das Kapitel beide Herkünfte.
     """
     def nummern_von(eintrag):
         raus = []
@@ -410,16 +440,25 @@ def _wende_zusammenfuehrung_an(befunde, delta):
             if k and k not in kapitel:
                 kapitel.append(k)
         # Das schwerste Gewicht der Gruppe gilt – Zusammenfassen darf nie
-        # entschärfen.
-        schwerste = max((str(b.get("gewicht", "")).capitalize() for b in quelle),
-                        key=lambda g: _GEWICHT_RANG.get(g, 0))
+        # entschärfen. Es gibt auch den Wortlaut vor, falls die gemeinsame
+        # Feststellung unbrauchbar ist.
+        fuehrend = max(quelle, key=lambda b: _GEWICHT_RANG.get(
+            str(b.get("gewicht", "")).capitalize(), 0))
+        gemeinsam = z.get("feststellung")
+        if not gemeinsam or _spricht_ueber_die_pruefung(gemeinsam):
+            # Lieber der Wortlaut des schwersten Befundes als eine
+            # Redaktionsanweisung an den Leser.
+            log.warning("Zusammenfassung sprach über die Prüfung – Originaltext "
+                        "beibehalten: %.120s", gemeinsam)
+            gemeinsam = fuehrend.get("feststellung", "")
         ersetzt[min(nummern)] = {
             "kapitel": " / ".join(kapitel),
-            "kriterium": quelle[0].get("kriterium", ""),
-            "feststellung": z.get("feststellung") or quelle[0].get("feststellung", ""),
-            "gewicht": schwerste,
-            "vorschlag": z.get("vorschlag") or quelle[0].get("vorschlag", ""),
-            "zusammengefasst_aus": kapitel,
+            "kriterium": fuehrend.get("kriterium", ""),
+            "feststellung": gemeinsam,
+            "gewicht": str(fuehrend.get("gewicht", "")).capitalize() or "Hinweis",
+            # Der Vorschlag stammt IMMER aus dem Befund selbst – die
+            # Konsolidierung schreibt keinen Text für den Projektleiter.
+            "vorschlag": fuehrend.get("vorschlag", ""),
         }
         verbraucht.update(nummern)
 
@@ -448,10 +487,31 @@ def _wende_zusammenfuehrung_an(befunde, delta):
             abgestuft = dict(b)
             abgestuft["gewicht"] = "Hinweis"
             abgestuft["kriterium"] = ((b.get("kriterium") or "")
-                                      + " (bei der Zusammenführung widerlegt)").strip()
+                                      + " (bei der Prüfung widerlegt)").strip()
             raus.append(abgestuft)
         else:
             raus.append(b)
+    return raus
+
+
+def _praezisiere_lob(gut, delta):
+    """Ersetzt ein Lob durch die genauere Fassung – Ergebnis der Konsistenzprüfung.
+
+    «Was gut ist» war bisher NICHT Teil des Abgleichs. Dadurch lobte das
+    Protokoll etwas, das ein Muss-Befund gleichzeitig als fehlend meldete –
+    beides halb richtig. Ein Lob kann hier nur GENAUER werden, nie wegfallen.
+    """
+    raus = list(gut)
+    for p in (delta.get("praezisierte_lobe") or []):
+        if not isinstance(p, dict):
+            continue
+        try:
+            i = int(p.get("nr"))
+        except (TypeError, ValueError):
+            continue
+        text = str(p.get("text") or "").strip()
+        if 0 <= i < len(raus) and text and not _spricht_ueber_die_pruefung(text):
+            raus[i] = text
     return raus
 
 
@@ -460,11 +520,14 @@ def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
 
     Kapitelweise Prüfung hat einen Preis: jedes Kapitel urteilt für sich, kennt
     die anderen nicht und kann ihnen widersprechen oder dasselbe ein zweites Mal
-    melden. Dieser Schritt löst Widersprüche auf, fasst Doppelbefunde zusammen
-    und gleicht den Prüfumfang gegen die TATSÄCHLICH vorliegenden Kapitel ab.
+    melden. Dieser Schritt löst Widersprüche auf, fasst Doppelbefunde zusammen,
+    gleicht «Was gut ist» gegen die Befunde ab und stellt den Prüfumfang auf die
+    TATSÄCHLICH vorliegenden Kapitel.
 
-    Das Modell entscheidet nur, WAS zusammengehört – es zeigt auf Nummern. Das
-    Zusammenführen selbst macht `_wende_zusammenfuehrung_an`.
+    **Es ist ein Denkschritt, kein Autor.** Sein Ergebnis ist ein bereinigtes
+    Protokoll, kein Bericht über die Bereinigung: das Modell zeigt auf Nummern,
+    das Zusammenführen macht `_wende_zusammenfuehrung_an`, und nichts von der
+    Überlegung erscheint in der Ausgabe.
     """
     if llm is None:
         return None, [], "Kein Sprachmodell konfiguriert."
@@ -475,7 +538,7 @@ def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
 
     befunde = [b for t in teilbefunde if isinstance(t, dict)
                for b in (t.get("befunde") or []) if isinstance(b, dict)]
-    gut = [g for t in teilbefunde if isinstance(t, dict)
+    gut = [str(g).strip() for t in teilbefunde if isinstance(t, dict)
            for g in (t.get("gut") or []) if str(g).strip()]
     vorhanden = [t.get("kapitel") for t in teilbefunde
                  if isinstance(t, dict) and not t.get("uebersprungen")]
@@ -486,22 +549,33 @@ def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
     liste = [{"nr": i, "kapitel": b.get("kapitel"), "gewicht": b.get("gewicht"),
               "feststellung": b.get("feststellung")}
              for i, b in enumerate(befunde)]
+    lobe = [{"nr": i, "text": g} for i, g in enumerate(gut)]
 
     user = (
         "Die Kapitel sind einzeln geprüft worden – jedes ohne Kenntnis der "
-        "anderen. Sieh die nummerierten Befunde durch und melde NUR, was sich "
-        "ändert. Befunde, die du nicht erwähnst, bleiben unverändert stehen.\n"
+        "anderen. Sieh alles durch und melde NUR, was sich ändert. Was du nicht "
+        "erwähnst, bleibt unverändert stehen.\n"
         "1. DOPPELBEFUNDE: nennt dieselbe Sache in mehreren Kapiteln, gib die "
-        "Nummern und eine gemeinsame Feststellung.\n"
+        "Nummern und EINE gemeinsame Feststellung.\n"
         "2. WIDERSPRÜCHE: sagen zwei Befunde Gegenteiliges, gib die Nummern, "
         "worum es geht, die begründete Auflösung und in 'gilt' die Nummer des "
         "Befundes, der bestehen bleibt.\n"
-        "3. PRÜFUMFANG: 'geprueft' sind die Kapitel mit Inhalt, 'nicht_geprueft' "
+        "3. «WAS GUT IST» gegen die Befunde abgleichen: lobt ein Eintrag etwas, "
+        "das ein Befund gleichzeitig als fehlend meldet, sind meist BEIDE halb "
+        "richtig. Gib dann unter 'praezisierte_lobe' die genauere Fassung – "
+        "etwa: das Element ist angelegt, aber weder terminiert noch als "
+        "Massnahme ausgestaltet.\n"
+        "4. PRÜFUMFANG: 'geprueft' sind die Kapitel mit Inhalt, 'nicht_geprueft' "
         "die ohne. Behaupte nichts über Kapitel ohne Inhalt.\n\n"
-        "Du urteilst NICHT neu und erfindest keinen Befund. Findest du nichts "
-        "zusammenzuführen, gib leere Listen zurück – das ist ein gültiges "
-        "Ergebnis und bei einem sauberen PIA der Normalfall.\n\n"
+        "WIE DU SCHREIBST: Jeder Text, den du lieferst, richtet sich an die "
+        "PROJEKTLEITUNG und spricht über den PIA – nie über diese Prüfung. "
+        "Keine Nummern im Text (der Leser sieht sie nicht), keine Anweisungen "
+        "wie «zusammenführen» oder «als Komplex kennzeichnen», keine Angaben zu "
+        "Gewichten. Du urteilst NICHT neu und erfindest keinen Befund. Findest "
+        "du nichts, gib leere Listen zurück – das ist bei einem sauberen PIA "
+        "der Normalfall.\n\n"
         f"Befunde:\n{json.dumps(liste, ensure_ascii=False)}\n"
+        f"Was gut ist:\n{json.dumps(lobe, ensure_ascii=False)}\n"
         f"Kapitel mit Inhalt: {json.dumps(vorhanden, ensure_ascii=False)}\n"
         f"Kapitel ohne Inhalt: {json.dumps(leer, ensure_ascii=False)}\n\n"
         f"Gib NUR eine Antwort nach diesem Aufbau:\n{_KONSOLIDIERUNG_SCHEMA}"
@@ -523,16 +597,19 @@ def konsolidiere(teilbefunde, llm, tenant_id=None, skills_dir=None):
 
     ergebnis = {
         "befunde": _wende_zusammenfuehrung_an(befunde, delta),
-        "gut": gut,
-        "aufgeloeste_widersprueche": [
-            {"worum": w.get("worum", ""), "aufloesung": w.get("aufloesung", "")}
-            for w in (delta.get("aufgeloeste_widersprueche") or [])
-            if isinstance(w, dict) and (w.get("worum") or w.get("aufloesung"))],
+        "gut": _praezisiere_lob(gut, delta),
         "geprueft": delta.get("geprueft") or vorhanden,
         "nicht_geprueft": delta.get("nicht_geprueft") or leer,
     }
-    log.warning("Konsolidierung: %d Befunde -> %d", len(befunde),
-                len(ergebnis["befunde"]))
+    # Die Auflösungen bleiben als Spur im Protokoll, werden dem Leser aber NICHT
+    # gezeigt: sie berichten über die Prüfung, nicht über den PIA.
+    ergebnis["_aufloesungen"] = [
+        {"worum": w.get("worum", ""), "aufloesung": w.get("aufloesung", "")}
+        for w in (delta.get("aufgeloeste_widersprueche") or [])
+        if isinstance(w, dict) and (w.get("worum") or w.get("aufloesung"))]
+    log.warning("Konsolidierung: %d Befunde -> %d, %d Lob(e) präzisiert",
+                len(befunde), len(ergebnis["befunde"]),
+                len(delta.get("praezisierte_lobe") or []))
     return ergebnis, bundle.versions, ""
 
 
@@ -547,21 +624,35 @@ def synthese(teilbefunde, answers, llm, invarianten=None, nachweis=None,
     if not bundle:
         return None, [], f"Der Skill «{SKILL}» wurde nicht gefunden."
 
-    # Nur das Nötige: die Kapitelbefunde in Kurzform, nicht der ganze PIA.
-    kurz = [{"kapitel": t.get("kapitel"),
-             "befunde": [f"{b.get('gewicht')}: {b.get('feststellung')}"
-                         for b in (t.get("befunde") or [])]}
-            for t in teilbefunde]
+    # Die KONSOLIDIERTEN Befunde sind die Grundlage – dort sind Widersprüche
+    # aufgelöst und Doppelbefunde verschmolzen. Ohne Konsolidierung die rohen.
+    befunde = ((konsolidiert or {}).get("befunde")
+               or [b for t in teilbefunde if isinstance(t, dict)
+                   for b in (t.get("befunde") or [])])
+    kurz = [f"{b.get('kapitel')} | {b.get('gewicht')}: {b.get('feststellung')}"
+            for b in befunde if isinstance(b, dict)]
+    umfang = {"geprueft": (konsolidiert or {}).get("geprueft") or [],
+              "nicht_geprueft": (konsolidiert or {}).get("nicht_geprueft") or []}
     user = (
-        "Die Kapitel sind einzeln geprüft. Bilde jetzt das Gesamturteil: "
-        "Querbezüge zwischen den Kapiteln, Evidenz (Soll gegen Ist), drei bis "
-        "fünf Herausforderungen an die Projektleitung und die Empfehlung.\n\n"
-        f"Kapitelbefunde:\n{json.dumps(kurz, ensure_ascii=False)}\n\n"
+        "Die Kapitel sind einzeln geprüft und die Befunde anschliessend "
+        "zusammengeführt. Bilde jetzt das Gesamturteil: Querbezüge zwischen den "
+        "Kapiteln, Evidenz (Soll gegen Ist), drei bis fünf Herausforderungen an "
+        "die Projektleitung und die Empfehlung.\n\n"
+        f"Zusammengeführte Befunde:\n{json.dumps(kurz, ensure_ascii=False)}\n\n"
+        f"Prüfumfang (tatsächlich vorliegende Kapitel):\n"
+        f"{json.dumps(umfang, ensure_ascii=False)}\n"
+        "Trage genau diesen Umfang in 'gegenstand' ein – behaupte nichts über "
+        "Kapitel, die nicht geprüft wurden.\n\n"
         f"Ziele und Ergebnisse zum Abgleich:\n"
         f"{json.dumps(_auszug(answers, ['ziele', 'termine']), ensure_ascii=False)}\n\n"
         f"Herkunft je Kapitel (Evidenz):\n{json.dumps(nachweis or '(nicht geführt)', ensure_ascii=False)}\n\n"
-        "Wiederhole die Kapitelbefunde NICHT – sie stehen bereits im Protokoll.\n"
-        f"Gib NUR JSON nach diesem Schema:\n{_SYNTHESE_SCHEMA}"
+        "Wiederhole die Befunde NICHT – sie stehen bereits im Protokoll. Das "
+        "gilt auch für die Auflagen: eine Auflage nennt, was ZUSÄTZLICH zu tun "
+        "ist, nicht was schon als Befund dasteht.\n"
+        "NENNE KEINE ANZAHLEN – kein «vier Muss-Befunde», kein «mehrere "
+        "Vorbehalte». Gezählt wird ausserhalb; eine erzählte Zahl ist keine "
+        "Zahl und war schon falsch. Schreibe «die Muss-Befunde».\n"
+        f"Gib NUR eine Antwort nach diesem Aufbau:\n{_SYNTHESE_SCHEMA}"
     )
     try:
         roh = llm.complete(compose_system(SYSTEM, bundle),
@@ -613,9 +704,9 @@ def baue_protokoll(teilbefunde, gesamt, konsolidiert=None):
         # Widersprueche aufgeloest und Doppelbefunde verschmolzen.
         p["befunde"] = [b for b in konsolidiert["befunde"] if isinstance(b, dict)]
         p["gut"] = [g for g in (konsolidiert.get("gut") or []) if str(g).strip()]
-        p["aufgeloeste_widersprueche"] = konsolidiert.get("aufgeloeste_widersprueche") or []
-        if konsolidiert.get("_hinweis"):
-            p.setdefault("_hinweis", konsolidiert["_hinweis"])
+        # Die Aufloesungen bleiben als Spur im Protokoll, werden dem Leser aber
+        # NICHT gezeigt - sie berichten ueber die Pruefung, nicht ueber den PIA.
+        p["_aufloesungen"] = konsolidiert.get("_aufloesungen") or []
     else:
         befunde, gut = [], []
         for t in teilbefunde:
@@ -630,4 +721,51 @@ def baue_protokoll(teilbefunde, gesamt, konsolidiert=None):
     # Pruefung nie sein.
     p["weitere_befunde"] = sum(int(t.get("weitere_befunde") or 0) for t in teilbefunde)
     p["weitere_fragen"] = 0
+    p["zaehlung"] = _zaehle(p)
+    p["begruendung"] = _ohne_ungezaehlte_angaben(p.get("begruendung"))
     return _bereinige(p)
+
+
+def _zaehle(p):
+    """Zählt aus, was im Protokoll steht – die einzige Quelle für Anzahlen.
+
+    Dieselbe Logik wie bei der Freigabe-Rückstufung: was nachprüfbar ist,
+    ermittelt der Code. Das Modell hatte «vier Muss-Befunde» geschrieben, wo
+    sechs standen – eine erzählte Zahl ist keine Zahl.
+    """
+    def nach_gewicht(liste, gewicht):
+        return sum(1 for e in liste or []
+                   if isinstance(e, dict)
+                   and str(e.get("gewicht", "")).capitalize() == gewicht)
+
+    befunde = p.get("befunde") or []
+    quer = (p.get("querbezuege") or []) + (p.get("evidenz") or [])
+    return {
+        "muss": nach_gewicht(befunde, "Muss"),
+        "vorbehalt": nach_gewicht(befunde, "Vorbehalt"),
+        "hinweis": nach_gewicht(befunde, "Hinweis"),
+        "querbezuege_muss": nach_gewicht(quer, "Muss"),
+        "querbezuege": len(quer),
+        "auflagen": len(p.get("auflagen") or []),
+    }
+
+
+# Zahlwörter und Ziffern unmittelbar vor einer Befundart. Genau dort hat das
+# Modell gezählt, statt zu urteilen.
+_ZAHL_VOR_BEFUND = re.compile(
+    r"\b(?:\d+|ein|eine|einen|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|"
+    r"elf|zwölf)\s+(?=(?:weitere[nrs]?\s+)?"
+    r"(?:Muss|Vorbehalt|Hinweis)[\w-]*|(?:weitere[nrs]?\s+)?Befunde?\b)",
+    re.IGNORECASE)
+
+
+def _ohne_ungezaehlte_angaben(text):
+    """Entfernt erzählte Anzahlen aus dem Fliesstext des Gesamturteils.
+
+    Die richtigen Zahlen stehen ausgezählt daneben (`zaehlung`). Eine falsche
+    Zahl im Urteil beschädigt das Vertrauen in alles andere – lieber «die
+    Muss-Befunde» als «vier Muss-Befunde», wenn es sechs sind.
+    """
+    if not text:
+        return text
+    return re.sub(r"\s{2,}", " ", _ZAHL_VOR_BEFUND.sub("", str(text))).strip()

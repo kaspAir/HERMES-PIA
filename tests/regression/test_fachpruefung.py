@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from app.config import BASE_DIR as BASE_DIR_T
 from app.domains.qualitaet import pruefe
 from app.domains.qualitaet.auftraggeber import BEREICH, SKILL, pruefe_fachlich
 
@@ -976,7 +977,9 @@ def test_zusammenfassen_nimmt_das_schwerste_gewicht():
         {"nummern": [0, 1], "feststellung": "Der Nutzen ist nirgends belegt"}]})
     assert len(raus) == 1
     assert raus[0]["gewicht"] == "Muss"
-    assert raus[0]["zusammengefasst_aus"] == ["Ziele", "Ausgangslage"]
+    # Die Herkunft steht im KAPITEL – kein zusätzliches Meta-Feld für den Leser.
+    assert raus[0]["kapitel"] == "Ziele / Ausgangslage"
+    assert "zusammengefasst_aus" not in raus[0]
     assert raus[0]["feststellung"] == "Der Nutzen ist nirgends belegt"
 
 
@@ -1047,3 +1050,148 @@ def test_befunde_werden_priorisiert_dargestellt():
     assert "equalto', 'Muss'" in v.replace('"', "'")
     assert "<details" in v and "Hinweise" in v
     assert v.index("Muss (") < v.index("Vorbehalte (") < v.index("Hinweise (")
+
+
+# ---- Die Konsolidierung ist ein Denkschritt, kein Autor ------------------- #
+
+def test_konsolidierung_schreibt_keinen_text_fuer_den_leser():
+    """Beobachtet: Vorschläge wie «Befund 17 und 30 zu einem einzigen Befund
+    zusammenführen» landeten in der Ausgabe. Das sind Redaktionsanweisungen an
+    das System, keine Empfehlungen an die Projektleitung – und sie verweisen auf
+    Nummern, die der Leser nirgends sieht."""
+    from app.domains.qualitaet.auftraggeber import (
+        _KONSOLIDIERUNG_SCHEMA, _wende_zusammenfuehrung_an,
+    )
+
+    # Der Schritt kann gar keinen Vorschlag mehr liefern.
+    assert "vorschlag" not in _KONSOLIDIERUNG_SCHEMA
+
+    befunde = [
+        {"kapitel": "Ausgangslage", "gewicht": "Muss",
+         "feststellung": "Der Nutzen ist nicht belegt.",
+         "vorschlag": "Nutzen mit Zahlen belegen."},
+        {"kapitel": "Rahmenbedingungen", "gewicht": "Vorbehalt",
+         "feststellung": "Der Nutzen bleibt vage.", "vorschlag": "Konkretisieren."},
+    ]
+    raus = _wende_zusammenfuehrung_an(befunde, {"zusammenfassungen": [
+        {"nummern": [0, 1],
+         "feststellung": "Der Nutzen ist weder in der Ausgangslage noch in den "
+                         "Rahmenbedingungen belegt."}]})
+    assert len(raus) == 1
+    # Der Vorschlag stammt aus dem Befund, nie aus der Zusammenführung.
+    assert raus[0]["vorschlag"] == "Nutzen mit Zahlen belegen."
+    assert raus[0]["kapitel"] == "Ausgangslage / Rahmenbedingungen"
+
+
+@pytest.mark.parametrize("leck", [
+    "Die drei Befunde als zusammenhängenden Komplex kennzeichnen.",
+    "Befund 17 und Befund 30 zu einem einzigen Befund zusammenführen",
+    "Befund 5 (Muss) bleibt als schwerster Befund leitend",
+    "Gewicht: Vorbehalt beibehalten",
+])
+def test_redaktionsanweisungen_erreichen_den_leser_nie(leck):
+    """Deterministisch abgefangen – nicht nur im Prompt verboten."""
+    from app.domains.qualitaet.auftraggeber import _wende_zusammenfuehrung_an
+
+    befunde = [
+        {"kapitel": "Ziele", "gewicht": "Muss", "feststellung": "Ziel 2 ist unklar.",
+         "vorschlag": "Ziel schärfen."},
+        {"kapitel": "Termine", "gewicht": "Hinweis", "feststellung": "Termin offen.",
+         "vorschlag": "Termin setzen."},
+    ]
+    raus = _wende_zusammenfuehrung_an(befunde, {"zusammenfassungen": [
+        {"nummern": [0, 1], "feststellung": leck}]})
+    assert raus[0]["feststellung"] == "Ziel 2 ist unklar."   # Originaltext bleibt
+
+
+def test_die_ueberlegung_der_konsolidierung_wird_nicht_angezeigt():
+    v = Path(BASE_DIR_T, "app", "templates", "fachpruefung.html").read_text(
+        encoding="utf-8")
+    assert "aufgeloeste_widersprueche" not in v
+    assert "zusammengefasst aus" not in v
+
+
+# ---- «Was gut ist» gehört in die Konsistenzprüfung ------------------------ #
+
+def test_lob_wird_gegen_die_befunde_abgeglichen(skills_dir):
+    """Beobachtet, zweimal an derselben Naht: «Was gut ist» lobte einen
+    Stopp-Mechanismus, den ein Muss-Befund gleichzeitig als fehlend meldete.
+    Beides halb richtig – genau das muss dastehen."""
+    from app.domains.qualitaet.auftraggeber import konsolidiere
+
+    teile = [{"kapitel": "Rahmenbedingungen",
+              "befunde": [{"kapitel": "Rahmenbedingungen", "gewicht": "Muss",
+                           "feststellung": "Kein Stopp-Mechanismus operationalisiert."}],
+              "gut": ["RB 3 enthält einen expliziten Stopp-Mechanismus."]}]
+    genauer = ("Der Stopp-Vorbehalt ist in den Rahmenbedingungen angelegt, aber "
+               "weder terminlich noch als Massnahme ausgestaltet.")
+    gesehen = {}
+
+    class _Merkt:
+        def complete(self, system, messages, max_tokens=1024, timeout=None, **kw):
+            gesehen["user"] = messages[0]["content"]
+            return json.dumps({"praezisierte_lobe": [{"nr": 0, "text": genauer}]})
+
+    ergebnis, _, grund = konsolidiere(teile, _Merkt(), skills_dir=skills_dir)
+    assert not grund
+    assert ergebnis["gut"] == [genauer]
+    assert "Was gut ist" in gesehen["user"]          # geht ueberhaupt mit
+    assert "beide halb" in gesehen["user"].lower()
+
+
+def test_ein_lob_kann_nur_genauer_werden_nie_verschwinden(skills_dir):
+    from app.domains.qualitaet.auftraggeber import _praezisiere_lob
+
+    gut = ["A ist gut.", "B ist gut."]
+    for delta in ({}, {"praezisierte_lobe": [{"nr": 9, "text": "x"}]},
+                  {"praezisierte_lobe": [{"nr": 0, "text": ""}]},
+                  {"praezisierte_lobe": [{"nr": 0, "text": "Befund 3 zusammenführen"}]}):
+        assert _praezisiere_lob(gut, delta) == gut
+
+
+# ---- Zahlen zählt der Code ----------------------------------------------- #
+
+def test_zahlen_kommen_aus_der_zaehlung_nicht_aus_der_erzaehlung():
+    """Gemessen: die Empfehlung sprach von «vier Muss-Befunden», die Überschrift
+    zählte sechs. Derselbe Fall wie die Freigabe-Rückstufung – was nachprüfbar
+    ist, ermittelt der Code."""
+    from app.domains.qualitaet.auftraggeber import baue_protokoll
+
+    befunde = ([{"kapitel": "K", "gewicht": "Muss", "feststellung": f"M{i}"}
+                for i in range(6)]
+               + [{"kapitel": "K", "gewicht": "Vorbehalt", "feststellung": "V"}])
+    gesamt = {"empfehlung": "nicht freigebbar",
+              "begruendung": "Es bestehen vier Muss-Befunde auf Kapitelebene sowie "
+                             "vier weitere Muss-Befunde auf Ebene Querbezüge.",
+              "querbezuege": [{"gewicht": "Muss", "feststellung": "Q"}] * 7}
+    p = baue_protokoll([], gesamt, konsolidiert={"befunde": befunde, "gut": []})
+
+    assert p["zaehlung"]["muss"] == 6
+    assert p["zaehlung"]["vorbehalt"] == 1
+    assert p["zaehlung"]["querbezuege_muss"] == 7
+    # Die falsche Zahl steht nicht mehr im Text.
+    assert "vier" not in p["begruendung"]
+    assert "Muss-Befunde" in p["begruendung"]
+
+
+def test_die_seite_zeigt_die_gezaehlten_werte():
+    v = Path(BASE_DIR_T, "app", "templates", "fachpruefung.html").read_text(
+        encoding="utf-8")
+    assert "protokoll.zaehlung.muss" in v
+
+
+def test_synthese_wird_das_zaehlen_untersagt(skills_dir):
+    from app.domains.qualitaet.auftraggeber import synthese
+
+    gesehen = {}
+
+    class _Merkt:
+        def complete(self, system, messages, max_tokens=1024, timeout=None, **kw):
+            gesehen["user"] = messages[0]["content"]
+            return json.dumps({"empfehlung": "mit vorbehalt", "begruendung": "x"})
+
+    synthese([], {}, _Merkt(), skills_dir=skills_dir,
+             konsolidiert={"befunde": [], "geprueft": ["Ziele"],
+                           "nicht_geprueft": ["Risiken"]})
+    assert "NENNE KEINE ANZAHLEN" in gesehen["user"]
+    assert "Prüfumfang" in gesehen["user"]

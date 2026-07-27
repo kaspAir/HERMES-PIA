@@ -149,6 +149,18 @@
   <div class="empfehlung-wert">{{ protokoll.empfehlung | capitalize }}</div>
   <p>{{ protokoll.begruendung }}</p>
   {% if protokoll._hinweis %}<p class="fehler">{{ protokoll._hinweis }}</p>{% endif %}
+  {% if protokoll.zaehlung %}
+  {# AUSGEZAEHLT, nicht erzaehlt: das Modell hatte «vier Muss-Befunde»
+     geschrieben, wo sechs standen. Zahlen kommen aus dem Code. #}
+  <p class="zaehlung">
+    <strong>{{ protokoll.zaehlung.muss }}</strong> Muss ·
+    <strong>{{ protokoll.zaehlung.vorbehalt }}</strong> Vorbehalte ·
+    <strong>{{ protokoll.zaehlung.hinweis }}</strong> Hinweise
+    {%- if protokoll.zaehlung.querbezuege %} · davon übergreifend:
+    <strong>{{ protokoll.zaehlung.querbezuege_muss }}</strong> Muss von
+    {{ protokoll.zaehlung.querbezuege }}{% endif %}
+  </p>
+  {% endif %}
   <p class="fussnote">
     Dies ist eine Empfehlung, keine Freigabe. Freigeben kann nur der Mensch in der
     Rolle des Auftraggebers.
@@ -203,8 +215,7 @@
     {% set i = protokoll.befunde.index(b) %}
     <tr {% if widersprueche.get(i) %}class="widersprochen"{% endif %}>
       <td>{{ b.kapitel }}<br><span class="fussnote">{{ b.kriterium }}</span>
-        {%- if b.zusammengefasst_aus %}<br><span class="fussnote">
-          zusammengefasst aus: {{ b.zusammengefasst_aus | join(', ') }}</span>{% endif %}</td>
+</td>
       <td>{{ b.feststellung }}</td>
       {# Vorschlaege werden ANGEZEIGT, nicht angewandt (Briefing 5.1). #}
       <td>{{ b.vorschlag }}</td>
@@ -242,15 +253,6 @@
   <summary>Hinweise ({{ hinweise | length }}) anzeigen</summary>
   {{ befundtabelle(hinweise) }}
 </details>
-{% endif %}
-
-{% if protokoll.aufgeloeste_widersprueche %}
-<h3>Bei der Zusammenführung aufgelöst</h3>
-<ul class="fussnote">
-  {% for w in protokoll.aufgeloeste_widersprueche %}
-  <li><strong>{{ w.worum }}</strong> – {{ w.aufloesung }}</li>
-  {% endfor %}
-</ul>
 {% endif %}
 
 {% if protokoll.gut %}

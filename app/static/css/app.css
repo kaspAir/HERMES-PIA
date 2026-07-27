@@ -1098,3 +1098,12 @@ tr.widersprochen td:last-child { opacity: 1; text-decoration: none; }
 .lauf-schritte li.erledigt .lauf-punkt::before { font-size: 1rem; }
 .lauf-schritte li.gescheitert { color: #c0392b; }
 .lauf-punkt { display: inline-block; width: 1.2rem; }
+
+/* Fachliche Pruefung: gezaehlte Werte und priorisierte Befunde.
+   Die Zahlen kommen aus dem Code (protokoll.zaehlung), nicht aus dem
+   Modelltext - eine erzaehlte Zahl war schon falsch. */
+.zaehlung { margin: .4rem 0 .2rem; font-size: .95rem; letter-spacing: .01em; }
+.gewicht-muss { color: #b02020; margin-top: 1.4rem; }
+.gewicht-vorbehalt { color: #9a6b00; margin-top: 1.4rem; }
+.hinweis-block { margin-top: 1.4rem; }
+.hinweis-block > summary { cursor: pointer; font-weight: 600; padding: .35rem 0; }

@@ -11,7 +11,7 @@ description: >-
   gut genug» oder «was fehlt noch» — auch wenn der Begriff Review nicht ausdrücklich
   fällt. Grundsatz: beraten und herausfordern, nicht entscheiden und nicht umschreiben.
 scope: base
-version: "1.0"
+version: "1.2"
 owner: kaspAIr
 applies_to: projektinitialisierungsauftrag
 ---
@@ -145,6 +145,23 @@ tatsächlicher Quelle.
 Drei bis fünf Fragen mit Begründung. Ausdrücklich als Fragen, nicht als Feststellungen —
 die Projektleitung darf begründet widersprechen, und der Widerspruch wird festgehalten.
 
+### D.1 · Vor der Ausgabe: zusammenführen
+Bevor Gesamturteil und Empfehlung gebildet werden, müssen **alle** Kapitelbefunde
+vorliegen. Dann einmal durchgehen und prüfen: Widerspricht sich etwas (ein Lob, das
+einem Befund widerspricht)? Steht dasselbe Thema zweimal? Deckt sich der Prüfumfang mit
+dem, was tatsächlich geprüft wurde? Ein Protokoll, das sich selbst widerspricht,
+verliert seine Wirkung vollständig. Der Abschnitt «Was gut ist» gehört ausdrücklich in
+diese Prüfung — ein Lob, das einem Befund widerspricht, beschädigt beide.
+
+**Das Ergebnis dieses Schritts ist ein bereinigtes Protokoll, kein Bericht über die
+Bereinigung.** Wurden Feststellungen zusammengeführt, erscheint die zusammengeführte
+Feststellung — nicht die Überlegung, wie zusammengeführt wurde. Der Vorschlag sagt immer,
+was die **Projektleitung** tun soll, nie, wie das Protokoll zu gliedern wäre. Interne
+Nummern oder Verweise auf einzelne Befunde erscheinen nicht in der Ausgabe.
+
+**Keine Zählungen nennen, die nicht ausgezählt sind.** Aussagen wie «vier Muss-Befunde»
+gehören nur ins Gesamturteil, wenn sie stimmen — im Zweifel ohne Zahl formulieren.
+
 ### E · Empfehlung und Confidence
 Empfehlung (freigebbar / mit Vorbehalt / nicht freigebbar) mit Begründung. Bei Vorbehalt
 je Auflage: **was ist offen, wer erledigt es, bis wann.** Dazu eine Einschätzung, wie
@@ -157,7 +174,14 @@ belastbar die Prüfung ist — begrenzt durch das, was nicht geprüft werden kon
 - **Prüfer ist nicht Erzeuger.** Kein Umschreiben des PIA; Vorschläge bleiben Vorschläge.
 - **Formfehler nicht doppelt melden.** Was die Invarianten prüfen, wird übernommen.
 - **Proportional bleiben.** Ein kleiner, sauberer PIA verdient eine kurze Prüfung. Die
-  Länge des Protokolls folgt dem Befund, nicht dem Anspruch.
+  Länge des Protokolls folgt dem Befund, nicht dem Anspruch. Konkret: **je Kriterium eine
+  Feststellung, nicht je Vorkommen.** Gleichartige Beobachtungen werden zusammengefasst
+  («in drei Zeilen fehlt …») statt einzeln aufgezählt; dasselbe Thema erscheint nicht in
+  zwei Kapiteln.
+- **Keine Vollständigkeit beurteilen, die nicht beurteilbar ist.** Wirkt ein Text
+  abgeschnitten oder fehlt ein Kapitel im Eingang, ist das **kein inhaltlicher Mangel**,
+  sondern ein Hinweis auf die Übergabe. Solche Beobachtungen gehören in den Prüfumfang
+  («konnte nicht beurteilt werden»), nie in die Befunde — und niemals mit Gewicht «Muss».
 - **Nichts erfinden.** Keine HERMES-Regeln behaupten, die nicht bestehen; keine
   Rechtsaussagen; keine Zahlen aus dem Gedächtnis. Unsicheres wird als solches benannt.
 - **Widerspruch akzeptieren.** Lehnt die Projektleitung eine Feststellung begründet ab,
