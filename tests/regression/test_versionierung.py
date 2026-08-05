@@ -168,3 +168,110 @@ def test_die_seite_ist_dokumentneutral():
     assert "{{ titel }}" in v
     assert "PIA herunterladen" not in v
     assert "interview_workspace" not in v
+
+@pytest.fixture
+def app(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + str(tmp_path / "v.db").replace("\\", "/")
+        SECRET_KEY = "x"
+        PSEUDO_BASIS_URL = ""
+
+    SessionLocal.remove()
+    anwendung = create_app(_Cfg)
+    SessionLocal.remove()
+    yield anwendung
+    SessionLocal.remove()
+
+
+# ---- Die Routen werden AUFGERUFEN, nicht nur geschrieben ----------------- #
+#
+# Zwei Fehler hintereinander an neu gebauten Routen und Schritten – ein
+# NameError und ein AttributeError – gingen durch die ganze Suite, weil kein
+# Test sie ausführte. Beide waren beim ersten Klick sofort sichtbar. Diese
+# Tests rufen die Seiten wirklich auf.
+
+def _projekt_mit_entwurf(app):
+    """Ein angemeldeter Client, ein Projekt und ein Entwurf mit Inhalt."""
+    from app.domains.ergebnisse.models import ErgebnisEntwurf
+    from app.domains.projekt.models import Projekt
+    from app.shared.database import SessionLocal
+
+    auth = app.auth_service
+    org = auth.create_org("Org")
+    org_id = org.id                      # die Sitzung wird zwischendurch geleert
+    auth.create_user("a@b.ch", "pw", role="org_admin", org_id=org_id,
+                     can_read=True, can_write=True, can_delete=True)
+    c = app.test_client()
+    c.post("/login", data={"email": "a@b.ch", "password": "pw"})
+
+    db = SessionLocal()
+    projekt = Projekt(name="Testprojekt", org_id=org_id)
+    db.add(projekt)
+    db.commit()
+    db.add(ErgebnisEntwurf(
+        projekt_id=projekt.id, ergebnistyp="rechtsgrundlagenanalyse",
+        doc_version="0.1",
+        answers_json=json.dumps({"konsequenzen": {"extracted": {"text": "x"}}})))
+    db.commit()
+    projekt_id = projekt.id
+    db.add(ErgebnisEntwurf(
+        projekt_id=projekt_id, ergebnistyp="rechtsgrundlagenanalyse",
+        doc_version="0.1",
+        answers_json=json.dumps({"konsequenzen": {"extracted": {"text": "x"}}})))
+    db.commit()
+    return c, projekt_id
+
+
+def test_die_versionsseite_der_rga_laesst_sich_oeffnen(app):
+    """Gemessen: «AttributeError: 'User' object has no attribute 'get'» beim
+    ersten Klick. current_user() liefert ein Objekt, kein Wörterbuch."""
+    c, projekt_id = _projekt_mit_entwurf(app)
+    r = c.get(f"/projekt/{projekt_id}/rechtsgrundlagen/version")
+    assert r.status_code == 200, r.get_data(as_text=True)[:300]
+    text = r.get_data(as_text=True)
+    assert "Rechtsgrundlagenanalyse herunterladen" in text
+    assert "0.1" in text
+
+
+def test_der_versionseintrag_erhoeht_und_leitet_zum_download(app):
+    c, projekt_id = _projekt_mit_entwurf(app)
+    r = c.post(f"/projekt/{projekt_id}/rechtsgrundlagen/version",
+               data={"bump_type": "minor", "bemerkungen": "Erste Fassung"})
+    assert r.status_code in (302, 303), r.get_data(as_text=True)[:300]
+    assert "_Rechtsgrundlagenanalyse_V0.2.docx" in r.headers["Location"]
+
+    # Und der Eintrag steht im Protokoll, mit Urheber.
+    from app.domains.ergebnisse.models import ErgebnisEntwurf
+    from app.shared.database import SessionLocal
+    zeile = SessionLocal().query(ErgebnisEntwurf).filter(
+        ErgebnisEntwurf.projekt_id == projekt_id).first()
+    assert zeile.doc_version == "0.2"
+    protokoll = json.loads(zeile.changelog_json)
+    assert protokoll[-1]["bemerkungen"] == "Erste Fassung"
+    assert protokoll[-1]["name"] == "a@b.ch"
+
+
+def test_ohne_entwurf_bleibt_die_seite_bedienbar(app):
+    """Wer die Seite vor der ersten Erzeugung öffnet, darf keinen Absturz
+    sehen."""
+    from app.domains.projekt.models import Projekt
+    from app.shared.database import SessionLocal
+
+    auth = app.auth_service
+    org = auth.create_org("Org2")
+    org_id = org.id
+    auth.create_user("c@d.ch", "pw", role="org_admin", org_id=org_id,
+                     can_read=True, can_write=True, can_delete=True)
+    c = app.test_client()
+    c.post("/login", data={"email": "c@d.ch", "password": "pw"})
+    db = SessionLocal()
+    p = Projekt(name="Leer", org_id=org_id)
+    db.add(p)
+    db.commit()
+    pid = p.id
+
+    assert c.get(f"/projekt/{pid}/rechtsgrundlagen/version").status_code == 200

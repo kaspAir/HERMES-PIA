@@ -518,7 +518,10 @@ def rechtsgrundlagen_version_post(projekt_id):
     svc = current_app.rechtsgrundlagen_service
     neu, _ = svc.version_eintragen(
         projekt, art=request.form.get("bump_type", "minor"),
-        name=(current_user() or {}).get("email", "") if callable(current_user) else "",
+        # current_user() liefert ein User-OBJEKT, kein Wörterbuch. Die Zeile
+        # hier rief .get() darauf - erfunden, obwohl dieselbe Datei die
+        # richtige Schreibweise zweimal enthält.
+        name=getattr(current_user(), "email", "") or "",
         bemerkungen=request.form.get("bemerkungen", "").strip())
     name = (f"{_safe_filename(projekt.name or 'Projekt')}"
             f"_Rechtsgrundlagenanalyse_V{neu}.docx")
