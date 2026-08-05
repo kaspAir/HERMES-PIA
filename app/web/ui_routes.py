@@ -683,14 +683,24 @@ def _load_ergebnis(projekt_id, ergebnis_id):
 @bp.post("/projekt/<int:projekt_id>/ergebnis/<int:ergebnis_id>/dokument")
 @permission_required("write")
 def ergebnis_dokument_upload(projekt_id, ergebnis_id):
-    """Lädt den freigabebereiten PIA (.docx) zum Ergebnis hoch (Base64-JSON)."""
+    """Lädt eine PIA-Fassung (.docx) zum Ergebnis hoch (Base64-JSON).
+
+    Die ART bestimmt die Verbindlichkeit: «freigegeben» schlägt
+    «freigabe» (freigabebereit), und beide schlagen den Arbeitsstand im
+    Interview. Abgeleitete Ergebnisse beruhen auf dem, was gilt.
+    """
+    from app.domains.ergebnisse.pia_quelle import DOKUMENTARTEN
+
     _load_ergebnis(projekt_id, ergebnis_id)
+    art = (request.args.get("art") or "freigabe").strip()
+    if art not in DOKUMENTARTEN:
+        return jsonify({"error": f"Unbekannte Dokumentart «{art}»."}), 400
     filename, data = _json_upload(".docx")
     if filename is None:
         return jsonify({"error": data}), 400
     user = current_user()
     dok = current_app.projekt_service.add_dokument(
-        ergebnis_id, filename, data, art="freigabe",
+        ergebnis_id, filename, data, art=art,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         uploaded_by=getattr(user, "email", None),
     )

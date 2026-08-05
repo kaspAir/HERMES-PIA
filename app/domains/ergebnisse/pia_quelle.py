@@ -11,10 +11,18 @@ dieselbe Form – die Abschnittsstruktur ``{abschnitt: {"extracted": …}}``, di
 `Projektwissen` erwartet. Was danach kommt, muss nicht wissen, ob der PIA
 diktiert oder hochgeladen wurde.
 
-Der Vorrang ist bewusst so herum: **die Interview-Sitzung schlägt das
-Dokument.** Wer in HERMES PIA arbeitet, hat den aktuelleren Stand; ein
-hochgeladenes Dokument ist ein Abzug von irgendwann. Gibt es beides, gewinnt
-das Lebendige – und wo nur das Dokument da ist, sagt die Herkunft es an.
+**Der Vorrang folgt der Verbindlichkeit, nicht der Aktualität.** Das
+freigegebene Dokument schlägt das freigabebereite, und beide schlagen die
+Interview-Sitzung. Der Grund ist fachlich: Was hochgeladen wird, ist die
+Fassung, die durch Prüfung und Freigabe gegangen ist – und sie kann
+ausserhalb von HERMES PIA überarbeitet worden sein. Das ist der Normalfall,
+nicht die Ausnahme. Die Interview-Sitzung ist der Arbeitsstand; ein
+abgeleitetes Ergebnis muss auf dem beruhen, was gilt, nicht auf dem, woran
+gerade gearbeitet wird.
+
+(Eine frühere Fassung dieses Moduls hatte den Vorrang umgekehrt – mit dem
+Argument, das Interview sei aktueller. Aktueller ist nicht dasselbe wie
+massgeblich.)
 """
 import json
 import logging
@@ -66,20 +74,36 @@ def aus_session(session):
         return {}
 
 
-def projektwissen_quelle(session=None, dokument_bytes=None, parser=None):
-    """(Abschnitte, Herkunft) – die Sitzung schlägt das Dokument.
+# Die Dokumentarten in absteigender VERBINDLICHKEIT. Die Reihenfolge ist die
+# fachliche Rangfolge, nicht die zeitliche: freigegeben schlaegt
+# freigabebereit, und beide schlagen den Arbeitsstand im Interview.
+DOKUMENTARTEN = ("freigegeben", "freigabe")
 
-    ``herkunft`` ist ``"interview"``, ``"dokument"`` oder ``""``. Sie wird
-    mitgeführt, damit das erzeugte Ergebnis sagen kann, worauf es beruht –
-    ein Abzug von irgendwann ist etwas anderes als der laufende Stand.
+HERKUNFT_TEXT = {
+    "freigegeben": "freigegebenes Dokument",
+    "freigabe": "freigabebereites Dokument",
+    "interview": "Arbeitsstand im Interview",
+}
+
+
+def projektwissen_quelle(session=None, dokumente=None, parser=None):
+    """(Abschnitte, Herkunft) – das VERBINDLICHSTE Vorhandene gewinnt.
+
+    ``dokumente``: {art: bytes}, etwa {"freigegeben": …, "freigabe": …}.
+    ``herkunft`` ist eine der Dokumentarten, ``"interview"`` oder ``""`` – sie
+    wird mitgeführt, damit das erzeugte Ergebnis sagen kann, worauf es beruht.
     """
-    abschnitte = aus_session(session) if session is not None else {}
-    if abschnitte:
-        return abschnitte, "interview"
-    if dokument_bytes and parser is not None:
+    dokumente = dokumente or {}
+    for art in DOKUMENTARTEN:
+        rohdaten = dokumente.get(art)
+        if not rohdaten or parser is None:
+            continue
         try:
-            return aus_dokument(parser(dokument_bytes)), "dokument"
+            abschnitte = aus_dokument(parser(rohdaten))
         except Exception as e:      # noqa: BLE001 – ein kaputtes Dokument darf
-            log.warning("Hochgeladener PIA nicht lesbar: %s", e)   # nichts umwerfen
-            return {}, ""
-    return {}, ""
+            log.warning("Hochgeladener PIA (%s) nicht lesbar: %s", art, e)
+            continue                # nichts umwerfen, aber auch nichts erfinden
+        if abschnitte:
+            return abschnitte, art
+    abschnitte = aus_session(session) if session is not None else {}
+    return (abschnitte, "interview") if abschnitte else ({}, "")

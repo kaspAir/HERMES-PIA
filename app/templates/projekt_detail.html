@@ -90,6 +90,14 @@
                 <input type="file" accept=".docx" class="upload-input"
                        data-url="{{ url_for('ui.ergebnis_dokument_upload', projekt_id=projekt.id, ergebnis_id=erg.id) }}">
               </label>
+              {# Die FREIGEGEBENE Fassung ist die verbindlichste Quelle fuer
+                 alle abgeleiteten Ergebnisse - sie schlaegt die
+                 freigabebereite und den Arbeitsstand im Interview. #}
+              <label class="btn-link upload-label">
+                Freigegebene Fassung hochladen (.docx)
+                <input type="file" accept=".docx" class="upload-input"
+                       data-url="{{ url_for('ui.ergebnis_dokument_upload', projekt_id=projekt.id, ergebnis_id=erg.id) }}?art=freigegeben">
+              </label>
               {% endif %}
             </div>
           </li>

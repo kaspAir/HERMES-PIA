@@ -112,12 +112,15 @@ class RechtsgrundlagenService:
             if erg.ergebnistyp != ERG_PIA:
                 continue
             sitzung = self.interview.session_for_ergebnis(erg.id)
-            dok = None
-            if not (sitzung and sitzung.answers_json):
-                dok = self.projekte.latest_dokument(erg.id, art="freigabe")
+            # Alle Dokumentarten anbieten - welche gewinnt, entscheidet die
+            # Rangfolge im Baustein, nicht diese Stelle.
+            dokumente = {}
+            for art in pia_quelle.DOKUMENTARTEN:
+                dok = self.projekte.latest_dokument(erg.id, art=art)
+                if dok is not None:
+                    dokumente[art] = dok.data
             abschnitte, herkunft = pia_quelle.projektwissen_quelle(
-                session=sitzung, dokument_bytes=dok.data if dok else None,
-                parser=parse_pia)
+                session=sitzung, dokumente=dokumente, parser=parse_pia)
             if abschnitte:
                 return abschnitte, sitzung, herkunft
         return {}, None, ""
