@@ -529,3 +529,47 @@ def test_produktkonformitaet_wird_nicht_behauptet():
     schluss = quelle[quelle.index('# "kapitel"'):]
     assert "Nicht Gegenstand dieser Analyse" in schluss
     assert "nur_basis=True" in schluss
+
+
+# ---- Eine Schicht darf mehrere Aufrufe brauchen -------------------------- #
+
+def test_die_schweren_schichten_laufen_stueckweise():
+    """Gemessen: die Würdigung ALLER Tätigkeiten in einem Aufruf riss das
+    Zeitlimit von 240 s. Sie ist die dichteste Schicht – je Tätigkeit eine
+    vollständige Prüfung an Art. 36 BV – und ihr Umfang wächst mit dem
+    Vorhaben. Eine feste Aufteilung «eine Schicht = ein Aufruf» kann das nicht
+    tragen."""
+    from pathlib import Path
+
+    from app.domains.ergebnisse.rechtsgrundlagen import service as svc_modul
+    quelle = Path(svc_modul.__file__).read_text(encoding="utf-8")
+    abschnitt = quelle[quelle.index("def kette_schritt"):]
+    assert "_stueck(" in abschnitt
+    # Die drei schweren Schichten gehen stueckweise, die leichten nicht.
+    for schwer in ("kartierungen", "wuerdigungen", "faelle", "luecken"):
+        assert f'_stueck(\n                "{schwer}"' in abschnitt or \
+               f'"{schwer}", elemente' in abschnitt, schwer
+
+
+def test_die_wuerdigung_bekommt_nur_was_sie_braucht():
+    """Die vollständige Kartierung mitzugeben bläht den Aufruf auf, ohne das
+    Urteil zu verbessern – und Aufblähen war die Ursache des Abbruchs."""
+    from pathlib import Path
+
+    from app.domains.ergebnisse.rechtsgrundlagen import service as svc_modul
+    quelle = Path(svc_modul.__file__).read_text(encoding="utf-8")
+    abschnitt = quelle[quelle.index('elif schluessel == "wuerdigung"'):
+                       quelle.index('elif schluessel == "optionen"')]
+    assert '"eingriff"' in abschnitt and '"grundlagen"' in abschnitt
+    # NICHT die ganze Kartierung.
+    assert '"kartierung": e["kartierung"]' not in abschnitt
+
+
+def test_die_oberflaeche_zeigt_den_teilfortschritt():
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+    v = Path(BASE_DIR, "app", "templates", "rechtsgrundlagen.html").read_text(
+        encoding="utf-8")
+    assert "a.d.teile" in v and "a.d.teil" in v
+    assert "Tätigkeit ' + (a.d.teil + 1)" in v

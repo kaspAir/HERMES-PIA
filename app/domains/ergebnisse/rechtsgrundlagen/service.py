@@ -545,51 +545,88 @@ class RechtsgrundlagenService:
 
         befunde = kette.befunde_aus(lauf)
 
+        # Die SCHWEREN Schichten laufen stueckweise: EIN Aufruf je Taetigkeit.
+        # Gemessen: die Wuerdigung aller Taetigkeiten in einem Aufruf riss das
+        # Zeitlimit von 240 s. Sie ist die dichteste Schicht - je Taetigkeit
+        # eine vollstaendige Pruefung an Art. 36 BV -, und ihr Umfang waechst
+        # mit dem Vorhaben. Eine Schicht darf deshalb mehrere Aufrufe brauchen;
+        # die Oberflaeche zeigt das als Teilfortschritt.
+        teil = int(lauf.get("_teil") or 0)
+
+        def _stueck(schluessel_liste, elemente, aufruf):
+            """Verarbeitet GENAU EIN Element und sammelt das Ergebnis ein.
+
+            Rueckgabe: (fertig_mit_der_schicht, daten, versionen, grund).
+            """
+            if teil >= len(elemente):
+                return True, {schluessel_liste: []}, [], ""
+            d, vv, g = aufruf([elemente[teil]])
+            if d is None:
+                return False, None, vv, g
+            bisher = (lauf.get(schluessel) or {}).get(schluessel_liste) or []
+            bisher = list(bisher) + [e for e in (d.get(schluessel_liste) or [])
+                                     if isinstance(e, dict)]
+            return teil + 1 >= len(elemente), {schluessel_liste: bisher}, vv, ""
+
+        fertig_mit_schicht = True
+        elemente = []
+
         if schluessel == "taetigkeiten":
             daten, v, grund = kette.taetigkeiten(
                 wissen, self.llm, tenant_id=tenant, skills_dir=skills_dir)
         elif schluessel == "kartierung":
-            liste = (lauf.get("taetigkeiten") or {}).get("taetigkeiten") or []
-            if not liste:
-                daten, v, grund = {"kartierungen": []}, [], ""
-            else:
-                daten, v, grund = kette.kartiere(
-                    liste, wissen, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+            elemente = [dict(t, nr=i) for i, t in enumerate(
+                (lauf.get("taetigkeiten") or {}).get("taetigkeiten") or [])
+                if isinstance(t, dict)]
+            fertig_mit_schicht, daten, v, grund = _stueck(
+                "kartierungen", elemente,
+                lambda f: kette.kartiere(f, wissen, self.llm, tenant_id=tenant,
+                                         skills_dir=skills_dir))
         elif schluessel == "gap":
-            # Nur bestaetigungsbeduerftige Rechtsluecken - der Schritt entfaellt
+            # Nur bestaetigungsbeduerftige Rechtsluecken - die Schicht entfaellt
             # sonst ohne Modellaufruf.
-            faelle = [{"nr": i, "taetigkeit": e["taetigkeit"],
-                       "kartierung": e["kartierung"]}
-                      for i, e in enumerate(befunde)
-                      if str((e["kartierung"].get("luecke") or {}).get("art", "")
-                             ).lower() == "rechtsluecke"]
-            if not faelle:
-                daten, v, grund = {"luecken": []}, [], ""
-            else:
-                daten, v, grund = kette.analysiere_luecke(
-                    faelle, wissen, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+            elemente = [{"nr": i, "taetigkeit": e["taetigkeit"],
+                         "kartierung": e["kartierung"]}
+                        for i, e in enumerate(befunde)
+                        if str((e["kartierung"].get("luecke") or {}).get("art", "")
+                               ).lower() == "rechtsluecke"]
+            fertig_mit_schicht, daten, v, grund = _stueck(
+                "luecken", elemente,
+                lambda f: kette.analysiere_luecke(f, wissen, self.llm,
+                                                  tenant_id=tenant,
+                                                  skills_dir=skills_dir))
         elif schluessel == "wuerdigung":
             # JEDE Taetigkeit wird gewuerdigt - auch die mit Grundlage. Eine
             # Grundlage zu haben heisst nicht, zulaessig zu sein.
-            faelle = [{"nr": i, "taetigkeit": e["taetigkeit"],
-                       "kartierung": e["kartierung"], "gap": e["gap"]}
-                      for i, e in enumerate(befunde)]
-            if not faelle:
-                daten, v, grund = {"wuerdigungen": []}, [], ""
-            else:
-                daten, v, grund = kette.wuerdige(
-                    faelle, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+            # Uebergeben wird nur, was die Wuerdigung braucht: der Eingriff und
+            # die TRAGENDEN Grundlagen. Die vollstaendige Kartierung mitzugeben
+            # blaeht den Aufruf auf, ohne das Urteil zu verbessern.
+            elemente = [{"nr": i, "taetigkeit": e["taetigkeit"],
+                         "eingriff": e["kartierung"].get("eingriff") or {},
+                         "grundlagen": [
+                             {"erlass": g.get("erlass"),
+                              "normstufe": g.get("normstufe"),
+                              "status": g.get("status")}
+                             for g in (e["kartierung"].get("grundlagen") or [])
+                             if isinstance(g, dict) and g.get("ermaechtigt")],
+                         "gap": {"bestaetigt": e["gap"].get("bestaetigt"),
+                                 "erforderliche_normstufe":
+                                     e["gap"].get("erforderliche_normstufe")}}
+                        for i, e in enumerate(befunde)]
+            fertig_mit_schicht, daten, v, grund = _stueck(
+                "wuerdigungen", elemente,
+                lambda f: kette.wuerdige(f, self.llm, tenant_id=tenant,
+                                         skills_dir=skills_dir))
         elif schluessel == "optionen":
-            faelle = [{"nr": i, "taetigkeit": e["taetigkeit"],
-                       "wuerdigung": e["wuerdigung"], "gap": e["gap"]}
-                      for i, e in enumerate(befunde)
-                      if str(e["wuerdigung"].get("ergebnis", "")).lower()
-                      in ("nicht zulässig", "bedingt zulässig")]
-            if not faelle:
-                daten, v, grund = {"faelle": []}, [], ""
-            else:
-                daten, v, grund = kette.entwickle_optionen(
-                    faelle, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+            elemente = [{"nr": i, "taetigkeit": e["taetigkeit"],
+                         "wuerdigung": e["wuerdigung"], "gap": e["gap"]}
+                        for i, e in enumerate(befunde)
+                        if str(e["wuerdigung"].get("ergebnis", "")).lower()
+                        in ("nicht zulässig", "bedingt zulässig")]
+            fertig_mit_schicht, daten, v, grund = _stueck(
+                "faelle", elemente,
+                lambda f: kette.entwickle_optionen(f, self.llm, tenant_id=tenant,
+                                                   skills_dir=skills_dir))
         else:                                   # "kapitel" – ohne Modellaufruf
             kapitel = kette.zu_kapiteln(lauf)
             # nur_basis: NUR die deterministischen Abschnitte. Ohne das liefe
@@ -624,17 +661,31 @@ class RechtsgrundlagenService:
             if eintrag not in versionen:
                 versionen.append(eintrag)
         lauf["_skills"] = versionen
+        if fertig_mit_schicht:
+            lauf["_teil"] = 0
+            row.lauf_schritt = index + 1
+        else:
+            lauf["_teil"] = teil + 1
+        lauf["_teile"] = len(elemente)
         row.lauf_json = json.dumps(lauf, ensure_ascii=False)
-        row.lauf_schritt = index + 1
         db.commit()
-        return self._kettenzustand(row), ""
+        return self._kettenzustand(row, lauf), ""
 
     @staticmethod
-    def _kettenzustand(row):
+    def _kettenzustand(row, lauf=None):
+        """Der Zustand fuer die Oberflaeche – samt Teilfortschritt.
+
+        Eine Schicht kann mehrere Aufrufe brauchen (eine je Taetigkeit). Die
+        Phasen bleiben sechs; wie weit es INNERHALB einer Phase ist, sagt
+        `teil` von `teile`. Ohne das saehe ein langer Lauf aus wie ein Hänger.
+        """
         namen = kette.schrittnamen()
         i = row.lauf_schritt or 0
+        lauf = lauf if lauf is not None else json.loads(row.lauf_json or "{}")
         return {"schritt": i, "gesamt": len(namen),
                 "fertig": row.lauf_status == "fertig",
+                "teil": int(lauf.get("_teil") or 0),
+                "teile": int(lauf.get("_teile") or 0),
                 "naechstes": namen[i] if i < len(namen) else ""}
 
     # ---- Metadaten (Deckblatt) ------------------------------------------ #

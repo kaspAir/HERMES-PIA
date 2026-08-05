@@ -87,6 +87,9 @@
       var fehler = document.getElementById('kette-fehler');
       var index = parseInt(box.dataset.start, 10) || 0;
       var seit = null;
+      // Eine Schicht kann mehrere Aufrufe brauchen (einen je Taetigkeit).
+      // Ohne diese Anzeige saehe ein langer Lauf aus wie ein Haenger.
+      var teilText = '';
 
       function markiere(i, zustand) {
         var li = document.getElementById('kschritt-' + i);
@@ -108,7 +111,7 @@
         markiere(index, 'aktiv');
         titel.textContent = 'Analyse l\u00e4uft: ' + (document.getElementById('kschritt-' + index)
                             || {textContent: ''}).textContent.trim();
-        zaehler.textContent = 'Schritt ' + (index + 1) + ' von ' + gesamt;
+        zaehler.textContent = 'Schritt ' + (index + 1) + ' von ' + gesamt + teilText;
         balken.style.width = Math.round(index / gesamt * 100) + '%';
         seit = Date.now(); tick();
         // Kein FormData: multipart laesst der Hosting-Proxy nicht durch.
@@ -132,9 +135,12 @@
                 : ('Der Server meldete einen Fehler (Code ' + a.status + '): '
                    + a.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)));
             }
-            markiere(index, 'erledigt');
+            teilText = (a.d.teile > 1 && a.d.teil > 0)
+              ? ' · Tätigkeit ' + (a.d.teil + 1) + ' von ' + a.d.teile : '';
+            if (a.d.schritt > index) { markiere(index, 'erledigt'); }
             index = a.d.schritt;
-            balken.style.width = Math.round(index / gesamt * 100) + '%';
+            var anteil = (a.d.teile > 1 && a.d.teil > 0) ? a.d.teil / a.d.teile : 0;
+            balken.style.width = Math.round((index + anteil) / gesamt * 100) + '%';
             if (a.d.fertig) { location.reload(); return; }
             schritt();
           })
