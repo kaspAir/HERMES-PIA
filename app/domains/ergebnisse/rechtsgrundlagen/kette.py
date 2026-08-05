@@ -80,6 +80,38 @@ SCHRANKENNORMEN = (
 )
 
 
+# Sicherheitsgrade. Im Recht ist der Unterschied zwischen «eindeutig» und
+# «vertretbare Auffassung» der halbe Befund - eine Aussage ohne Grad liest
+# sich immer wie die erste Stufe. Reihenfolge = absteigende Sicherheit.
+SICHERHEITSGRADE = ("eindeutig", "überwiegend wahrscheinlich",
+                    "vertretbare Auffassung", "offen")
+
+# Woher eine vorgeschlagene Option stammt. Ohne diese Angabe liest sich eine
+# hypothetische Gesetzgebungsoption wie geltendes Recht.
+OPTION_HERKUNFT = ("aus bestehender Norm abgeleitet", "bekannte Praxis",
+                   "hypothetische Gesetzgebungsoption",
+                   "Schlussfolgerung dieser Analyse")
+
+
+def sicherheit_von(eintrag, vorgabe="offen"):
+    """Der Sicherheitsgrad eines Eintrags – Unbekanntes wird zu «offen».
+
+    Bewusst vorsichtig: fehlt die Angabe, ist die Aussage NICHT eindeutig.
+    """
+    wert = str((eintrag or {}).get("sicherheit", "")).strip().lower()
+    for grad in SICHERHEITSGRADE:
+        if wert == grad.lower():
+            return grad
+    return vorgabe
+
+
+def _quellen(eintrag):
+    """Die Normen, auf die sich ein Eintrag stützt – als lesbarer Zusatz."""
+    normen = [str(n).strip() for n in (eintrag or {}).get("stuetzt_sich_auf") or []
+              if str(n).strip()]
+    return f" Gestützt auf: {', '.join(normen)}." if normen else ""
+
+
 def ist_schrankennorm(name):
     """Garantiert die Norm Grundrechte, statt einen Eingriff zu erlauben?"""
     n = f" {(name or '').lower()} "
@@ -303,8 +335,10 @@ _SCHEMA_GAP = (
     '{"luecken":[{"nr":0,"bestaetigt":true,"begruendung":"",'
     '"erforderliche_normstufe":"verfassung|gesetz|verordnung|richtlinie",'
     '"stufenbegruendung":"","organ":"","referendum":"",'
-    '"deckungsvorschlag":"","confidence":{"stufe":"hoch|mittel|tief",'
-    '"begruendung":""}}]}')
+    '"deckungsvorschlag":"",'
+    '"sicherheit":"eindeutig|überwiegend wahrscheinlich|vertretbare Auffassung|offen",'
+    '"stuetzt_sich_auf":[""],'
+    '"confidence":{"stufe":"hoch|mittel|tief","begruendung":""}}]}')
 
 
 def analysiere_luecke(faelle, wissen, llm, tenant_id=None, skills_dir=None):
@@ -355,15 +389,33 @@ _SYSTEM_WUERDIGUNG = (
     "- Du erfindest keine Gerichtsentscheide und keine Fundstellen.\n"
     "- Deine Einschätzung ist BERATEND und ersetzt den Rechtsdienst nicht. "
     "Sag das im Feld 'vorbehalt'.\n"
+    "- JEDE Aussage traegt ihren SICHERHEITSGRAD: 'eindeutig' (die Rechtslage "
+    "ist klar), 'überwiegend wahrscheinlich', 'vertretbare Auffassung' (andere "
+    "Lesart begründbar) oder 'offen'. Im Recht ist dieser Unterschied der halbe "
+    "Befund. Nutze 'eindeutig' sparsam – nur, wo Norm und Auslegung wirklich "
+    "keinen Spielraum lassen.\n"
+    "- JEDE Aussage nennt unter 'stuetzt_sich_auf' die NORMEN, die sie tragen – "
+    "so genau wie möglich, mit Artikel und Absatz, wenn du ihn sicher kennst. "
+    "Kennst du ihn nicht sicher, nenne nur den Erlass. Erfinde keine "
+    "Fundstelle.\n"
+    "- Sagst du 'kerngehalt_verletzt', gib zusätzlich "
+    "'kerngehalt_sicherheit' und 'kerngehalt_stuetzt_sich_auf' an. Das ist die "
+    "stärkste Aussage, die du treffen kannst – sie muss ihre Grundlage nennen.\n"
     "Antworte AUSSCHLIESSLICH mit validem JSON nach dem vorgegebenen Schema."
 )
 
 _SCHEMA_WUERDIGUNG = (
     '{"wuerdigungen":[{"nr":0,"rechtsgueter":[""],"geprueft_an":[""],'
     '"pruefung":[{"kriterium":"","ergebnis":"erfüllt|fraglich|nicht erfüllt",'
-    '"begruendung":""}],'
+    '"begruendung":"","stuetzt_sich_auf":[""],'
+    '"sicherheit":"eindeutig|überwiegend wahrscheinlich|vertretbare Auffassung|offen"}],'
     '"ergebnis":"zulässig|bedingt zulässig|nicht zulässig",'
-    '"kerngehalt_verletzt":false,"begruendung":"","vorbehalt":"",'
+    '"sicherheit":"eindeutig|überwiegend wahrscheinlich|vertretbare Auffassung|offen",'
+    '"stuetzt_sich_auf":[""],'
+    '"kerngehalt_verletzt":false,'
+    '"kerngehalt_sicherheit":"eindeutig|überwiegend wahrscheinlich|vertretbare Auffassung|offen",'
+    '"kerngehalt_stuetzt_sich_auf":[""],'
+    '"begruendung":"","vorbehalt":"",'
     '"confidence":{"stufe":"hoch|mittel|tief","begruendung":""}}]}')
 
 
@@ -408,12 +460,23 @@ _SYSTEM_OPTIONEN = (
     "Anlauf in dieselbe Sackgasse.\n"
     "- Deine Vorschläge sind BERATEND: jede gewählte Option ist erneut zu "
     "würdigen und mit dem Rechtsdienst abzustimmen.\n"
+    "- JEDE Option legt ihre HERKUNFT offen: 'aus bestehender Norm abgeleitet' "
+    "(eine geltende Norm trägt sie bereits), 'bekannte Praxis' (so wird es "
+    "andernorts gemacht), 'hypothetische Gesetzgebungsoption' (setzt eine erst "
+    "zu schaffende Norm voraus) oder 'Schlussfolgerung dieser Analyse'. Ohne "
+    "diese Angabe liest sich eine hypothetische Option wie geltendes Recht.\n"
+    "- Dazu je Option die tragenden Normen ('stuetzt_sich_auf') und den "
+    "Sicherheitsgrad.\n"
     "Antworte AUSSCHLIESSLICH mit validem JSON nach dem vorgegebenen Schema."
 )
 
 _SCHEMA_OPTIONEN = (
     '{"faelle":[{"nr":0,"eigentliches_ziel":"",'
-    '"optionen":[{"option":"","grundlage":"","voraussetzungen":"","grenzen":""}],'
+    '"optionen":[{"option":"","grundlage":"","voraussetzungen":"","grenzen":"",'
+    '"herkunft":"aus bestehender Norm abgeleitet|bekannte Praxis|'
+    'hypothetische Gesetzgebungsoption|Schlussfolgerung dieser Analyse",'
+    '"stuetzt_sich_auf":[""],'
+    '"sicherheit":"eindeutig|überwiegend wahrscheinlich|vertretbare Auffassung|offen"}],'
     '"nicht_gangbar":[{"weg":"","warum":""}],'
     '"vorbehalt":"","confidence":{"stufe":"hoch|mittel|tief",'
     '"begruendung":""}}]}')
@@ -514,21 +577,31 @@ def sperren(befunde):
                 })
 
         # 3. Der Kerngehalt ist unantastbar – auch ein Gesetz hilft dann nicht.
+        #    Das ist die staerkste Aussage der ganzen Analyse. Sie muss deshalb
+        #    sagen, WORAUF sie sich stuetzt und wie sicher sie ist - sonst liest
+        #    sie sich wie eine bewiesene Tatsache statt wie eine Einschaetzung.
         if wuerd.get("kerngehalt_verletzt"):
+            grad = sicherheit_von({"sicherheit": wuerd.get("kerngehalt_sicherheit")})
+            quellen = _quellen({"stuetzt_sich_auf":
+                                wuerd.get("kerngehalt_stuetzt_sich_auf")})
             raus.append({
                 "gewicht": "Muss", "taetigkeit": name,
-                "meldung": ("Die Würdigung sieht den Kerngehalt eines Grundrechts "
-                            "verletzt. Eine solche Tätigkeit wäre auch mit einer "
-                            "gesetzlichen Grundlage unzulässig; das Vorhaben ist "
-                            "in dieser Form nicht umsetzbar."),
+                "meldung": (f"Nach der vorgängigen Würdigung ist der Kerngehalt "
+                            f"eines Grundrechts verletzt (Sicherheit: {grad}). "
+                            f"Trifft das zu, wäre die Tätigkeit auch mit einer "
+                            f"gesetzlichen Grundlage unzulässig und das Vorhaben "
+                            f"in dieser Form nicht umsetzbar.{quellen}"),
             })
 
         # 4. Als unzulässig gewürdigt.
         if str(wuerd.get("ergebnis", "")).lower().startswith("nicht zulässig"):
+            grad = sicherheit_von(wuerd)
             raus.append({
                 "gewicht": "Muss", "taetigkeit": name,
-                "meldung": "Die Würdigung kommt zum Ergebnis, dass diese Tätigkeit "
-                           "nicht zulässig wäre.",
+                "meldung": (f"Die Würdigung kommt zum Ergebnis, dass diese "
+                            f"Tätigkeit nach den vorliegenden Projektangaben "
+                            f"nicht zulässig wäre (Sicherheit: {grad})."
+                            f"{_quellen(wuerd)}"),
             })
 
         # 5. Recherchelücke: ehrlich als UNGEPRÜFT ausweisen, nicht als Ergebnis.
@@ -629,9 +702,16 @@ def befunde_aus(lauf):
 #  Von der Kette ins Dokument
 # ======================================================================== #
 
-def _kurz(text, grenze=400):
-    t = str(text or "").strip()
-    return t if len(t) <= grenze else t[:grenze].rstrip() + " …"
+def _text(wert):
+    """Der Text, unveraendert.
+
+    Hier stand eine Kuerzung auf 400 bzw. 320 Zeichen. Sie schnitt Begruendungen
+    mitten im Satz ab - gemessen im Kapitel «Beurteilung der Konsequenzen». Die
+    Regel gilt auf BEIDEN Seiten: was am Eingang nicht gekuerzt werden darf,
+    darf es am Ausgang auch nicht. Ein halber Satz ist im Recht schlimmer als
+    ein langer.
+    """
+    return str(wert or "").strip()
 
 
 def zu_kapiteln(lauf):
@@ -669,7 +749,7 @@ def zu_kapiteln(lauf):
             bestehende.append({
                 "rechtsgrundlage": g["erlass"],
                 "beschreibung": " – ".join(teile) or
-                                f"Deckt ab: {_kurz(e['taetigkeit'].get('taetigkeit'), 200)}",
+                                f"Deckt ab: {_text(e['taetigkeit'].get('taetigkeit'))}",
             })
     if not bestehende:
         bestehende = [{
@@ -687,14 +767,27 @@ def zu_kapiteln(lauf):
                 bevorstehend.append({
                     "rechtsgrundlage": g.get("erlass", ""),
                     "beschreibung": f"Status: {g.get('status')}. "
-                                    f"{_kurz(g.get('geltung'), 200)}".strip(),
+                                    f"{_text(g.get('geltung'))}".strip(),
                     "auswirkung": "neutral",
                 })
+    if not bevorstehend:
+        # Eine LEERE Liste laesst die Vorlagenzeile stehen - im erzeugten
+        # Dokument standen dort die Platzhalter «…» der Vorlage, und das sieht
+        # aus wie ein Abbruch. Eine leere Tabelle muss sagen, dass sie leer ist.
+        bevorstehend = [{
+            "rechtsgrundlage": "Keine bevorstehende Änderung erhoben",
+            "beschreibung": "Diese Analyse hat den Status der aufgeführten "
+                            "Erlasse festgehalten, aber laufende Revisionen "
+                            "nicht systematisch abgefragt. Aus dem Fehlen von "
+                            "Einträgen folgt deshalb nicht, dass keine Änderung "
+                            "bevorsteht.",
+            "auswirkung": "neutral",
+        }]
 
     # ---- Identifizierte Lücken ------------------------------------------ #
     luecken = []
     for m in muss:
-        luecken.append({"luecke": _kurz(m["taetigkeit"], 120),
+        luecken.append({"luecke": _text(m["taetigkeit"]),
                         "beschreibung": m["meldung"]})
     for e in befunde:
         art = str((e["kartierung"].get("luecke") or {}).get("art", "")).lower()
@@ -702,13 +795,13 @@ def zu_kapiteln(lauf):
             stufe = e["gap"].get("erforderliche_normstufe", "")
             organ, referendum = NORMSTUFE_VERFAHREN.get(str(stufe).lower(), ("", ""))
             luecken.append({
-                "luecke": _kurz(e["taetigkeit"].get("taetigkeit"), 120),
-                "beschreibung": (f"{_kurz(e['gap'].get('begruendung'), 260)} "
+                "luecke": _text(e["taetigkeit"].get("taetigkeit")),
+                "beschreibung": (f"{_text(e['gap'].get('begruendung'))} "
                                  f"Erforderliche Normstufe: {stufe}"
                                  f"{f' ({organ}, {referendum})' if organ else ''}."),
             })
     for m in offen:
-        luecken.append({"luecke": f"Offen: {_kurz(m['taetigkeit'], 110)}",
+        luecken.append({"luecke": f"Offen: {_text(m['taetigkeit'])}",
                         "beschreibung": m["meldung"]})
     if not luecken:
         luecken = [{"luecke": "Keine Lücke identifiziert",
@@ -719,17 +812,25 @@ def zu_kapiteln(lauf):
     # ---- Vorschläge zur Deckung ----------------------------------------- #
     vorschlaege = []
     for e in befunde:
-        name = _kurz(e["taetigkeit"].get("taetigkeit"), 120)
+        name = _text(e["taetigkeit"].get("taetigkeit"))
         if e["gap"].get("deckungsvorschlag"):
             vorschlaege.append({"luecke": name,
-                                "vorschlag": _kurz(e["gap"]["deckungsvorschlag"])})
+                                "vorschlag": _text(e["gap"]["deckungsvorschlag"])})
         for o in (e["optionen"].get("optionen") or []):
             if isinstance(o, dict) and o.get("option"):
+                # Ohne Herkunftsangabe liest sich eine hypothetische
+                # Gesetzgebungsoption wie geltendes Recht.
+                herkunft = str(o.get("herkunft", "")).strip() or \
+                    "Schlussfolgerung dieser Analyse"
                 vorschlaege.append({
                     "luecke": name,
-                    "vorschlag": (f"Option: {_kurz(o['option'], 240)} "
-                                  f"[Grundlage: {o.get('grundlage', '–')}; "
-                                  f"Grenzen: {o.get('grenzen', '–')}]"),
+                    "vorschlag": (
+                        f"{_text(o['option'])}\n"
+                        f"Herkunft: {herkunft} · Sicherheit: {sicherheit_von(o)}\n"
+                        f"Grundlage: {o.get('grundlage') or '–'}\n"
+                        f"Voraussetzungen: {o.get('voraussetzungen') or '–'}\n"
+                        f"Grenzen: {o.get('grenzen') or '–'}"
+                        f"{_quellen(o)}"),
                 })
     if not vorschlaege:
         vorschlaege = [{
@@ -746,9 +847,16 @@ def zu_kapiteln(lauf):
         w = e["wuerdigung"]
         if not w.get("ergebnis"):
             continue
+        # Der angelegte Massstab und der Sicherheitsgrad gehoeren an die
+        # Aussage, nicht in eine Fussnote: «nicht zulaessig» ohne beides liest
+        # sich wie ein Urteil statt wie eine Einschaetzung.
+        massstab = ", ".join(str(m) for m in (w.get("geprueft_an") or [])
+                             if str(m).strip())
         zeilen.append(
-            f"{_kurz(e['taetigkeit'].get('taetigkeit'), 160)}: {w['ergebnis']}. "
-            f"{_kurz(w.get('begruendung'), 320)}")
+            f"{_text(e['taetigkeit'].get('taetigkeit'))}: {w['ergebnis']} "
+            f"(Sicherheit: {sicherheit_von(w)}"
+            f"{f'; geprüft an: {massstab}' if massstab else ''}). "
+            f"{_text(w.get('begruendung'))}{_quellen(w)}")
     if muss:
         zeilen.append("Zwingend zu klären, bevor dieses Vorhaben weitergeführt "
                       "werden kann: " + " ".join(m["meldung"] for m in muss))
@@ -763,8 +871,11 @@ def zu_kapiteln(lauf):
     elif muss:
         empfehlung = (
             "Das Vorhaben ist in der vorliegenden Form nicht weiterzuführen, "
-            "solange die zwingenden Punkte offen sind. Diese Analyse ist "
-            "beratend; die Beurteilung ist mit dem Rechtsdienst abzustimmen.")
+            "solange die zwingenden Punkte offen sind. Diese Einschätzung "
+            "stützt sich auf die vorstehende Würdigung und auf die im PIA "
+            "beschriebenen Tätigkeiten; ändern sich diese, ist sie neu zu "
+            "bilden. Die Analyse ist beratend und ersetzt die Beurteilung "
+            "durch den Rechtsdienst nicht.")
     elif darf_entwarnen(befunde):
         empfehlung = (
             "Für jede geprüfte Tätigkeit besteht eine ermächtigende Grundlage der "

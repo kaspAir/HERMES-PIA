@@ -657,3 +657,126 @@ def test_alltagsvorhaben_ohne_grundrechte_laeuft_sauber_durch():
     k = kette.zu_kapiteln(lauf)
     assert "Art. 36" not in json.dumps(k, ensure_ascii=False)
     assert k["identifizierte_luecken"][0]["luecke"] == "Keine Lücke identifiziert"
+
+
+# ---- Herkunft und Sicherheit je Aussage ---------------------------------- #
+#
+# Vier Befunde am erzeugten Dokument, ein gemeinsamer Kern – und er steht in
+# der eigenen Referenzarchitektur: RA-10 «Jedes Ergebnis trägt seine Herkunft»,
+# RA-11 «Unsicherheit ist ein Feld, keine Formulierung».
+
+def test_nichts_wird_mehr_gekuerzt():
+    """Gemessen im Kapitel «Beurteilung der Konsequenzen»: Begründungen brachen
+    mitten im Satz ab. Die Regel gilt auf BEIDEN Seiten – was am Eingang nicht
+    gekürzt werden darf, darf es am Ausgang auch nicht."""
+    from pathlib import Path
+
+    quelle = Path(kette.__file__).read_text(encoding="utf-8")
+    assert "_kurz" not in quelle
+    lang = "Ein sehr ausführlicher Begründungssatz. " * 40
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{"nr": 0, "eingriff": {"tiefe": "keiner"},
+                                         "grundlagen": [], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig",
+                                         "begruendung": lang}]},
+    }
+    assert lang.strip() in kette.zu_kapiteln(lauf)["konsequenzen"]
+
+
+def test_leere_tabelle_sagt_dass_sie_leer_ist():
+    """Eine leere Liste liess die Platzhalter «…» der Vorlage stehen – im
+    Dokument sah das aus wie ein Abbruch."""
+    k = kette.zu_kapiteln({"taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]}})
+    zeile = k["bevorstehende_aenderungen"][0]
+    assert zeile["rechtsgrundlage"] and "…" not in zeile["rechtsgrundlage"]
+    # Und ohne Entwarnung: nicht erhoben ist nicht «es gibt keine».
+    assert "nicht systematisch abgefragt" in zeile["beschreibung"]
+
+
+def test_fehlende_sicherheitsangabe_gilt_als_offen():
+    """Bewusst vorsichtig: ohne Angabe ist eine Aussage NICHT eindeutig."""
+    assert kette.sicherheit_von({}) == "offen"
+    assert kette.sicherheit_von({"sicherheit": "Eindeutig"}) == "eindeutig"
+    assert kette.sicherheit_von({"sicherheit": "Quatsch"}) == "offen"
+
+
+def test_kerngehalt_wird_zugeschrieben_nicht_behauptet():
+    """«Kerngehalt verletzt» ist die stärkste Aussage der ganzen Analyse. Ohne
+    Zuschreibung und Sicherheitsgrad liest sie sich wie eine bewiesene
+    Tatsache."""
+    befunde = [{
+        "taetigkeit": {"taetigkeit": "T"},
+        "kartierung": {"eingriff": {"tiefe": "schwer", "grundrechte": ["Art. 13 BV"]},
+                       "grundlagen": [{"erlass": "Ein Gesetz", "normstufe": "gesetz",
+                                       "ermaechtigt": True}]},
+        "wuerdigung": {"kerngehalt_verletzt": True,
+                       "kerngehalt_sicherheit": "vertretbare Auffassung",
+                       "kerngehalt_stuetzt_sich_auf": ["Art. 36 Abs. 4 BV"],
+                       "ergebnis": "nicht zulässig",
+                       "sicherheit": "überwiegend wahrscheinlich"},
+    }]
+    text = " ".join(m["meldung"] for m in kette.sperren(befunde))
+    assert "Nach der vorgängigen Würdigung" in text
+    assert "Sicherheit: vertretbare Auffassung" in text
+    assert "Trifft das zu" in text            # bedingt, nicht behauptet
+    assert "Gestützt auf: Art. 36 Abs. 4 BV" in text
+    assert "nach den vorliegenden Projektangaben" in text
+
+
+def test_optionen_legen_ihre_herkunft_offen():
+    """Ohne Herkunftsangabe liest sich eine hypothetische Gesetzgebungsoption
+    wie geltendes Recht."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{"nr": 0, "eingriff": {"tiefe": "leicht"},
+                                         "grundlagen": [], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "bedingt zulässig"}]},
+        "optionen": {"faelle": [{"nr": 0, "optionen": [
+            {"option": "Neues Gesetz schaffen",
+             "herkunft": "hypothetische Gesetzgebungsoption",
+             "sicherheit": "vertretbare Auffassung",
+             "stuetzt_sich_auf": ["Art. 5 Abs. 1 BV"], "grundlage": "zu schaffen"},
+            {"option": "Ohne Herkunftsangabe"}]}]},
+    }
+    v = kette.zu_kapiteln(lauf)["vorschlaege_deckung"]
+    text = json.dumps(v, ensure_ascii=False)
+    assert "Herkunft: hypothetische Gesetzgebungsoption" in text
+    assert "Sicherheit: vertretbare Auffassung" in text
+    assert "Art. 5 Abs. 1 BV" in text
+    # Fehlt die Angabe, wird sie nicht weggelassen, sondern vorsichtig gesetzt.
+    assert "Herkunft: Schlussfolgerung dieser Analyse" in text
+
+
+def test_die_wuerdigung_nennt_ihren_massstab_im_dokument():
+    """Traceability: welche Aussage stützt sich worauf."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{"nr": 0, "eingriff": {"tiefe": "keiner"},
+                                         "grundlagen": [], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{
+            "nr": 0, "ergebnis": "zulässig", "sicherheit": "eindeutig",
+            "geprueft_an": ["Legalitätsprinzip (Art. 5 Abs. 1 BV)"],
+            "stuetzt_sich_auf": ["Art. 5 Abs. 1 BV"], "begruendung": "Gedeckt."}]},
+    }
+    text = kette.zu_kapiteln(lauf)["konsequenzen"]
+    assert "Sicherheit: eindeutig" in text
+    assert "geprüft an: Legalitätsprinzip (Art. 5 Abs. 1 BV)" in text
+    assert "Gestützt auf: Art. 5 Abs. 1 BV" in text
+
+
+def test_die_schichten_verlangen_herkunft_und_sicherheit(skills_dir):
+    """Der Vertrag muss es einfordern – sonst liefert das Modell es nicht."""
+    llm = _LLM({"wuerdigungen": []})
+    kette.wuerdige([{"nr": 0, "taetigkeit": "T"}], llm, skills_dir=skills_dir)
+    assert "SICHERHEITSGRAD" in llm.system
+    assert "vertretbare Auffassung" in llm.system
+    assert "Nutze 'eindeutig' sparsam" in llm.system
+    assert "stuetzt_sich_auf" in llm.system
+    assert "Erfinde keine Fundstelle" in llm.system
+
+    llm = _LLM({"faelle": []})
+    kette.entwickle_optionen([{"nr": 0, "taetigkeit": "T"}], llm,
+                             skills_dir=skills_dir)
+    assert "HERKUNFT offen" in llm.system
+    assert "hypothetische Gesetzgebungsoption" in llm.system
