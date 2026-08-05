@@ -56,8 +56,13 @@ NORMSTUFE_VERFAHREN = {
     "richtlinie": ("Verwaltung", "kein Referendum"),
 }
 
-# Eingriffstiefe -> tiefste Stufe, die das Legalitaetsprinzip noch erfuellt.
-# Art. 36 Abs. 1 BV: schwere Grundrechtseingriffe verlangen ein formelles Gesetz.
+# Eingriffsintensitaet -> tiefste Normstufe, die das Legalitaetsprinzip noch
+# erfuellt. Grundlage ist Art. 5 Abs. 1 BV: ALLES staatliche Handeln braucht
+# eine gesetzliche Grundlage, und je intensiver in Rechte und Pflichten
+# eingegriffen wird, desto hoeher muss die Stufe sein. Das gilt fuer eine
+# Abgabe so wie fuer eine Bewilligungspflicht - ganz ohne Grundrechtsbezug.
+# Art. 36 Abs. 1 BV ist der SONDERFALL fuer Grundrechtseingriffe; er wird nur
+# genannt, wenn tatsaechlich Grundrechte beruehrt sind (siehe `sperren`).
 EINGRIFF_MINDESTSTUFE = {
     "schwer": "gesetz",
     "leicht": "verordnung",
@@ -252,8 +257,13 @@ def kartiere(liste, wissen, llm, gefundene=None, tenant_id=None, skills_dir=None
         "Kartiere die Rechtsgrundlagen für JEDE dieser Tätigkeiten einzeln. "
         "Gib je Tätigkeit einen Eintrag mit ihrer Nummer zurück.\n\n"
         f"{json.dumps(eingang, ensure_ascii=False)}\n\n"
-        "Bestimme je Tätigkeit zuerst die Eingriffstiefe: Welche Grundrechte "
-        "berührt sie, und ist der Eingriff schwer oder leicht? Begründe das.\n"
+        "Bestimme je Tätigkeit zuerst, wie stark sie in Rechte und Pflichten "
+        "eingreift – 'schwer', 'leicht' oder 'keiner' – und begründe das. Trage "
+        "unter 'grundrechte' NUR ein, was tatsächlich berührt ist; die meisten "
+        "Verwaltungstätigkeiten schränken keine Grundrechte ein, und dann bleibt "
+        "die Liste leer. Ein Eingriff in Rechte und Pflichten liegt auch ohne "
+        "Grundrechtsbezug vor (etwa bei einer Abgabe oder einer "
+        "Bewilligungspflicht).\n"
         "Führe dann die Erlasse auf, die diese Tätigkeit ERMÄCHTIGEN, je mit "
         "Normstufe und Status. Setze 'ermaechtigt' nur auf true, wenn der "
         "Erlass die Tätigkeit tatsächlich erlaubt – nicht, wenn er sie nur "
@@ -277,8 +287,11 @@ _SYSTEM_GAP = (
     "- Du bestätigst die Lücke zuerst: besteht wirklich keine Grundlage, oder "
     "wurde nur nicht gründlich genug gesucht? Eine unbestätigte Lücke ist keine.\n"
     "- Du nennst die TIEFSTE Normstufe, die das Legalitätsprinzip noch erfüllt – "
-    "nicht die schnellste. Bei schwerem Grundrechtseingriff verlangt Art. 36 "
-    "Abs. 1 BV eine Grundlage im formellen Gesetz.\n"
+    "nicht die schnellste. Das Legalitätsprinzip (Art. 5 Abs. 1 BV) gilt für "
+    "jedes staatliche Handeln; je intensiver in Rechte und Pflichten "
+    "eingegriffen wird, desto höher die Stufe. Werden GRUNDRECHTE eingeschränkt, "
+    "gilt zusätzlich Art. 36 Abs. 1 BV: schwere Eingriffe verlangen ein "
+    "formelles Gesetz.\n"
     "- Du würdigst NICHT, ob die Massnahme zulässig wäre. Auch eine schliessbare "
     "Lücke sagt nichts darüber, ob die Tätigkeit erlaubt sein darf.\n"
     "- Organ und Referendumsart sind Fakten der Stufe, keine Risikobewertung. "
@@ -322,11 +335,23 @@ _SYSTEM_WUERDIGUNG = (
     "Du würdigst, ob eine geplante hoheitliche Tätigkeit rechtlich ZULÄSSIG "
     "wäre – gestützt auf eine bestehende oder eine erst zu schaffende Grundlage.\n"
     "HARTE GRENZEN:\n"
-    "- Eine Grundlage zu HABEN heisst nicht, zulässig zu sein. Prüfe den "
-    "Eingriff an Art. 36 BV (gesetzliche Grundlage, öffentliches Interesse, "
-    "Verhältnismässigkeit, Kerngehalt) und an der EMRK, wo einschlägig.\n"
-    "- Der Kerngehalt ist unantastbar: was ihn verletzt, wäre auch mit einem "
-    "Gesetz unzulässig. Sag das ausdrücklich, wenn es zutrifft.\n"
+    "- BESTIMME ZUERST DEN PRÜFMASSSTAB. Er hängt davon ab, was die Tätigkeit "
+    "tatsächlich berührt, und ist NICHT für jedes Vorhaben derselbe:\n"
+    "  · Immer: das Legalitätsprinzip (Art. 5 Abs. 1 BV) – besteht eine "
+    "gesetzliche Grundlage der erforderlichen Stufe, und deckt sie diese "
+    "Tätigkeit?\n"
+    "  · Nur wenn GRUNDRECHTE eingeschränkt werden: Art. 36 BV (öffentliches "
+    "Interesse, Verhältnismässigkeit, Kerngehalt) und die EMRK, wo einschlägig. "
+    "Der Kerngehalt ist unantastbar – was ihn verletzt, wäre auch mit einem "
+    "Gesetz unzulässig; sag das dann ausdrücklich.\n"
+    "  · Wo einschlägig: die Anforderungen des massgeblichen Spezialrechts, der "
+    "Zuständigkeitsordnung und des Verfahrensrechts.\n"
+    "- Berührt die Tätigkeit keine Grundrechte, prüfst du KEINE "
+    "Grundrechtsschranke. Erfinde keinen Eingriff, um etwas zu prüfen zu haben – "
+    "die meisten Verwaltungsvorhaben schränken keine Grundrechte ein, und für "
+    "sie ist das Legalitätsprinzip der ganze Massstab.\n"
+    "- Eine Grundlage zu HABEN heisst nicht, zulässig zu sein: sie muss die "
+    "Tätigkeit auch decken.\n"
     "- Du erfindest keine Gerichtsentscheide und keine Fundstellen.\n"
     "- Deine Einschätzung ist BERATEND und ersetzt den Rechtsdienst nicht. "
     "Sag das im Feld 'vorbehalt'.\n"
@@ -355,9 +380,10 @@ def wuerdige(faelle, llm, tenant_id=None, skills_dir=None):
         "Würdige für JEDE dieser Tätigkeiten, ob sie rechtlich zulässig wäre – "
         "je Tätigkeit ein Eintrag mit ihrer Nummer.\n\n"
         f"{json.dumps(eingang, ensure_ascii=False)}\n\n"
-        "Prüfe jeden Eingriff an den Voraussetzungen von Art. 36 BV und – wo "
-        "einschlägig – an der EMRK. Halte ausdrücklich fest, wenn der "
-        "Kerngehalt betroffen ist: dann wäre die Tätigkeit auch mit einer "
+        "Halte je Fall unter 'geprueft_an' fest, WELCHEN Massstab du angelegt "
+        "hast und warum gerade diesen. Prüfe dann daran. Ist eine "
+        "Grundrechtsschranke einschlägig und der Kerngehalt betroffen, halte "
+        "das ausdrücklich fest: dann wäre die Tätigkeit auch mit einer "
         "gesetzlichen Grundlage unzulässig.\n"
         f"Gib NUR eine Antwort nach diesem Aufbau:\n{_SCHEMA_WUERDIGUNG}"
     )
@@ -459,19 +485,32 @@ def sperren(befunde):
                                 "Eingriffe – sie ermächtigt nicht zu ihnen."),
                 })
 
-        # 2. Schwerer Eingriff ohne Grundlage auf der nötigen Stufe.
+        # 2. Eingriff ohne Grundlage auf der noetigen Stufe.
+        #    Die zitierte Norm haengt davon ab, WAS beruehrt ist: das
+        #    Legalitaetsprinzip gilt immer, die Grundrechtsschranke nur, wenn
+        #    tatsaechlich Grundrechte genannt sind. Art. 36 BV pauschal zu
+        #    zitieren waere fuer die meisten Vorhaben schlicht falsch.
         if noetig:
             tragend = [g for g in grundlagen
                        if not ist_schrankennorm(g.get("erlass"))
                        and stufe_reicht(g.get("normstufe"), noetig)]
             if not tragend:
+                grundrechte = [r for r in (kart.get("eingriff") or {}).get(
+                    "grundrechte") or [] if str(r).strip()]
+                if grundrechte and eingriff == "schwer":
+                    warum = ("Werden Grundrechte schwer eingeschränkt, verlangt "
+                             "Art. 36 Abs. 1 BV eine Grundlage im formellen "
+                             f"Gesetz (berührt: {', '.join(map(str, grundrechte))}).")
+                else:
+                    warum = ("Staatliches Handeln braucht eine gesetzliche "
+                             "Grundlage (Legalitätsprinzip, Art. 5 Abs. 1 BV); "
+                             "je intensiver der Eingriff in Rechte und Pflichten, "
+                             "desto höher die erforderliche Normstufe.")
                 raus.append({
                     "gewicht": "Muss", "taetigkeit": name,
                     "meldung": (f"Für diese Tätigkeit ({eingriff}er Eingriff) ist "
-                                f"keine Grundlage auf Stufe «{noetig}» nachgewiesen. "
-                                "Art. 36 Abs. 1 BV verlangt für schwere "
-                                "Grundrechtseingriffe eine Grundlage im formellen "
-                                "Gesetz."),
+                                f"keine Grundlage auf Stufe «{noetig}» "
+                                f"nachgewiesen. {warum}"),
                 })
 
         # 3. Der Kerngehalt ist unantastbar – auch ein Gesetz hilft dann nicht.

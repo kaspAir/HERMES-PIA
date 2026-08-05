@@ -151,22 +151,23 @@ def test_verfassung_als_grundlage_ist_ein_muss_befund():
 
 
 def test_schwerer_eingriff_ohne_formelles_gesetz_blockiert():
-    """Art. 36 Abs. 1 BV – das ist ein Vergleich, kein Urteil, und gehört
-    deshalb in den Code."""
+    """Der Stufenvergleich ist ein Vergleich, kein Urteil, und gehört deshalb
+    in den Code. Welche NORM dabei zitiert wird, hängt davon ab, was berührt
+    ist – hier ohne Grundrechtsbezug, also das Legalitätsprinzip."""
     befunde = [{
-        "taetigkeit": {"taetigkeit": "Biometrische Erfassung"},
+        "taetigkeit": {"taetigkeit": "Eine Bewilligungspflicht einführen"},
         "kartierung": {
-            "eingriff": {"tiefe": "schwer"},
-            "grundlagen": [{"erlass": "Polizeiverordnung", "normstufe": "verordnung",
+            "eingriff": {"tiefe": "schwer", "grundrechte": []},
+            "grundlagen": [{"erlass": "Weisung des Amtes", "normstufe": "verordnung",
                             "ermaechtigt": True}],
         },
     }]
     meldungen = kette.sperren(befunde)
-    assert any("Art. 36 Abs. 1 BV" in m["meldung"] for m in meldungen)
+    assert any("Legalitätsprinzip" in m["meldung"] for m in meldungen)
 
     # Mit einem formellen Gesetz faellt der Befund weg.
     befunde[0]["kartierung"]["grundlagen"] = [
-        {"erlass": "Polizeigesetz", "normstufe": "gesetz", "ermaechtigt": True}]
+        {"erlass": "Ein Gesetz", "normstufe": "gesetz", "ermaechtigt": True}]
     assert not [m for m in kette.sperren(befunde) if m["gewicht"] == "Muss"]
 
 
@@ -429,7 +430,8 @@ def _lauf_gemessener_fall():
         "taetigkeiten": {"taetigkeiten": [
             {"taetigkeit": "Gesichter im öffentlichen Raum anlasslos erfassen"}]},
         "kartierung": {"kartierungen": [{
-            "nr": 0, "eingriff": {"tiefe": "schwer"},
+            "nr": 0, "eingriff": {"tiefe": "schwer",
+                                  "grundrechte": ["Art. 13 BV", "Art. 22 BV"]},
             "grundlagen": [{"erlass": "Bundesverfassung (BV)",
                             "normstufe": "verfassung", "ermaechtigt": True}],
             "luecke": {"art": "rechtsluecke"}}]},
@@ -573,3 +575,85 @@ def test_die_oberflaeche_zeigt_den_teilfortschritt():
         encoding="utf-8")
     assert "a.d.teile" in v and "a.d.teil" in v
     assert "Tätigkeit ' + (a.d.teil + 1)" in v
+
+
+# ---- Der Prüfmassstab folgt der Tätigkeit, nicht dem Beispiel ------------ #
+#
+# Art. 36 BV regelt die EINSCHRÄNKUNG VON GRUNDRECHTEN. Die allermeisten
+# Verwaltungsvorhaben berühren keine – eine Dokumentenablage, ein
+# Website-Relaunch, eine Prozessautomatisierung. Ein fest vorgegebener
+# Prüfmassstab ist deshalb nicht nur unpassend, er ist gefährlich: wer einen
+# Massstab vorgesetzt bekommt, findet auch etwas zu prüfen.
+
+def test_ohne_grundrechtsbezug_wird_art_36_nicht_zitiert():
+    """Eine Abgabe ohne Grundlage ist ein Verstoss gegen das
+    Legalitätsprinzip – nicht gegen die Grundrechtsschranke."""
+    befunde = [{
+        "taetigkeit": {"taetigkeit": "Eine Abgabe für eine Amtshandlung erheben"},
+        "kartierung": {"eingriff": {"tiefe": "schwer", "grundrechte": []},
+                       "grundlagen": [], "luecke": {"art": "keine"}},
+        "wuerdigung": {"ergebnis": "nicht zulässig"},
+    }]
+    meldung = " ".join(m["meldung"] for m in kette.sperren(befunde))
+    assert "Art. 5 Abs. 1 BV" in meldung
+    assert "Art. 36" not in meldung, "Art. 36 gilt nur für Grundrechtseingriffe"
+
+
+def test_mit_grundrechtsbezug_wird_art_36_zitiert_und_benannt():
+    befunde = [{
+        "taetigkeit": {"taetigkeit": "Personen im öffentlichen Raum identifizieren"},
+        "kartierung": {"eingriff": {"tiefe": "schwer",
+                                    "grundrechte": ["Art. 13 BV", "Art. 8 EMRK"]},
+                       "grundlagen": [], "luecke": {"art": "keine"}},
+        "wuerdigung": {"ergebnis": "nicht zulässig"},
+    }]
+    meldung = " ".join(m["meldung"] for m in kette.sperren(befunde))
+    assert "Art. 36 Abs. 1 BV" in meldung
+    assert "Art. 13 BV" in meldung          # welche Grundrechte, nicht pauschal
+
+
+def test_die_wuerdigung_bestimmt_ihren_massstab_selbst(skills_dir):
+    """Der Prompt darf keinen Massstab vorgeben – er muss verlangen, dass der
+    passende bestimmt und begründet wird."""
+    llm = _LLM({"wuerdigungen": []})
+    kette.wuerdige([{"nr": 0, "taetigkeit": "T"}], llm, skills_dir=skills_dir)
+
+    assert "BESTIMME ZUERST DEN PRÜFMASSSTAB" in llm.system
+    assert "Legalitätsprinzip (Art. 5 Abs. 1 BV)" in llm.system
+    # Die Grundrechtsschranke ausdruecklich als BEDINGTER Fall.
+    assert "Nur wenn GRUNDRECHTE eingeschränkt werden" in llm.system
+    assert "Erfinde keinen Eingriff" in llm.system
+    assert "die meisten Verwaltungsvorhaben schränken keine Grundrechte ein" \
+        in llm.system
+    # Und im Auftrag: den gewaehlten Massstab ausweisen.
+    assert "WELCHEN Massstab du angelegt hast" in llm.user
+
+
+def test_die_kartierung_verlangt_keine_grundrechte_um_jeden_preis(skills_dir):
+    llm = _LLM({"kartierungen": []})
+    kette.kartiere([{"taetigkeit": "T"}], _Wissen(), llm, skills_dir=skills_dir)
+    assert "die meisten Verwaltungstätigkeiten schränken keine Grundrechte ein" \
+        in llm.user
+    assert "auch ohne Grundrechtsbezug" in llm.user
+
+
+def test_alltagsvorhaben_ohne_grundrechte_laeuft_sauber_durch():
+    """Ein Vorhaben ganz ohne Grundrechtsbezug: die Kette darf es weder
+    beanstanden noch ihm einen Eingriff andichten."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [
+            {"taetigkeit": "Amtliche Dokumente elektronisch archivieren"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "keiner", "grundrechte": []},
+            "grundlagen": [{"erlass": "Archivierungsgesetz", "normstufe": "gesetz",
+                            "ermaechtigt": True}],
+            "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{
+            "nr": 0, "ergebnis": "zulässig", "kerngehalt_verletzt": False,
+            "geprueft_an": ["Legalitätsprinzip (Art. 5 Abs. 1 BV)"],
+            "begruendung": "Die Archivierung ist gesetzlich vorgesehen."}]},
+    }
+    assert kette.sperren(kette.befunde_aus(lauf)) == []
+    k = kette.zu_kapiteln(lauf)
+    assert "Art. 36" not in json.dumps(k, ensure_ascii=False)
+    assert k["identifizierte_luecken"][0]["luecke"] == "Keine Lücke identifiziert"
