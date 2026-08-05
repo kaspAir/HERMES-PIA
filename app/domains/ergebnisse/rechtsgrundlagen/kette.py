@@ -350,7 +350,14 @@ def kartiere(liste, wissen, llm, gefundene=None, tenant_id=None, skills_dir=None
     sonst zwanzig Aufrufe. Die Nummer verbindet Ergebnis und Tätigkeit.
     """
     eingang = {
-        "taetigkeiten": [dict(t, nr=i) for i, t in enumerate(liste or [])],
+        # Die Nummer stammt vom AUFRUFER und wird nie neu vergeben. Hier stand
+        # eine eigene Nummerierung - und weil die Schicht stueckweise laeuft
+        # (ein Element je Aufruf), wurde daraus jedes Mal «nr: 0». Alle
+        # Kartierungen landeten damit auf der ersten Taetigkeit, die uebrigen
+        # blieben leer. Im erzeugten Dokument trug eine Beschaffung die
+        # beruehrten Rechte und die Grundlagen einer Freiheitsstrafe.
+        "taetigkeiten": [dict(t, nr=t.get("nr", i))
+                         for i, t in enumerate(liste or [])],
         "ebene": wissen.ebene or "nicht angegeben",
         "kanton": wissen.kanton or "nicht angegeben",
         "im_pia_genannte_erlasse": wissen.genannte_rechtsgrundlagen(),
@@ -775,6 +782,24 @@ def _nach_nr(eintraege, schluessel):
     return raus
 
 
+def zuordnungsluecken(lauf):
+    """Taetigkeiten, zu denen eine Schicht KEIN Ergebnis geliefert hat.
+
+    Eine stille Fehlzuordnung ist die gefaehrlichste Art von Fehler: das
+    Dokument sieht vollstaendig aus und ordnet Befunde der falschen Taetigkeit
+    zu. Gemessen war genau das der Fall.
+    """
+    taet = _mit_nr((lauf.get("taetigkeiten") or {}).get("taetigkeiten"))
+    fehlend = []
+    for schluessel, liste in (("kartierung", "kartierungen"),
+                              ("wuerdigung", "wuerdigungen")):
+        vorhanden = set(_nach_nr(lauf.get(schluessel), liste))
+        for i, t in enumerate(taet):
+            if i not in vorhanden:
+                fehlend.append((schluessel, i, t.get("taetigkeit", "")))
+    return fehlend
+
+
 def befunde_aus(lauf):
     """Die Ergebnisse aller Schichten je Tätigkeit zusammengeführt.
 
@@ -822,6 +847,15 @@ def zu_kapiteln(lauf):
     """
     befunde = befunde_aus(lauf)
     meldungen = sperren(befunde)
+    # Fehlende Schichtergebnisse werden AUSGEWIESEN, nicht verschwiegen: eine
+    # Taetigkeit ohne Kartierung oder ohne Wuerdigung ist nicht geprueft, und
+    # das Dokument darf nicht so tun, als waere sie es.
+    for schicht, _nr, name in zuordnungsluecken(lauf):
+        meldungen.append({
+            "gewicht": "Vorbehalt", "taetigkeit": name,
+            "meldung": (f"Zu dieser Tätigkeit liegt kein Ergebnis der Schicht "
+                        f"«{schicht}» vor. Sie ist insoweit ungeprüft."),
+        })
     muss = [m for m in meldungen if m["gewicht"] == "Muss"]
     offen = [m for m in meldungen if m["gewicht"] == "Vorbehalt"]
 

@@ -977,3 +977,63 @@ def test_verfassungsstufe_nennt_das_obligatorische_referendum():
     assert "Stände" in organ
     # Und die Gesetzesstufe bleibt korrekt beim fakultativen Referendum.
     assert "fakultativ" in kette.NORMSTUFE_VERFAHREN["gesetz"][1]
+
+
+# ---- Die Nummer verbindet Schicht und Tätigkeit -------------------------- #
+
+def test_die_nummer_kommt_vom_aufrufer_und_wird_nie_neu_vergeben(skills_dir):
+    """DER Fehler an einem echten Lauf (BKI Test 1): die Schicht läuft
+    stückweise – ein Element je Aufruf. `kartiere` nummerierte die Liste neu,
+    aus jeder Einzelanfrage wurde damit «nr: 0». Alle Kartierungen landeten
+    auf der ersten Tätigkeit, die übrigen blieben leer. Im Dokument trug eine
+    Beschaffung die berührten Rechte und die Grundlagen einer Freiheitsstrafe –
+    und die Würdigung schrieb dazu, die Einstufung sei «irrtümlich diesem Fall
+    zugeordnet»."""
+    llm = _LLM({"kartierungen": []})
+    kette.kartiere([{"taetigkeit": "Die dritte Tätigkeit", "nr": 2}], _Wissen(),
+                   llm, skills_dir=skills_dir)
+    eingang = json.loads(llm.user[llm.user.index("{"):llm.user.index("}\n\n") + 1]) \
+        if False else None                      # nur zur Lesbarkeit
+    assert '"nr": 2' in llm.user
+    assert '"nr": 0' not in llm.user
+
+
+def test_ohne_nummer_wird_der_reihe_nach_nummeriert(skills_dir):
+    """Der Vollständigkeits-Aufruf (alle auf einmal) bleibt möglich."""
+    llm = _LLM({"kartierungen": []})
+    kette.kartiere([{"taetigkeit": "A"}, {"taetigkeit": "B"}], _Wissen(), llm,
+                   skills_dir=skills_dir)
+    assert '"nr": 0' in llm.user and '"nr": 1' in llm.user
+
+
+def test_eine_taetigkeit_ohne_schichtergebnis_wird_ausgewiesen():
+    """Eine stille Fehlzuordnung ist die gefährlichste Art von Fehler: das
+    Dokument sieht vollständig aus und ordnet Befunde der falschen Tätigkeit
+    zu."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "A"}, {"taetigkeit": "B"}]},
+        "kartierung": {"kartierungen": [{"nr": 0, "eingriff": {"tiefe": "keiner"},
+                                         "grundlagen": [], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    fehlend = kette.zuordnungsluecken(lauf)
+    assert ("kartierung", 1, "B") in fehlend
+    assert ("wuerdigung", 1, "B") in fehlend
+
+    k = kette.zu_kapiteln(lauf)
+    text = json.dumps(k, ensure_ascii=False)
+    assert "kein Ergebnis der Schicht" in text
+    assert "insoweit ungeprüft" in text
+    # Und keine Entwarnung, solange etwas ungeprüft ist.
+    assert "Keine Lücke identifiziert" not in text
+
+
+def test_vollstaendige_zuordnung_meldet_nichts():
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "A"}]},
+        "kartierung": {"kartierungen": [{"nr": 0, "eingriff": {"tiefe": "keiner"},
+                                         "grundlagen": [], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    assert kette.zuordnungsluecken(lauf) == []
+    assert kette.sperren(kette.befunde_aus(lauf)) == []
