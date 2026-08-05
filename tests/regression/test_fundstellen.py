@@ -205,3 +205,63 @@ def test_kennungen_werden_streng_entziffert():
                                                                "17.10.2024")
     assert bger._entziffere("atf://151-I-137:de") == ("BGE 151 I 137", "")
     assert bger._entziffere("irgendwas") == (None, None)
+
+
+# ---- Rechtsprechung nur, wo sie etwas bringt ----------------------------- #
+#
+# Ein Urteil neben einer klaren Rechtslage schmückt nur und lenkt vom
+# Wesentlichen ab. Beigezogen wird sie deshalb NUR dort, wo eine echte
+# Rechtsfrage offen ist – und der Grund wird mitgeführt, damit im Nachweis
+# steht, warum bei den übrigen nicht gesucht wurde.
+
+@pytest.mark.parametrize("eintrag,erwartet", [
+    ({"wuerdigung": {"ergebnis": "zulässig", "sicherheit": "eindeutig"}}, False),
+    ({"wuerdigung": {"ergebnis": "bedingt zulässig", "sicherheit": "eindeutig"}}, True),
+    ({"wuerdigung": {"ergebnis": "nicht zulässig", "sicherheit": "eindeutig"}}, True),
+    ({"wuerdigung": {"ergebnis": "zulässig",
+                     "sicherheit": "vertretbare Auffassung"}}, True),
+    ({"wuerdigung": {"ergebnis": "zulässig", "sicherheit": "offen"}}, True),
+    ({"wuerdigung": {"ergebnis": "zulässig", "kerngehalt_verletzt": True}}, True),
+    ({"wuerdigung": {"ergebnis": "zulässig", "sicherheit": "eindeutig"},
+      "gap": {"bestaetigt": True}}, True),
+    ({"kartierung": {"grundrechtseingriff_denkbar": False},
+      "wuerdigung": {"ergebnis": "zulässig", "sicherheit": "eindeutig"}}, False),
+])
+def test_rechtsprechung_nur_bei_offener_rechtsfrage(eintrag, erwartet):
+    noetig, grund = bger.rechtsprechung_noetig(eintrag)
+    assert noetig is erwartet
+    assert grund, "der Grund wird immer mitgeführt"
+
+
+def test_die_gross_und_kleinschreibung_darf_die_regel_nicht_aushebeln():
+    """Gemessen: «vertretbare Auffassung» wurde gegen eine kleingeschriebene
+    Liste verglichen und griff nie – die Sperre war stumm."""
+    for schreibweise in ("vertretbare Auffassung", "Vertretbare Auffassung",
+                         "VERTRETBARE AUFFASSUNG"):
+        noetig, _ = bger.rechtsprechung_noetig(
+            {"wuerdigung": {"ergebnis": "zulässig", "sicherheit": schreibweise}})
+        assert noetig is True, schreibweise
+
+
+def test_nicht_belegte_entscheide_werden_getilgt():
+    """Die stärkste Sperre gegen erfundene Rechtsprechung: was das Modell
+    nennt, muss in der Trefferliste vorkommen."""
+    text = ("Vgl. BGE 151 I 137 und BGE 99 IX 999 sowie 6B_1243/2023 und "
+            "9C_999/2099.")
+    sauber = bger.nur_belegte(text, ["BGE 151 I 137", "6B_1243/2023"])
+    assert "BGE 151 I 137" in sauber
+    assert "6B_1243/2023" in sauber
+    assert "BGE 99 IX 999" not in sauber
+    assert "9C_999/2099" not in sauber
+    assert sauber.count("[Entscheid ohne Beleg – entfernt]") == 2
+
+
+def test_ohne_trefferliste_bleibt_kein_entscheid_stehen():
+    """Wurde nicht gesucht, darf auch nichts zitiert sein."""
+    sauber = bger.nur_belegte("Vgl. BGE 151 I 137.", [])
+    assert "BGE 151 I 137" not in sauber
+
+
+def test_text_ohne_entscheide_bleibt_unveraendert():
+    text = "Die Tätigkeit stützt sich auf Art. 36 BV und ist verhältnismässig."
+    assert bger.nur_belegte(text, []) == text

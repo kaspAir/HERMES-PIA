@@ -126,3 +126,61 @@ class BgerClient:
                 gesehen.add(e["kennung"])
                 zusammen.append(dict(e, suchbegriff=b))
         return zusammen
+
+
+# ======================================================================== #
+#  Wann Rechtsprechung überhaupt etwas beiträgt
+# ======================================================================== #
+
+# Rechtsprechung ist teuer zu lesen und leicht zu missbrauchen: ein Urteil
+# neben einer klaren Rechtslage schmückt nur und lenkt vom Wesentlichen ab.
+# Beigezogen wird sie deshalb NUR dort, wo sie das Ergebnis bewegen kann -
+# wo eine echte Rechtsfrage offen ist.
+_OFFENE_ERGEBNISSE = ("bedingt zulässig", "nicht zulässig")
+# Kleingeschrieben: der Vergleich laeuft ueber .lower(), sonst greift
+# «vertretbare Auffassung» nie - gemessen genau so passiert.
+_UNSICHER = ("vertretbare auffassung", "offen")
+
+
+def rechtsprechung_noetig(eintrag):
+    """Bringt Rechtsprechung dieser Tätigkeit etwas? (Ja/Nein mit Grund.)
+
+    Rückgabe: (bool, Grund). Der Grund wird mitgeführt, damit im Nachweis
+    steht, WARUM gesucht wurde – und warum bei den übrigen nicht.
+    """
+    wuerdigung = (eintrag or {}).get("wuerdigung") or {}
+    kartierung = (eintrag or {}).get("kartierung") or {}
+    gap = (eintrag or {}).get("gap") or {}
+
+    ergebnis = str(wuerdigung.get("ergebnis", "")).strip().lower()
+    if ergebnis in _OFFENE_ERGEBNISSE:
+        return True, f"Die Würdigung kommt zu «{ergebnis}»."
+    if str(wuerdigung.get("sicherheit", "")).strip().lower() in _UNSICHER:
+        return True, "Die Würdigung ist nicht eindeutig."
+    if wuerdigung.get("kerngehalt_verletzt"):
+        return True, "Es steht eine Kerngehaltsverletzung im Raum."
+    if gap.get("bestaetigt"):
+        return True, "Es ist eine Rechtslücke bestätigt."
+    if kartierung.get("grundrechtseingriff_denkbar") is False:
+        return False, ("Kein Grundrechtseingriff denkbar – die Rechtsfrage ist "
+                       "nicht streitig.")
+    return False, "Die Rechtslage ist nach der Würdigung klar."
+
+
+def nur_belegte(text, erlaubt):
+    """Entfernt Verweise auf Entscheide, die NICHT aus der Suche stammen.
+
+    Die stärkste Sperre gegen erfundene Rechtsprechung: was das Modell nennt,
+    muss in der Trefferliste vorkommen – sonst wird der Verweis getilgt und
+    ersetzt. Ein erfundener Bundesgerichtsentscheid sieht aus wie ein Beleg,
+    wird zitiert und trägt eine Entscheidung, die es nicht gibt.
+    """
+    bekannt = {str(k).strip() for k in (erlaubt or []) if str(k).strip()}
+    raus = str(text or "")
+    for muster in (r"\bBGE\s+\d{2,3}\s+[IVX]+\s+\d+", r"\b\d[A-Z]_\d+/\d{4}\b"):
+        for gefunden in set(re.findall(muster, raus)):
+            if gefunden not in bekannt:
+                log.warning("Nicht belegter Entscheid getilgt: %s", gefunden)
+                raus = raus.replace(
+                    gefunden, "[Entscheid ohne Beleg – entfernt]")
+    return raus
