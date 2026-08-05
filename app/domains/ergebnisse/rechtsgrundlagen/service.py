@@ -96,9 +96,59 @@ class RechtsgrundlagenService:
                 out.append({k: str(v).strip() for k, v in r.items() if str(v).strip()})
         return out
 
-    def _rows_or_blank(self, rows, spalten):
+    # Was in eine leere Tabelle gehoert. Eine leere Zeile ist die schlechteste
+    # aller Antworten: die Vorlage nummeriert sie, und der Leser sieht «01» ohne
+    # Inhalt - das sieht aus wie ein Abbruch der Erzeugung. Gemessen an einer
+    # echten Analyse (Testprojekt 17) traf das die Kapitel «Bevorstehende
+    # Aenderungen» und «Vorschlaege zur Deckung».
+    #
+    # Und es muss unterscheidbar bleiben, ob GEPRUEFT und nichts gefunden wurde
+    # oder ob die Frage offen ist - sonst liest sich Unwissen wie Entwarnung.
+    _LEER = {
+        "bevorstehende_aenderungen": {
+            "rechtsgrundlage": "Keine bevorstehende Änderung bekannt",
+            "beschreibung": "In dieser Analyse wurde für die aufgeführten Erlasse "
+                            "keine absehbare Änderung festgestellt. Laufende "
+                            "Revisionen sind damit nicht ausgeschlossen – sie "
+                            "sind vor der Freigabe zu bestätigen.",
+            "auswirkung": "neutral",
+        },
+        "product_compliance": {
+            "compliance": "Kein Hinweis identifiziert",
+            "beschreibung": "In dieser Analyse ergab sich kein Hinweis auf "
+                            "Anforderungen an die Produktkonformität.",
+        },
+    }
+
+    def _rows_or_blank(self, rows, spalten, sid=None):
+        """Zeilen – oder eine Zeile, die SAGT, dass nichts gefunden wurde."""
         rows = self._bereinige(rows)
-        return rows if rows else [{k: "" for k in spalten}]
+        if rows:
+            return rows
+        hinweis = self._LEER.get(sid or "")
+        if not hinweis:
+            return [{k: "" for k in spalten}]
+        return [{k: hinweis.get(k, "") for k in spalten}]
+
+    def _deckungsvorschlaege(self, vorschlag, luecken):
+        """Kapitel «Vorschläge zur Deckung» hängt am Kapitel «Lücken».
+
+        Ohne Lücke gibt es nichts zu decken – das ist ein Ergebnis, kein Ausfall.
+        Gibt es Lücken, aber keinen Vorschlag, ist die Frage OFFEN und muss auch
+        so dastehen; eine leere Zeile liesse beides gleich aussehen.
+        """
+        rows = self._bereinige(vorschlag)
+        if rows:
+            return rows
+        echte = [r for r in (luecken or [])
+                 if isinstance(r, dict)
+                 and not str(r.get("luecke", "")).lower().startswith("keine lücke")]
+        if not echte:
+            return [{"luecke": "Entfällt", "vorschlag":
+                     "Es wurden keine Lücken identifiziert, die zu decken wären."}]
+        return [{"luecke": str(r.get("luecke", "")),
+                 "vorschlag": "Offen – für diese Lücke liegt noch kein Vorschlag vor."}
+                for r in echte]
 
     def _ohne_datenschutz(self, rows):
         """Datenschutz-/Informationssicherheits-Einträge entfernen – sie gehören in die
@@ -304,6 +354,8 @@ class RechtsgrundlagenService:
         grounded = self._grounding_names(alle_namen, wissen.ebene, wissen.kanton)
         kap1 = self._ohne_dubletten(kap1, grounded)
         klink = self._kantonslink(wissen)
+        # Einmal ermittelt: Kapitel «Vorschläge zur Deckung» hängt daran.
+        luecken = self._luecken(v.get("luecken"))
         return {
             # Nachweis (Auditierbarkeit): welche Skill-Version(en) diesen Entwurf
             # gesteuert haben. Reservierter Schlüssel – kein Dokumentabschnitt.
@@ -313,12 +365,14 @@ class RechtsgrundlagenService:
             "definitionen": {"extracted": self._definitionen(wissen)},
             "bestehende_rechtsgrundlagen": {"extracted": self._bestehende(kap1, v.get("bestehende"), grounded, klink)},
             "bevorstehende_aenderungen": {"extracted": self._rows_or_blank(
-                v.get("bevorstehende"), _TABELLEN["bevorstehende_aenderungen"])},
-            "identifizierte_luecken": {"extracted": self._luecken(v.get("luecken"))},
-            "vorschlaege_deckung": {"extracted": self._rows_or_blank(
-                v.get("vorschlaege"), _TABELLEN["vorschlaege_deckung"])},
+                v.get("bevorstehende"), _TABELLEN["bevorstehende_aenderungen"],
+                "bevorstehende_aenderungen")},
+            "identifizierte_luecken": {"extracted": luecken},
+            "vorschlaege_deckung": {"extracted": self._deckungsvorschlaege(
+                v.get("vorschlaege"), luecken)},
             "product_compliance": {"extracted": self._rows_or_blank(
-                self._ohne_datenschutz(v.get("compliance")), _TABELLEN["product_compliance"])},
+                self._ohne_datenschutz(v.get("compliance")),
+                _TABELLEN["product_compliance"], "product_compliance")},
             "konsequenzen": {"extracted": {"text": (v.get("konsequenzen") or "").strip()}},
             "empfehlung": {"extracted": {"text": (v.get("empfehlung") or "").strip()}},
         }

@@ -283,3 +283,60 @@ def test_kein_kantonslink_ohne_kantonsebene():
     # Kein Kantonslink, wenn Kantonsebene nicht gewählt (kantonales Gesetz zudem gefiltert)
     ref = answers["referenzierte_dokumente"]["extracted"]
     assert all("Kantonale Sammlung" not in r["link"] for r in ref)
+
+
+# ---- Leere Kapitel sagen, WARUM sie leer sind ---------------------------- #
+
+def _svc():
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    return RechtsgrundlagenService.__new__(RechtsgrundlagenService)
+
+
+def test_leeres_kapitel_liefert_nie_eine_leere_zeile():
+    """Gemessen an einer echten Analyse (Testprojekt 17): «Bevorstehende
+    Änderungen» und «Vorschläge zur Deckung» enthielten eine Zeile mit der
+    Nummer «01» und sonst nichts. Die Vorlage nummeriert die Zeile – für den
+    Leser sieht das aus, als sei die Erzeugung abgebrochen."""
+    svc = _svc()
+    zeilen = svc._rows_or_blank(None, ("rechtsgrundlage", "beschreibung", "auswirkung"),
+                                "bevorstehende_aenderungen")
+    assert len(zeilen) == 1
+    assert zeilen[0]["rechtsgrundlage"].startswith("Keine bevorstehende")
+    assert zeilen[0]["beschreibung"]
+    # Geprüft-und-nichts-gefunden darf nicht wie Entwarnung klingen.
+    assert "nicht ausgeschlossen" in zeilen[0]["beschreibung"]
+
+
+def test_product_compliance_leer_wird_benannt():
+    svc = _svc()
+    z = svc._rows_or_blank([], ("compliance", "beschreibung"), "product_compliance")
+    assert z[0]["compliance"] == "Kein Hinweis identifiziert"
+    assert z[0]["beschreibung"]
+
+
+def test_ohne_luecke_entfaellt_die_deckung():
+    """Ohne Lücke gibt es nichts zu decken – das ist ein Ergebnis, kein Ausfall."""
+    svc = _svc()
+    luecken = [{"luecke": "Keine Lücke identifiziert", "beschreibung": "…"}]
+    z = svc._deckungsvorschlaege(None, luecken)
+    assert z[0]["luecke"] == "Entfällt"
+    assert "keine Lücken" in z[0]["vorschlag"]
+
+
+def test_luecke_ohne_vorschlag_bleibt_sichtbar_offen():
+    """Gibt es eine Lücke, aber keinen Vorschlag, ist die Frage OFFEN – und muss
+    so dastehen. Eine leere Zeile liesse «geprüft» und «unbeantwortet» gleich
+    aussehen."""
+    svc = _svc()
+    luecken = [{"luecke": "Keine Grundlage für die Bekanntgabe an Dritte",
+                "beschreibung": "…"}]
+    z = svc._deckungsvorschlaege([], luecken)
+    assert len(z) == 1
+    assert z[0]["luecke"].startswith("Keine Grundlage")
+    assert z[0]["vorschlag"].startswith("Offen")
+
+
+def test_vorhandene_vorschlaege_bleiben_unangetastet():
+    svc = _svc()
+    echte = [{"luecke": "L", "vorschlag": "Verordnung anpassen"}]
+    assert svc._deckungsvorschlaege(echte, []) == echte
