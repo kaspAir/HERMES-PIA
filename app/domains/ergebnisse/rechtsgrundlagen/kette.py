@@ -29,6 +29,9 @@ import logging
 import re
 
 from app.domains.llm.errors import PseudoFehler
+from app.domains.rechtsquellen.bger import (
+    nur_belegte, rechtsprechung_noetig as bger_relevanz,
+)
 from app.domains.skills import compose_system, load_skills
 
 log = logging.getLogger("hermes.rechtsgrundlagen")
@@ -783,6 +786,7 @@ SCHRITTE = [
     ("gap", "Lücken prüfen"),
     ("wuerdigung", "Zulässigkeit würdigen"),
     ("optionen", "Handlungsoptionen"),
+    ("fundstellen", "Fundstellen prüfen"),
     ("kapitel", "Dokument zusammenstellen"),
 ]
 
@@ -837,8 +841,10 @@ def befunde_aus(lauf):
     gap = _nach_nr(lauf.get("gap"), "luecken")
     wuerd = _nach_nr(lauf.get("wuerdigung"), "wuerdigungen")
     opt = _nach_nr(lauf.get("optionen"), "faelle")
+    fund = (lauf.get("fundstellen") or {}).get("je_taetigkeit") or {}
     return [{"taetigkeit": t, "kartierung": kart.get(i, {}), "gap": gap.get(i, {}),
-             "wuerdigung": wuerd.get(i, {}), "optionen": opt.get(i, {})}
+             "wuerdigung": wuerd.get(i, {}), "optionen": opt.get(i, {}),
+             "fundstellen": fund.get(str(i)) or fund.get(i) or {}}
             for i, t in enumerate(taet)]
 
 
@@ -964,7 +970,23 @@ def zu_kapiteln(lauf):
                 "beschreibung": " – ".join(teile) or
                                 f"Deckt ab: {_text(e['taetigkeit'].get('taetigkeit'))}",
             })
-    if bestehende and any(nennt_artikel(z["beschreibung"]) for z in bestehende):
+    # Geprueft schlaegt Hinweis: liegen Artikelbefunde vor, stehen SIE da -
+    # der pauschale Vorbehalt gilt nur noch fuer das Ungepruefte.
+    gepruefte = artikel_befunde(befunde)
+    if gepruefte:
+        for b in gepruefte:
+            if b["zustand"] == "belegt":
+                text = (f"Art. {b['artikel']} – «{b['ueberschrift']}» "
+                        f"(amtlich geprüft)")
+            elif b["zustand"] == "existiert_nicht":
+                text = (f"Art. {b['artikel']} EXISTIERT IM AMTLICHEN TEXT NICHT. "
+                        f"Diese Fundstelle ist zu berichtigen.")
+            else:
+                text = (f"Art. {b['artikel']} – nicht prüfbar (Quelle nicht "
+                        f"erreichbar oder Sammlung ohne maschinellen Zugang)")
+            bestehende.append({"rechtsgrundlage": f"↳ {b.get('erlass') or ''}".strip(),
+                               "beschreibung": text})
+    elif bestehende and any(nennt_artikel(z["beschreibung"]) for z in bestehende):
         bestehende.append(dict(ARTIKEL_HINWEIS))
     if not bestehende:
         bestehende = [{
@@ -1211,6 +1233,16 @@ def zu_kapiteln(lauf):
                              "deshalb kein Nachweis."),
         }]
 
+    # LETZTE SPERRE: kein Modelltext darf einen Entscheid nennen, den die
+    # amtliche Suche nicht geliefert hat. Was hier durchkommt, ist belegt.
+    belegt = (lauf.get("fundstellen") or {}).get("zitierbare_entscheide") or []
+    for liste in (luecken, vorschlaege, compliance):
+        for zeile in liste:
+            for feld, wert in list(zeile.items()):
+                zeile[feld] = nur_belegte(wert, belegt)
+    konsequenzen = nur_belegte(konsequenzen, belegt)
+    empfehlung = nur_belegte(empfehlung, belegt)
+
     return {
         "product_compliance": compliance,
         "bestehende_rechtsgrundlagen": bestehende,
@@ -1300,6 +1332,11 @@ def managemententscheid(befunde, meldungen=None):
             f"Entscheidungsempfehlung: {entscheid}",
             f"Prüfpfad: {pruefpfad(e)}",
         ]
+        entscheide = (e.get("fundstellen") or {}).get("rechtsprechung") or []
+        if entscheide:
+            zeilen.append("Rechtsprechung: " + " · ".join(
+                f"{x['kennung']}" + (f" ({x['datum']})" if x.get("datum") else "")
+                for x in entscheide))
         # Die ausformulierte Begründung steht bei der Lücke, die sie trägt.
         # Gibt es keine Lücke, gibt es dort auch keinen Platz – dann gehört sie
         # hierher, sonst stünde «zulässig» völlig unbegründet da.
@@ -1307,3 +1344,76 @@ def managemententscheid(befunde, meldungen=None):
             zeilen.append(f"Begründung: {_text(w.get('begruendung'))}")
         bloecke.append("\n".join(zeilen))
     return "\n\n".join(bloecke)
+
+
+# ======================================================================== #
+#  Fundstellen prüfen – ohne Modellaufruf
+# ======================================================================== #
+
+def _suchbegriffe(eintrag):
+    """Woraus die Rechtsprechungssuche ihre Begriffe nimmt.
+
+    Bewusst DETERMINISTISCH aus dem, was schon dasteht: die Tätigkeit und die
+    berührten Grundrechte. Ein Modell nach Suchbegriffen zu fragen, hiesse an
+    genau der Stelle zu raten, an der die Recherche das Raten ersetzen soll.
+    """
+    t = (eintrag.get("taetigkeit") or {}).get("taetigkeit") or ""
+    begriffe = [str(t).strip()] if str(t).strip() else []
+    for r in (eintrag.get("kartierung") or {}).get("eingriff", {}).get(
+            "grundrechte") or []:
+        # «Art. 13 Abs. 2 BV» ist kein Suchwort - der Name des Grundrechts ist
+        # einer. Steht nur die Norm da, taugt sie nicht als Begriff.
+        klar = re.sub(r"Art\.\s*[\d\w.\s]*(BV|EMRK)\b", "", str(r)).strip(" ,;()")
+        if len(klar) > 4:
+            begriffe.append(klar)
+    return begriffe[:3]
+
+
+def pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None):
+    """Verifiziert Artikelangaben und holt – wo nötig – Rechtsprechung.
+
+    Dieser Schritt ruft KEIN Modell. Er prüft, was frühere Schichten behauptet
+    haben, gegen die amtlichen Quellen. Das ist der Unterschied zwischen einem
+    Beleg und einer Behauptung, die wie einer aussieht.
+
+    Rückgabe: {"je_taetigkeit": {nr: {...}}, "zitierbare_entscheide": [...]}.
+    """
+    je_taetigkeit, zitierbar = {}, []
+    for i, e in enumerate(befunde or []):
+        artikel = []
+        for g in (e.get("kartierung") or {}).get("grundlagen") or []:
+            if not isinstance(g, dict):
+                continue
+            quelle = g.get("fundstelle_url") or g.get("url") or g.get("fundstelle")
+            zitat = f"{g.get('fundstelle', '')} {g.get('erlass', '')}"
+            if artikel_pruefer is None:
+                continue
+            for b in artikel_pruefer.pruefe_fundstelle(quelle, zitat):
+                artikel.append(dict(b, erlass=g.get("erlass", "")))
+
+        entscheide, grund = [], ""
+        noetig, grund = bger_relevanz(e)
+        if noetig and bger is not None:
+            entscheide = bger.suche_mehrere(_suchbegriffe(e), treffer_je_begriff=2)
+            zitierbar.extend(x["kennung"] for x in entscheide)
+
+        je_taetigkeit[str(i)] = {
+            "artikel": artikel,
+            "rechtsprechung": entscheide,
+            "rechtsprechung_grund": grund,
+        }
+    return {"je_taetigkeit": je_taetigkeit,
+            "zitierbare_entscheide": sorted(set(zitierbar))}
+
+
+def artikel_befunde(befunde):
+    """Alle Artikelbefunde über alle Tätigkeiten, ohne Dubletten."""
+    raus, gesehen = [], set()
+    for e in befunde or []:
+        for b in (e.get("fundstellen") or {}).get("artikel") or []:
+            schluessel = (b.get("erlass", ""), b.get("artikel", ""))
+            if schluessel in gesehen:
+                continue
+            gesehen.add(schluessel)
+            raus.append(b)
+    return raus

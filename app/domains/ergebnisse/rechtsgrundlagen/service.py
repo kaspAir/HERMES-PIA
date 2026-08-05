@@ -13,6 +13,8 @@ from app.domains.ergebnisse.rechtsgrundlagen import kette
 from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
 from app.domains.ergebnisse.rechtsgrundlagen.proposals import analysiere
 from app.domains.projekt.reference import ERG_PIA
+from app.domains.rechtsquellen.artikel import ArtikelPruefer
+from app.domains.rechtsquellen.bger import BgerClient
 from app.domains.rechtsquellen.fedlex import FedlexClient
 from app.domains.rechtsquellen.lexfind import LexfindClient
 from app.domains.rechtsquellen.recherche import RechercheClient
@@ -74,7 +76,7 @@ def _kernworte(name):
 
 class RechtsgrundlagenService:
     def __init__(self, interview_service, projekt_service, generation_service,
-                 llm=None, fedlex=None, recherche=None):
+                 llm=None, fedlex=None, recherche=None, artikel=None, bger=None):
         self.interview = interview_service
         self.projekte = projekt_service
         self.generation = generation_service
@@ -85,6 +87,10 @@ class RechtsgrundlagenService:
         # eingehängt – so entscheidet das Deployment, ob Suchbegriffe den Host
         # verlassen, und Tests bleiben ohne Netzwerk.
         self.recherche = recherche or RechercheClient(lexfind=None, index=self.fedlex)
+        # Beide bewusst OHNE Netz als Vorgabe - das Deployment entscheidet,
+        # ob Anfragen den Host verlassen (dieselbe Regel wie bei lexfind).
+        self.artikel = artikel or ArtikelPruefer()
+        self.bger = bger or BgerClient()
 
     # ---- PIA-Zugriff (nur lesen) ---------------------------------------- #
     def _pia(self, projekt):
@@ -629,6 +635,21 @@ class RechtsgrundlagenService:
                 "faelle", elemente,
                 lambda f: kette.entwickle_optionen(f, self.llm, tenant_id=tenant,
                                                    skills_dir=skills_dir))
+        elif schluessel == "fundstellen":
+            # KEIN Modellaufruf: dieser Schritt prueft, was frueheren Schichten
+            # behauptet haben, gegen die amtlichen Quellen. Genau das ist der
+            # Unterschied zwischen einem Beleg und einer Behauptung, die wie
+            # einer aussieht.
+            lauf["fundstellen"] = kette.pruefe_fundstellen(
+                befunde, artikel_pruefer=getattr(self, "artikel", None),
+                bger=getattr(self, "bger", None))
+            _takt("Fundstellen geprueft")
+            lauf["_teil"] = 0
+            row.lauf_schritt = index + 1
+            row.lauf_json = _json.dumps(lauf, ensure_ascii=False)
+            db.commit()
+            return self._kettenzustand(row, lauf), ""
+
         else:                                   # "kapitel" – ohne Modellaufruf
             kapitel = kette.zu_kapiteln(lauf)
             # nur_basis: NUR die deterministischen Abschnitte. Ohne das liefe

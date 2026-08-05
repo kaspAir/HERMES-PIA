@@ -393,14 +393,6 @@ def test_die_regel_ist_ein_stufenvergleich(tiefe, stufe, blockiert):
 
 # ---- Der Lauf: ein Schritt je Schicht ------------------------------------ #
 
-def test_der_lauf_hat_sechs_schritte_und_endet_im_dokument():
-    from app.domains.ergebnisse.rechtsgrundlagen import kette as k
-
-    namen = k.schrittnamen()
-    assert len(namen) == 6
-    assert namen[0].startswith("Tätigkeiten")
-    assert namen[-1].startswith("Dokument")
-
 
 def test_die_ergebnisse_finden_ueber_die_nummer_zurueck():
     """Die Schichten laufen je Schicht, nicht je Tätigkeit – die Nummer ist
@@ -1289,3 +1281,166 @@ def test_hoechstens_drei_klar_verschiedene_optionen(skills_dir):
     assert "HÖCHSTENS DREI Optionen" in llm.system
     assert "WIRKLICH unterscheiden" in llm.system
     assert "zwei bis drei Sätze" in llm.system
+
+
+# ---- Fundstellen prüfen: der Schritt ohne Modellaufruf -------------------- #
+
+def test_der_lauf_hat_sieben_schritte():
+    namen = kette.schrittnamen()
+    assert len(namen) == 7
+    assert namen[-2] == "Fundstellen prüfen"
+    assert namen[-1] == "Dokument zusammenstellen"
+
+
+def test_fundstellenpruefung_ruft_kein_modell():
+    """Dieser Schritt prüft, was frühere Schichten behauptet haben, gegen die
+    amtlichen Quellen – das ist Recherche, kein Urteil."""
+    from pathlib import Path
+
+    from app.domains.ergebnisse.rechtsgrundlagen import service as svc_modul
+    quelle = Path(svc_modul.__file__).read_text(encoding="utf-8")
+    abschnitt = quelle[quelle.index('elif schluessel == "fundstellen"'):
+                       quelle.index('else:                                   # "kapitel"')]
+    assert "llm" not in abschnitt.lower()
+
+
+class _Artikel:
+    """Ein Prüfer, der den amtlichen Text kennt."""
+    def pruefe_fundstelle(self, quelle, zitat):
+        return [{"artikel": "354", "zustand": "belegt",
+                 "ueberschrift": "Einsprache", "quelle": quelle}]
+
+
+class _Bger:
+    def __init__(self):
+        self.gefragt = []
+
+    def suche_mehrere(self, begriffe, treffer_je_begriff=2):
+        self.gefragt.append(list(begriffe))
+        return [{"kennung": "BGE 151 I 137", "datum": "", "url": "https://x",
+                 "fundstelle_geprueft": True}]
+
+
+def test_rechtsprechung_nur_wo_sie_gebraucht_wird():
+    """Ein Urteil neben einer klaren Rechtslage schmückt nur."""
+    befunde = [
+        {"taetigkeit": {"taetigkeit": "Klar"},
+         "kartierung": {"eingriff": {"tiefe": "keiner"}, "grundlagen": []},
+         "wuerdigung": {"ergebnis": "zulässig", "sicherheit": "eindeutig"}},
+        {"taetigkeit": {"taetigkeit": "Strittig"},
+         "kartierung": {"eingriff": {"tiefe": "schwer",
+                                     "grundrechte": ["Versammlungsfreiheit"]},
+                        "grundlagen": []},
+         "wuerdigung": {"ergebnis": "bedingt zulässig"}},
+    ]
+    b = _Bger()
+    ergebnis = kette.pruefe_fundstellen(befunde, artikel_pruefer=None, bger=b)
+    je = ergebnis["je_taetigkeit"]
+    assert je["0"]["rechtsprechung"] == []
+    assert je["1"]["rechtsprechung"]
+    assert je["0"]["rechtsprechung_grund"]        # der Grund steht immer da
+    # Gesucht wurde NUR fuer die strittige Taetigkeit, mit ihren Begriffen.
+    assert b.gefragt == [["Strittig", "Versammlungsfreiheit"]]
+    assert ergebnis["zitierbare_entscheide"] == ["BGE 151 I 137"]
+
+
+def test_suchbegriffe_kommen_ohne_modell_zustande():
+    """Ein Modell nach Suchbegriffen zu fragen hiesse raten, wo die Recherche
+    das Raten ersetzen soll."""
+    begriffe = kette._suchbegriffe({
+        "taetigkeit": {"taetigkeit": "Personen biometrisch identifizieren"},
+        "kartierung": {"eingriff": {"grundrechte": [
+            "Art. 13 Abs. 2 BV", "Versammlungsfreiheit (Art. 22 BV)"]}}})
+    assert begriffe[0] == "Personen biometrisch identifizieren"
+    assert "Versammlungsfreiheit" in begriffe
+    # Eine blosse Normangabe taugt nicht als Suchwort.
+    assert not any(x.startswith("Art.") for x in begriffe)
+
+
+def test_geprueft_schlaegt_hinweis():
+    """Liegen Artikelbefunde vor, stehen SIE da – der pauschale Vorbehalt gilt
+    nur noch für das Ungeprüfte."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "keiner"}, "luecke": {"art": "keine"},
+            "grundlagen": [{"erlass": "StPO", "normstufe": "gesetz",
+                            "ermaechtigt": True,
+                            "fundstelle": "SR 312.0, Art. 354"}]}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+        "fundstellen": {"je_taetigkeit": {"0": {"artikel": [
+            {"erlass": "StPO", "artikel": "354", "zustand": "belegt",
+             "ueberschrift": "Einsprache"}]}}, "zitierbare_entscheide": []},
+    }
+    zeilen = kette.zu_kapiteln(lauf)["bestehende_rechtsgrundlagen"]
+    text = json.dumps(zeilen, ensure_ascii=False)
+    assert "«Einsprache» (amtlich geprüft)" in text
+    assert "Hinweis zu den Fundstellen" not in text
+
+
+def test_ein_nicht_existierender_artikel_wird_deutlich_gemeldet():
+    """Genau der gemessene Fall: «StPO Art. 354» für die Vollstreckung von
+    Bussen. Steht der Artikel nicht im amtlichen Text, muss das auffallen."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "keiner"}, "luecke": {"art": "keine"},
+            "grundlagen": [{"erlass": "StPO", "normstufe": "gesetz",
+                            "ermaechtigt": True, "fundstelle": "Art. 9999"}]}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+        "fundstellen": {"je_taetigkeit": {"0": {"artikel": [
+            {"erlass": "StPO", "artikel": "9999", "zustand": "existiert_nicht",
+             "ueberschrift": ""}]}}, "zitierbare_entscheide": []},
+    }
+    text = json.dumps(kette.zu_kapiteln(lauf)["bestehende_rechtsgrundlagen"],
+                      ensure_ascii=False)
+    assert "EXISTIERT IM AMTLICHEN TEXT NICHT" in text
+    assert "zu berichtigen" in text
+
+
+def test_nicht_pruefbar_wird_als_solches_ausgewiesen():
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "keiner"}, "luecke": {"art": "keine"},
+            "grundlagen": [{"erlass": "Kantonales Gesetz", "normstufe": "gesetz",
+                            "ermaechtigt": True, "fundstelle": "Art. 4"}]}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+        "fundstellen": {"je_taetigkeit": {"0": {"artikel": [
+            {"erlass": "Kantonales Gesetz", "artikel": "4",
+             "zustand": "nicht_pruefbar", "ueberschrift": ""}]}},
+            "zitierbare_entscheide": []},
+    }
+    text = json.dumps(kette.zu_kapiteln(lauf), ensure_ascii=False)
+    assert "nicht prüfbar" in text
+
+
+def test_unbelegte_entscheide_erreichen_das_dokument_nicht():
+    """Die letzte Sperre: was das Modell schreibt, wird gegen die Trefferliste
+    gehalten. Ein erfundener Entscheid sieht aus wie ein Beleg."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "schwer"}, "grundlagen": [],
+            "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{
+            "nr": 0, "ergebnis": "nicht zulässig",
+            "begruendung": "Vgl. BGE 151 I 137 und BGE 99 IX 999."}]},
+        "fundstellen": {"je_taetigkeit": {}, "zitierbare_entscheide": ["BGE 151 I 137"]},
+    }
+    text = json.dumps(kette.zu_kapiteln(lauf), ensure_ascii=False)
+    assert "BGE 151 I 137" in text
+    assert "BGE 99 IX 999" not in text
+    assert "Entscheid ohne Beleg" in text
+
+
+def test_ohne_recherche_bleibt_alles_beim_alten():
+    """Ohne eingeschaltete Live-Recherche gibt es keine Befunde – und keine
+    erfundenen. Das Dokument sagt dann wie bisher, dass Artikelangaben nicht
+    verifiziert sind."""
+    befunde = [{"taetigkeit": {"taetigkeit": "T"},
+                "kartierung": {"grundlagen": [{"erlass": "X", "fundstelle": "Art. 1"}]},
+                "wuerdigung": {"ergebnis": "zulässig", "sicherheit": "eindeutig"}}]
+    ergebnis = kette.pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None)
+    assert ergebnis["je_taetigkeit"]["0"]["artikel"] == []
+    assert ergebnis["zitierbare_entscheide"] == []

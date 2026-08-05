@@ -187,9 +187,17 @@ def create_app(config_class=None):
         lexfind=LexfindClient() if app.config.get("RECHERCHE_LIVE") else None,
         index=_index,
     )
+    # Artikelpruefung und Rechtsprechung nur, wenn die Live-Recherche
+    # ausdruecklich eingeschaltet ist - sonst melden beide «nicht pruefbar»
+    # bzw. liefern nichts. Dieselbe Regel wie bei lexfind: das Deployment
+    # entscheidet, ob Anfragen den Host verlassen.
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer
+    from app.domains.rechtsquellen.bger import BgerClient
+    _live = bool(app.config.get("RECHERCHE_LIVE"))
     app.rechtsgrundlagen_service = RechtsgrundlagenService(
         app.interview_service, app.projekt_service, app.generation_service, llm=llm_client,
         fedlex=_index, recherche=_recherche,
+        artikel=ArtikelPruefer(aktiv=_live), bger=BgerClient(aktiv=_live),
     )
     from app.domains.ergebnisse.schutzbedarf.service import SchutzbedarfService
     app.schutzbedarf_service = SchutzbedarfService(
