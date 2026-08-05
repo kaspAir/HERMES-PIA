@@ -44,8 +44,10 @@ _SECTION_PREFIXES = [
     ("risiken", "risiken"),
     ("einleitung", None),
     ("ziel und zweck", None),
-    ("referenzierte dokumente", None),
-    ("mitgeltende unterlagen", None),
+    # Frueher ignoriert. Die Rechtsgrundlagenanalyse speist ihre ersten
+    # Kapitel daraus - wer nur den PIA hochlaedt, haette sie sonst leer.
+    ("referenzierte dokumente", "referenzierte_dokumente"),
+    ("mitgeltende unterlagen", "mitgeltende_unterlagen"),
     ("definitionen", None),
     ("vorgaben", None),
     ("ressourcenbedarf", None),          # Zwischentitel; die Untertitel folgen
@@ -168,6 +170,16 @@ def parse_pia(docx_bytes):
         "kosten": _parse_kosten(sections_table.get("kosten")),
         "risiken": _parse_risiken(sections_table.get("risiken")),
         "enddatum": "\n".join(sections_text.get("termine", [])),
+        # Ab hier für die ABGELEITETEN Ergebnisse, nicht für die Präsentation.
+        # Die Rahmenbedingungen trugen im gemessenen Fall das Entscheidende –
+        # sie wurden gelesen, aber nicht zurückgegeben.
+        "rahmenbedingungen": (sections_table.get("rahmenbedingungen")
+                              or sections_text.get("rahmenbedingungen") or []),
+        "referenzierte_dokumente": sections_table.get("referenzierte_dokumente") or [],
+        "mitgeltende_unterlagen": sections_table.get("mitgeltende_unterlagen") or [],
+        "projektorganisation": sections_table.get("projektorganisation") or [],
+        "kommunikation": sections_table.get("kommunikation") or [],
+        "sachmittel": sections_table.get("sachmittel") or [],
     }
     return result
 

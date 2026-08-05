@@ -9,6 +9,7 @@ import logging
 import re
 
 from app.domains.ergebnisse.models import ErgebnisEntwurf
+from app.domains.ergebnisse import pia_quelle
 from app.domains.ergebnisse.projektwissen import Projektwissen
 from app.domains.ergebnisse.rechtsgrundlagen import kette
 from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
@@ -98,16 +99,36 @@ class RechtsgrundlagenService:
 
     # ---- PIA-Zugriff (nur lesen) ---------------------------------------- #
     def _pia(self, projekt):
+        """(Abschnitte, Sitzung, Herkunft) – Interview ODER hochgeladener PIA.
+
+        Wer einen anderswo geschriebenen, freigabebereiten PIA hochlaedt, konnte
+        daraus bisher eine Praesentation erzeugen, aber keine
+        Rechtsgrundlagenanalyse. Das war eine willkuerliche Grenze: die Analyse
+        braucht den INHALT, nicht die Herkunft des Inhalts.
+        """
+        from app.domains.praesentation.parser import parse_pia
+
         for erg in self.projekte.ergebnisse(projekt.id):
-            if erg.ergebnistyp == ERG_PIA:
-                s = self.interview.session_for_ergebnis(erg.id)
-                if s and s.answers_json:
-                    return json.loads(s.answers_json), s
-        return {}, None
+            if erg.ergebnistyp != ERG_PIA:
+                continue
+            sitzung = self.interview.session_for_ergebnis(erg.id)
+            dok = None
+            if not (sitzung and sitzung.answers_json):
+                dok = self.projekte.latest_dokument(erg.id, art="freigabe")
+            abschnitte, herkunft = pia_quelle.projektwissen_quelle(
+                session=sitzung, dokument_bytes=dok.data if dok else None,
+                parser=parse_pia)
+            if abschnitte:
+                return abschnitte, sitzung, herkunft
+        return {}, None, ""
 
     def projektwissen(self, projekt, ebene=None, kanton=None):
-        pia_answers, session = self._pia(projekt)
-        return Projektwissen(pia_answers, ebene=ebene, kanton=kanton), session
+        abschnitte, session, herkunft = self._pia(projekt)
+        wissen = Projektwissen(abschnitte, ebene=ebene, kanton=kanton)
+        # Die Herkunft wird mitgefuehrt: ein hochgeladener Abzug ist etwas
+        # anderes als der laufende Stand, und das Ergebnis soll es sagen.
+        wissen.herkunft = herkunft
+        return wissen, session
 
     # ---- Entwurf bauen -------------------------------------------------- #
     @staticmethod
@@ -768,6 +789,6 @@ class RechtsgrundlagenService:
         else:
             wissen, _ = self.projektwissen(projekt)
             answers = self.build_answers(wissen, tenant_id=projekt.org_id)
-        _, session = self._pia(projekt)
+        _, session, _ = self._pia(projekt)
         metadata = self._metadata(projekt, session)
         return self.generation.generate(METHOD_ID, answers, metadata)
