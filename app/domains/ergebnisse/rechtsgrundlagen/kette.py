@@ -51,7 +51,10 @@ SCHRITT_ZEITLIMIT = 240
 NORMSTUFEN = ("richtlinie", "verordnung", "gesetz", "verfassung")
 
 NORMSTUFE_VERFAHREN = {
-    "verfassung": ("Verfassungsgeber (Volk)", "obligatorisches Referendum"),
+    # Art. 140 Abs. 1 lit. a BV: JEDE Verfassungsaenderung untersteht dem
+    # obligatorischen Referendum - beim Bund braucht sie Volk UND Staende.
+    "verfassung": ("Verfassungsgeber (Volk, beim Bund zusätzlich die Stände)",
+                   "obligatorisches Referendum – die Abstimmung findet zwingend statt"),
     "gesetz": ("Legislative / Parlament", "fakultatives Referendum"),
     "verordnung": ("Exekutive (Regierung oder Verwaltung)", "kein Referendum"),
     "richtlinie": ("Verwaltung", "kein Referendum"),
@@ -884,11 +887,17 @@ def zu_kapiteln(lauf):
         if art == "rechtsluecke" and e["gap"].get("bestaetigt"):
             stufe = e["gap"].get("erforderliche_normstufe", "")
             organ, referendum = NORMSTUFE_VERFAHREN.get(str(stufe).lower(), ("", ""))
+            if nicht_heilbar(e["wuerdigung"]):
+                zusatz = ("Diese Lücke ist durch KEINE Normstufe zu schliessen: "
+                          "die Würdigung sieht den Kerngehalt verletzt, und der "
+                          "Kerngehalt ist nach Art. 36 Abs. 4 BV unantastbar – "
+                          "auch eine Verfassungsänderung hülfe nicht.")
+            else:
+                zusatz = (f"Erforderliche Normstufe: {stufe}"
+                          f"{f' ({organ}, {referendum})' if organ else ''}.")
             luecken.append({
                 "luecke": _text(e["taetigkeit"].get("taetigkeit")),
-                "beschreibung": (f"{_text(e['gap'].get('begruendung'))} "
-                                 f"Erforderliche Normstufe: {stufe}"
-                                 f"{f' ({organ}, {referendum})' if organ else ''}."),
+                "beschreibung": f"{_text(e['gap'].get('begruendung'))} {zusatz}",
             })
     for m in offen:
         luecken.append({"luecke": f"Offen: {_text(m['taetigkeit'])}",
@@ -903,9 +912,18 @@ def zu_kapiteln(lauf):
     vorschlaege = []
     for e in befunde:
         name = _text(e["taetigkeit"].get("taetigkeit"))
+        # Ist der Kerngehalt verletzt, ist JEDER Normweg versperrt - ein
+        # Deckungsvorschlag darf dann nicht wie eine gangbare Loesung dastehen.
+        sperrvermerk = (
+            " ACHTUNG: Die Würdigung sieht den Kerngehalt verletzt. Solange "
+            "die Tätigkeit so ausgestaltet ist, führt auch dieser Weg nicht zur "
+            "Zulässigkeit – der Kerngehalt ist nach Art. 36 Abs. 4 BV "
+            "unantastbar."
+        ) if nicht_heilbar(e["wuerdigung"]) else ""
         if e["gap"].get("deckungsvorschlag"):
-            vorschlaege.append({"luecke": name,
-                                "vorschlag": _text(e["gap"]["deckungsvorschlag"])})
+            vorschlaege.append({
+                "luecke": name,
+                "vorschlag": _text(e["gap"]["deckungsvorschlag"]) + sperrvermerk})
         for o in (e["optionen"].get("optionen") or []):
             if isinstance(o, dict) and o.get("option"):
                 # Ohne Herkunftsangabe liest sich eine hypothetische
@@ -920,7 +938,8 @@ def zu_kapiteln(lauf):
                         f"Grundlage: {o.get('grundlage') or '–'}\n"
                         f"Voraussetzungen: {o.get('voraussetzungen') or '–'}\n"
                         f"Grenzen: {o.get('grenzen') or '–'}"
-                        f"{_quellen(o)}"),
+                        f"{_quellen(o)}"
+                        f"{sperrvermerk if 'Gesetzgebungsoption' in herkunft else ''}"),
                 })
     if not vorschlaege:
         vorschlaege = [{
@@ -1003,6 +1022,21 @@ STATIONEN = ("Tätigkeit", "Betroffene", "Berührte Rechte", "Eingriff",
              "Prüfmassstab", "Würdigung", "Rechtslage", "Alternative", "Folge")
 
 
+def nicht_heilbar(wuerdigung):
+    """Ist die Tätigkeit durch KEINE Normstufe zu retten?
+
+    Bei einer Kerngehaltsverletzung hilft weder ein Gesetz noch eine
+    Verfassungsänderung: Art. 36 Abs. 4 BV erklärt den Kerngehalt für
+    unantastbar. Gemessen stand im Dokument «Kerngehalt verletzt» und eine
+    Zeile darunter «zu schaffen auf Stufe gesetz» – ein Weg, den es nicht
+    gibt, direkt neben der Feststellung, dass es ihn nicht gibt.
+
+    Die Gap-Analyse kann das nicht wissen: sie läuft VOR der Würdigung.
+    Auflösen muss es deshalb der Code beim Zusammenbauen.
+    """
+    return bool((wuerdigung or {}).get("kerngehalt_verletzt"))
+
+
 def begruendungsgraph(eintrag):
     """Die Begründungskette EINER Tätigkeit als geordnete Stationen.
 
@@ -1056,10 +1090,22 @@ def begruendungsgraph(eintrag):
     elif gap.get("bestaetigt"):
         stufe = gap.get("erforderliche_normstufe", "")
         organ, referendum = NORMSTUFE_VERFAHREN.get(str(stufe).lower(), ("", ""))
-        stationen.append(("Rechtslage",
-                          f"Rechtslücke bestätigt · zu schaffen auf Stufe "
-                          f"{stufe or '(offen)'}"
-                          f"{f' ({organ}, {referendum})' if organ else ''}"))
+        if nicht_heilbar(wuerd):
+            # Kein Normweg. Die Stufenangabe der Gap-Analyse waere hier eine
+            # Wegbeschreibung ins Nichts.
+            stationen.append((
+                "Rechtslage",
+                "Rechtslücke bestätigt – aber durch KEINE Normstufe zu "
+                "schliessen: die Würdigung sieht den Kerngehalt verletzt, und "
+                "der Kerngehalt ist nach Art. 36 Abs. 4 BV unantastbar. Auch "
+                "eine Verfassungsänderung hülfe nicht. Die Tätigkeit müsste "
+                "so geändert werden, dass sie den Kerngehalt nicht mehr "
+                "berührt."))
+        else:
+            stationen.append(("Rechtslage",
+                              f"Rechtslücke bestätigt · zu schaffen auf Stufe "
+                              f"{stufe or '(offen)'}"
+                              f"{f' ({organ}, {referendum})' if organ else ''}"))
     elif art in ("rechercheluecke", "informationsluecke"):
         stationen.append(("Rechtslage", f"Offen – {art} (nicht geprüft ist nicht "
                                         f"dasselbe wie nicht vorhanden)"))

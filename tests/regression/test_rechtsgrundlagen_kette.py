@@ -460,7 +460,10 @@ def test_der_gemessene_fall_erreicht_das_dokument():
     assert "ermächtigt nicht" in luecken
     assert "Art. 36 Abs. 1 BV" in luecken
     assert "auch mit einer gesetzlichen Grundlage unzulässig" in luecken
-    assert "Legislative / Parlament" in luecken      # Normstufe als Fakt
+    # Kein Normweg mehr: bei verletztem Kerngehalt waere die Stufenangabe eine
+    # Wegbeschreibung ins Nichts.
+    assert "durch KEINE Normstufe zu schliessen" in luecken
+    assert "Legislative / Parlament" not in luecken
 
     assert "nicht weiterzuführen" in k["empfehlung"]
     assert "Rechtsdienst" in k["empfehlung"]
@@ -902,3 +905,75 @@ def test_der_graph_steht_im_dokument():
                     "Rechtslage:"):
         assert station in text, station
     assert "Begründung – " in text        # die Prosa ergaenzt den Graphen
+
+
+# ---- Ein Kerngehaltsverstoss versperrt JEDEN Normweg --------------------- #
+
+def _lauf_kerngehalt():
+    return {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Personen identifizieren"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "schwer", "grundrechte": ["Art. 22 BV"]},
+            "grundlagen": [], "luecke": {"art": "rechtsluecke"}}]},
+        "gap": {"luecken": [{"nr": 0, "bestaetigt": True,
+                             "erforderliche_normstufe": "gesetz",
+                             "begruendung": "Keine Grundlage vorhanden.",
+                             "deckungsvorschlag": "Kantonales Gesetz schaffen"}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "nicht zulässig",
+                                         "kerngehalt_verletzt": True,
+                                         "sicherheit": "überwiegend wahrscheinlich"}]},
+        "optionen": {"faelle": [{"nr": 0, "optionen": [
+            {"option": "Neue gesetzliche Grundlage schaffen",
+             "herkunft": "hypothetische Gesetzgebungsoption"}]}]},
+    }
+
+
+def test_kerngehalt_verletzt_dann_hilft_keine_normstufe():
+    """Gemessen: «Kerngehalt verletzt» und eine Zeile darunter «zu schaffen auf
+    Stufe gesetz» – ein Weg, den es nicht gibt, direkt neben der Feststellung,
+    dass es ihn nicht gibt. Auch eine Verfassungsänderung hülfe nicht:
+    Art. 36 Abs. 4 BV erklärt den Kerngehalt für unantastbar."""
+    k = kette.zu_kapiteln(_lauf_kerngehalt())
+
+    graph = k["konsequenzen"]
+    assert "durch KEINE Normstufe zu schliessen" in graph
+    assert "Art. 36 Abs. 4 BV" in graph
+    assert "auch eine verfassungsänderung" in graph.lower()
+    # Und die widersprüchliche Wegbeschreibung ist weg.
+    assert "zu schaffen auf Stufe gesetz" not in graph
+
+    luecken = json.dumps(k["identifizierte_luecken"], ensure_ascii=False)
+    assert "KEINE Normstufe" in luecken
+    assert "fakultatives Referendum" not in luecken
+
+
+def test_der_deckungsweg_traegt_den_sperrvermerk():
+    """Ein Deckungsvorschlag darf nicht wie eine gangbare Lösung dastehen,
+    wenn er keine ist."""
+    v = json.dumps(kette.zu_kapiteln(_lauf_kerngehalt())["vorschlaege_deckung"],
+                   ensure_ascii=False)
+    assert "ACHTUNG" in v and "Kerngehalt" in v
+    assert "unantastbar" in v
+
+
+def test_ohne_kerngehaltsverstoss_bleibt_der_weg_stehen():
+    """Gegenprobe: eine gewöhnliche Lücke wird ganz normal mit Normstufe und
+    Verfahren beschrieben."""
+    lauf = _lauf_kerngehalt()
+    lauf["wuerdigung"]["wuerdigungen"][0] = {
+        "nr": 0, "ergebnis": "bedingt zulässig", "kerngehalt_verletzt": False}
+    k = kette.zu_kapiteln(lauf)
+    assert "zu schaffen auf Stufe gesetz" in k["konsequenzen"]
+    assert "fakultatives Referendum" in k["konsequenzen"]
+    assert "ACHTUNG" not in json.dumps(k, ensure_ascii=False)
+
+
+def test_verfassungsstufe_nennt_das_obligatorische_referendum():
+    """Art. 140 Abs. 1 lit. a BV: JEDE Verfassungsänderung untersteht dem
+    obligatorischen Referendum – beim Bund braucht sie Volk UND Stände."""
+    organ, referendum = kette.NORMSTUFE_VERFAHREN["verfassung"]
+    assert "obligatorisch" in referendum
+    assert "zwingend" in referendum
+    assert "Stände" in organ
+    # Und die Gesetzesstufe bleibt korrekt beim fakultativen Referendum.
+    assert "fakultativ" in kette.NORMSTUFE_VERFAHREN["gesetz"][1]
