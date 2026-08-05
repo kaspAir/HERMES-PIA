@@ -1546,3 +1546,51 @@ def test_die_ganze_kette_laeuft_durch(app, monkeypatch):
     assert "Keine Lücke identifiziert" in text
     # Ohne Live-Recherche wird nichts erfunden.
     assert "amtlich geprüft" not in text
+
+
+# ---- Aus «SR 312.0» wird eine prüfbare Quelle ---------------------------- #
+#
+# Die Kartierung schreibt die Fundstelle als FLIESSTEXT. Ohne Auflösung blieb
+# jede solche Angabe «nicht prüfbar» – gemessen traf das genau die Zitate, auf
+# die es ankam.
+
+def test_adresse_im_fliesstext_wird_genommen():
+    g = {"fundstelle": "SR 331; https://www.fedlex.admin.ch/eli/cc/2006/732/de – gilt"}
+    assert kette._quelle_finden(g) == "https://www.fedlex.admin.ch/eli/cc/2006/732/de"
+
+
+def test_sr_nummer_wird_aufgeloest():
+    g = {"fundstelle": "SR 312.0, insb. Art. 307 (Unterrichtungspflicht)"}
+    aufloeser = {"312.0": "https://www.fedlex.admin.ch/eli/cc/2010/267/de"}.get
+    assert kette._quelle_finden(g, aufloeser).endswith("/eli/cc/2010/267/de")
+
+
+def test_ohne_adresse_und_ohne_nummer_bleibt_es_offen():
+    assert kette._quelle_finden({"fundstelle": "kantonales Recht"}) is None
+    # Und ohne Aufloeser wird nichts geraten.
+    assert kette._quelle_finden({"fundstelle": "SR 312.0"}) is None
+
+
+def test_die_kette_reicht_den_aufloeser_durch():
+    from pathlib import Path
+
+    from app.domains.ergebnisse.rechtsgrundlagen import service as svc_modul
+    quelle = Path(svc_modul.__file__).read_text(encoding="utf-8")
+    assert "sr_aufloeser=getattr(self.fedlex" in quelle
+
+
+def test_die_datenstruktur_steht_nie_im_pruefpfad():
+    """Gemessen stand im Dokument: «Fachrecht ({'erlass': 'IVöB 2019', …})» –
+    das Objekt wurde als Text ausgegeben."""
+    eintrag = {
+        "taetigkeit": {"taetigkeit": "Beschaffen"},
+        "kartierung": {"grundrechtseingriff_denkbar": False,
+                       "fachrecht": [{"erlass": "IVöB 2019",
+                                      "anforderung": "Offenes Verfahren."},
+                                     "BöB (SR 172.056.1)"],
+                       "eingriff": {"tiefe": "keiner"}},
+        "wuerdigung": {"ergebnis": "zulässig"},
+    }
+    pfad = kette.pruefpfad(eintrag)
+    assert "Fachrecht (IVöB 2019, BöB (SR 172.056.1))" in pfad
+    assert "{" not in pfad and "erlass" not in pfad

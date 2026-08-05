@@ -186,7 +186,15 @@ class ArtikelPruefer:
         # Der Normtext beginnt mit der Absatznummer «1» (Fedlex) bzw. einem
         # Satzanfang; die Überschrift steht davor.
         kopf = re.split(r"\s+1\s+(?=[A-ZÄÖÜ])|\s+\d\s+", kopf, maxsplit=1)[0]
-        return BELEGT, kopf.strip(" .")[:160]
+        kopf = kopf.strip(" .")
+        # Nicht jeder Artikel hat eine Sachueberschrift - Art. 106 StGB etwa
+        # beginnt direkt mit dem Normtext. Dann ist der ANFANG DES TEXTES die
+        # ehrliche Auskunft; als «Ueberschrift» ausgegeben waere er irrefuehrend.
+        if not kopf or kopf[0].isdigit():
+            volltext = _text_aus_html(roh).replace("&nbsp;", " ")
+            volltext = re.sub(r"^\s*>?\s*Art(?:\.|ikel)\s*\S+\s*", "", volltext)
+            return BELEGT, "[Wortlaut] " + volltext.strip()[:200]
+        return BELEGT, kopf[:160]
 
     def pruefe_fundstelle(self, quelle, zitat):
         """Alle Artikel EINES Zitats. Rückgabe: Liste von Befunden."""

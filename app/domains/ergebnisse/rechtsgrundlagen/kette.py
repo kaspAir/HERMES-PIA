@@ -1272,7 +1272,12 @@ def pruefpfad(eintrag):
     stationen = ["Tätigkeit"]
     if kart.get("grundrechtseingriff_denkbar") is False:
         # Die frühe Weiche: kein Grundrechtseingriff denkbar -> direkt Fachrecht.
-        fach = ", ".join(str(f) for f in (kart.get("fachrecht") or []) if str(f).strip())
+        # Das Fachrecht kommt als Objekt {erlass, anforderung}; ältere Läufe
+        # lieferten Text. Ohne diese Unterscheidung stand die Datenstruktur im
+        # Dokument: «Fachrecht ({'erlass': 'IVöB 2019', …})».
+        namen = [str((f.get("erlass") if isinstance(f, dict) else f) or "").strip()
+                 for f in (kart.get("fachrecht") or [])]
+        fach = ", ".join(n for n in namen if n)
         stationen.append("kein Grundrechtseingriff")
         stationen.append(f"Fachrecht ({fach})" if fach else "Fachrecht")
     else:
@@ -1369,7 +1374,36 @@ def _suchbegriffe(eintrag):
     return begriffe[:3]
 
 
-def pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None):
+_SR = re.compile(r"\bSR\s+(\d[\d.]*)")
+
+
+def _quelle_finden(grundlage, sr_aufloeser=None):
+    """Die Adresse des Erlasstextes – aus dem, was die Kartierung geliefert hat.
+
+    Sie schreibt die Fundstelle als FLIESSTEXT («SR 312.0, insb. Art. 307»).
+    Steht eine Adresse darin, wird sie genommen; sonst wird die SR-Nummer
+    aufgelöst. Ohne diesen Schritt blieb jede solche Angabe «nicht prüfbar»,
+    obwohl die Nummer dasteht – gemessen an einer echten Analyse traf das
+    genau die Zitate, auf die es ankam.
+    """
+    for feld in ("fundstelle_url", "url", "fundstelle", "beschreibung"):
+        wert = str(grundlage.get(feld) or "")
+        if "/eli/" in wert or "texts_of_law" in wert:
+            treffer = re.search(r"https?://\S+", wert)
+            if treffer:
+                return treffer.group().rstrip(").,;")
+    if sr_aufloeser:
+        for feld in ("fundstelle", "beschreibung"):
+            treffer = _SR.search(str(grundlage.get(feld) or ""))
+            if treffer:
+                adresse = sr_aufloeser(treffer.group(1))
+                if adresse:
+                    return adresse
+    return grundlage.get("fundstelle_url") or grundlage.get("url")
+
+
+def pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None,
+                       sr_aufloeser=None):
     """Verifiziert Artikelangaben und holt – wo nötig – Rechtsprechung.
 
     Dieser Schritt ruft KEIN Modell. Er prüft, was frühere Schichten behauptet
@@ -1384,7 +1418,7 @@ def pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None):
         for g in (e.get("kartierung") or {}).get("grundlagen") or []:
             if not isinstance(g, dict):
                 continue
-            quelle = g.get("fundstelle_url") or g.get("url") or g.get("fundstelle")
+            quelle = _quelle_finden(g, sr_aufloeser)
             zitat = f"{g.get('fundstelle', '')} {g.get('erlass', '')}"
             if artikel_pruefer is None:
                 continue

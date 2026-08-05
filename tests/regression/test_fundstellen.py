@@ -265,3 +265,21 @@ def test_ohne_trefferliste_bleibt_kein_entscheid_stehen():
 def test_text_ohne_entscheide_bleibt_unveraendert():
     text = "Die Tätigkeit stützt sich auf Art. 36 BV und ist verhältnismässig."
     assert bger.nur_belegte(text, []) == text
+
+
+def test_ohne_ueberschrift_steht_der_wortlaut_da(monkeypatch):
+    """Nicht jeder Artikel hat eine Sachüberschrift – Art. 106 StGB beginnt
+    direkt mit dem Normtext. Dann ist der Anfang des Textes die ehrliche
+    Auskunft; als «Überschrift» ausgegeben wäre er irreführend."""
+    ohne_ueberschrift = (
+        '<p id="art_106"><b>Art. 106</b></p>'
+        "<p>1 &nbsp;Bestimmt es das Gesetz nicht anders, so ist der Höchstbetrag "
+        "der Busse 10 000 Franken.</p>")
+    p = ArtikelPruefer(aktiv=True,
+                       oeffner=lambda url, timeout=30: ohne_ueberschrift.encode())
+    monkeypatch.setattr(p, "_fedlex_datei", lambda eli: "https://beispiel/html")
+    zustand, text = p.pruefe("https://www.fedlex.admin.ch/eli/cc/54/757/de", "106")
+    assert zustand == BELEGT
+    assert text.startswith("[Wortlaut] ")
+    assert "Höchstbetrag der Busse" in text
+    assert not text.startswith("Art")

@@ -50,11 +50,31 @@ class FedlexClient:
     def __init__(self, index=None):
         # index optional (Tests); sonst wird der mitgelieferte Offline-Index geladen.
         self._index = index
+        self._sr_index = None
 
     def _get_index(self):
         if self._index is None:
             self._index = _load_offline_index()
         return self._index
+
+    def url_fuer_sr(self, sr):
+        """Die amtliche Adresse zu einer SR-Nummer – oder None.
+
+        Gebraucht fuer die Artikelpruefung: die Kartierung schreibt die
+        Fundstelle als Fliesstext («SR 312.0, insb. Art. 307»), und ohne
+        Adresse ist der Erlasstext nicht abrufbar. Gemessen blieb deshalb
+        jede solche Angabe «nicht pruefbar», obwohl die Nummer dasteht.
+        """
+        sr = str(sr or "").strip()
+        if not sr:
+            return None
+        if self._sr_index is None:
+            self._sr_index = {}
+            # Der Index ist eine LISTE von Erlassen, kein Woerterbuch.
+            for e in (self._get_index() or []):
+                if isinstance(e, dict) and e.get("sr") and e.get("url"):
+                    self._sr_index.setdefault(str(e["sr"]), e["url"])
+        return self._sr_index.get(sr)
 
     def suche_mehrere(self, begriffe, treffer_je_begriff=1, **_):
         # **_ schluckt ebene/kanton: der Offline-Index kennt nur Bundesrecht,

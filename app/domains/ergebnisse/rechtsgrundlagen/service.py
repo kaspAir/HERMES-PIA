@@ -646,7 +646,8 @@ class RechtsgrundlagenService:
             # einer aussieht.
             lauf["fundstellen"] = kette.pruefe_fundstellen(
                 befunde, artikel_pruefer=getattr(self, "artikel", None),
-                bger=getattr(self, "bger", None))
+                bger=getattr(self, "bger", None),
+                sr_aufloeser=getattr(self.fedlex, "url_fuer_sr", None))
             # Aus der Fachpruefung uebernommen, wo es ein _takt() gibt - hier
             # nicht. Der Schritt kann je nach Zahl der Erlasse dauern (ein
             # Abruf je Erlass), deshalb gehoert seine Dauer ins Protokoll.
