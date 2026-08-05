@@ -449,11 +449,14 @@ def rechtsgrundlagen(projekt_id):
     version = (entwurf.doc_version if entwurf and entwurf.doc_version else "0.1")
     download_name = (f"{_safe_filename(projekt.name or 'Projekt')}"
                      f"_Rechtsgrundlagenanalyse_V{version}.docx")
+    from app.domains.ergebnisse.rechtsgrundlagen.kette import schrittnamen
     return render_template(
         "rechtsgrundlagen.html", projekt=projekt, entwurf=entwurf,
         genannte=wissen.genannte_rechtsgrundlagen(), hat_pia=session is not None,
         kantone=KANTONE, download_name=download_name,
-        grounding=svc.grounding_status(projekt))
+        grounding=svc.grounding_status(projekt),
+        kette_laeuft=bool(entwurf and entwurf.lauf_status == "laufend"),
+        schrittnamen=schrittnamen())
 
 
 @bp.post("/projekt/<int:projekt_id>/rechtsgrundlagen/erzeugen")
@@ -464,6 +467,35 @@ def rechtsgrundlagen_erzeugen(projekt_id):
     current_app.rechtsgrundlagen_service.erzeuge_entwurf(
         projekt, ebene=",".join(ebenen) or None, kanton=request.form.get("kanton") or None)
     return redirect(url_for("ui.rechtsgrundlagen", projekt_id=projekt.id))
+
+
+@bp.post("/projekt/<int:projekt_id>/rechtsgrundlagen/kette")
+@permission_required("write")
+def rechtsgrundlagen_kette(projekt_id):
+    """Startet die vierschichtige Analyse. Sie laeuft danach schrittweise."""
+    projekt = _load_projekt(projekt_id)
+    ebenen = request.form.getlist("ebene")
+    current_app.rechtsgrundlagen_service.starte_kette(
+        projekt, ebene=",".join(ebenen) or None,
+        kanton=request.form.get("kanton") or None)
+    return redirect(url_for("ui.rechtsgrundlagen", projekt_id=projekt.id))
+
+
+@bp.post("/projekt/<int:projekt_id>/rechtsgrundlagen/kette/schritt")
+@permission_required("write")
+def rechtsgrundlagen_kette_schritt(projekt_id):
+    """EIN Schritt der Kette. Antwortet IMMER JSON – auch beim Absturz, damit
+    der Browser den Grund anzeigen kann statt einer HTML-Fehlerseite, an der
+    er scheitert."""
+    projekt = _load_projekt(projekt_id)
+    try:
+        zustand, grund = current_app.rechtsgrundlagen_service.kette_schritt(projekt)
+    except Exception as e:      # noqa: BLE001 – der Grund muss zum Browser
+        current_app.logger.exception("Kettenschritt abgestürzt")
+        return jsonify({"fehler": f"{e.__class__.__name__}: {e}"}), 500
+    if zustand is None:
+        return jsonify({"fehler": grund or "Der Schritt ist fehlgeschlagen."}), 502
+    return jsonify(zustand)
 
 
 @bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/download/<path:filename>")

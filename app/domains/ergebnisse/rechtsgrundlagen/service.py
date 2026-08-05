@@ -9,6 +9,7 @@ import re
 
 from app.domains.ergebnisse.models import ErgebnisEntwurf
 from app.domains.ergebnisse.projektwissen import Projektwissen
+from app.domains.ergebnisse.rechtsgrundlagen import kette
 from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
 from app.domains.ergebnisse.rechtsgrundlagen.proposals import analysiere
 from app.domains.projekt.reference import ERG_PIA
@@ -483,6 +484,135 @@ class RechtsgrundlagenService:
         db.commit()
         db.refresh(row)
         return row
+
+
+    # ---- Die vierschichtige Kette, schrittweise -------------------------- #
+    def _entwurfszeile(self, db, projekt_id):
+        row = db.query(ErgebnisEntwurf).filter(
+            ErgebnisEntwurf.projekt_id == projekt_id,
+            ErgebnisEntwurf.ergebnistyp == METHOD_ID,
+        ).first()
+        if row is None:
+            row = ErgebnisEntwurf(projekt_id=projekt_id, ergebnistyp=METHOD_ID)
+            db.add(row)
+        return row
+
+    def starte_kette(self, projekt, ebene=None, kanton=None):
+        """Setzt den Lauf auf Anfang. Ein Aufruf je Schicht folgt danach."""
+        db = SessionLocal()
+        row = self._entwurfszeile(db, projekt.id)
+        if ebene is not None:
+            row.ebene = ebene
+        if kanton is not None:
+            row.kanton = kanton
+        row.lauf_status = "laufend"
+        row.lauf_schritt = 0
+        row.lauf_json = json.dumps({}, ensure_ascii=False)
+        db.commit()
+        db.refresh(row)
+        return row
+
+    def kette_schritt(self, projekt, skills_dir=None):
+        """Führt GENAU EINEN Schritt aus. Rückgabe: (zustand, grund).
+
+        Je Schritt höchstens ein Modellaufruf – dieselbe Regel wie bei der
+        Fachprüfung, aus demselben Grund: zwei Aufrufe in einer Anfrage rissen
+        dort das Zeitlimit, und dann ist der ganze Schritt verloren.
+        """
+        db = SessionLocal()
+        row = self._entwurfszeile(db, projekt.id)
+        if row.lauf_status == "fertig":
+            return self._kettenzustand(row), ""
+        wissen, _ = self.projektwissen(projekt, ebene=row.ebene, kanton=row.kanton)
+        lauf = json.loads(row.lauf_json or "{}")
+        index = row.lauf_schritt or 0
+        if index >= len(kette.SCHRITTE):
+            return self._kettenzustand(row), ""
+        schluessel, _name = kette.SCHRITTE[index]
+        tenant = getattr(projekt, "org_id", None)
+        versionen = lauf.get("_skills") or []
+
+        befunde = kette.befunde_aus(lauf)
+
+        if schluessel == "taetigkeiten":
+            daten, v, grund = kette.taetigkeiten(
+                wissen, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+        elif schluessel == "kartierung":
+            liste = (lauf.get("taetigkeiten") or {}).get("taetigkeiten") or []
+            if not liste:
+                daten, v, grund = {"kartierungen": []}, [], ""
+            else:
+                daten, v, grund = kette.kartiere(
+                    liste, wissen, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+        elif schluessel == "gap":
+            # Nur bestaetigungsbeduerftige Rechtsluecken - der Schritt entfaellt
+            # sonst ohne Modellaufruf.
+            faelle = [{"nr": i, "taetigkeit": e["taetigkeit"],
+                       "kartierung": e["kartierung"]}
+                      for i, e in enumerate(befunde)
+                      if str((e["kartierung"].get("luecke") or {}).get("art", "")
+                             ).lower() == "rechtsluecke"]
+            if not faelle:
+                daten, v, grund = {"luecken": []}, [], ""
+            else:
+                daten, v, grund = kette.analysiere_luecke(
+                    faelle, wissen, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+        elif schluessel == "wuerdigung":
+            # JEDE Taetigkeit wird gewuerdigt - auch die mit Grundlage. Eine
+            # Grundlage zu haben heisst nicht, zulaessig zu sein.
+            faelle = [{"nr": i, "taetigkeit": e["taetigkeit"],
+                       "kartierung": e["kartierung"], "gap": e["gap"]}
+                      for i, e in enumerate(befunde)]
+            if not faelle:
+                daten, v, grund = {"wuerdigungen": []}, [], ""
+            else:
+                daten, v, grund = kette.wuerdige(
+                    faelle, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+        elif schluessel == "optionen":
+            faelle = [{"nr": i, "taetigkeit": e["taetigkeit"],
+                       "wuerdigung": e["wuerdigung"], "gap": e["gap"]}
+                      for i, e in enumerate(befunde)
+                      if str(e["wuerdigung"].get("ergebnis", "")).lower()
+                      in ("nicht zulässig", "bedingt zulässig")]
+            if not faelle:
+                daten, v, grund = {"faelle": []}, [], ""
+            else:
+                daten, v, grund = kette.entwickle_optionen(
+                    faelle, self.llm, tenant_id=tenant, skills_dir=skills_dir)
+        else:                                   # "kapitel" – ohne Modellaufruf
+            kapitel = kette.zu_kapiteln(lauf)
+            answers = self.build_answers(wissen, tenant_id=tenant)
+            answers.update({
+                k: {"extracted": w} if isinstance(w, list)
+                else {"extracted": {"text": w}}
+                for k, w in kapitel.items() if not k.startswith("_")})
+            answers["_kette"] = {"sperren": kapitel.get("_sperren", []),
+                                 "skills": versionen}
+            row.answers_json = json.dumps(answers, ensure_ascii=False, indent=2)
+            row.lauf_schritt = len(kette.SCHRITTE)
+            row.lauf_status = "fertig"
+            db.commit()
+            return self._kettenzustand(row), ""
+
+        if daten is None:
+            return None, grund
+        lauf[schluessel] = daten
+        for eintrag in v or []:
+            if eintrag not in versionen:
+                versionen.append(eintrag)
+        lauf["_skills"] = versionen
+        row.lauf_json = json.dumps(lauf, ensure_ascii=False)
+        row.lauf_schritt = index + 1
+        db.commit()
+        return self._kettenzustand(row), ""
+
+    @staticmethod
+    def _kettenzustand(row):
+        namen = kette.schrittnamen()
+        i = row.lauf_schritt or 0
+        return {"schritt": i, "gesamt": len(namen),
+                "fertig": row.lauf_status == "fertig",
+                "naechstes": namen[i] if i < len(namen) else ""}
 
     # ---- Metadaten (Deckblatt) ------------------------------------------ #
     def _metadata(self, projekt, session):

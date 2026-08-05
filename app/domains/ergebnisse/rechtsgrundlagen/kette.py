@@ -533,3 +533,215 @@ def darf_entwarnen(befunde):
     if sperren(befunde):
         return False
     return all((e.get("wuerdigung") or {}).get("ergebnis") for e in befunde)
+
+
+# ======================================================================== #
+#  Der Ablauf: ein Schritt je Schicht
+# ======================================================================== #
+
+SCHRITTE = [
+    ("taetigkeiten", "Tätigkeiten bestimmen"),
+    ("kartierung", "Rechtsgrundlagen kartieren"),
+    ("gap", "Lücken prüfen"),
+    ("wuerdigung", "Zulässigkeit würdigen"),
+    ("optionen", "Handlungsoptionen"),
+    ("kapitel", "Dokument zusammenstellen"),
+]
+
+
+def schrittnamen():
+    return [name for _, name in SCHRITTE]
+
+
+def _mit_nr(liste):
+    return [dict(e, nr=i) for i, e in enumerate(liste or []) if isinstance(e, dict)]
+
+
+def _nach_nr(eintraege, schluessel):
+    """{nr -> Eintrag} aus der Antwort einer Schicht."""
+    raus = {}
+    for e in (eintraege or {}).get(schluessel) or []:
+        if not isinstance(e, dict):
+            continue
+        try:
+            raus[int(e.get("nr"))] = e
+        except (TypeError, ValueError):
+            continue
+    return raus
+
+
+def befunde_aus(lauf):
+    """Die Ergebnisse aller Schichten je Tätigkeit zusammengeführt.
+
+    Das ist die Form, die `sperren` und `darf_entwarnen` erwarten – und die
+    einzige Stelle, an der die Nummern wieder zu Tätigkeiten werden.
+    """
+    taet = _mit_nr((lauf.get("taetigkeiten") or {}).get("taetigkeiten"))
+    kart = _nach_nr(lauf.get("kartierung"), "kartierungen")
+    gap = _nach_nr(lauf.get("gap"), "luecken")
+    wuerd = _nach_nr(lauf.get("wuerdigung"), "wuerdigungen")
+    opt = _nach_nr(lauf.get("optionen"), "faelle")
+    return [{"taetigkeit": t, "kartierung": kart.get(i, {}), "gap": gap.get(i, {}),
+             "wuerdigung": wuerd.get(i, {}), "optionen": opt.get(i, {})}
+            for i, t in enumerate(taet)]
+
+
+# ======================================================================== #
+#  Von der Kette ins Dokument
+# ======================================================================== #
+
+def _kurz(text, grenze=400):
+    t = str(text or "").strip()
+    return t if len(t) <= grenze else t[:grenze].rstrip() + " …"
+
+
+def zu_kapiteln(lauf):
+    """Bildet die Ergebnisse der Kette auf die Dokumentkapitel ab.
+
+    Zwei Regeln tragen diese Funktion, und beide folgen aus dem gemessenen
+    Fehlverhalten:
+
+    * **Nichts wird behauptet, was nicht geprüft wurde.** Jede Zeile nennt die
+      Tätigkeit, auf die sie sich bezieht – dadurch ist sichtbar, was NICHT
+      abgedeckt ist.
+    * **Die Sperren stehen im Dokument, nicht nur im Protokoll.** Ein
+      Muss-Befund gehört in die Lückenliste und in die Beurteilung; sonst liest
+      der Auftraggeber eine Analyse, die etwas anderes sagt als die Prüfung.
+    """
+    befunde = befunde_aus(lauf)
+    meldungen = sperren(befunde)
+    muss = [m for m in meldungen if m["gewicht"] == "Muss"]
+    offen = [m for m in meldungen if m["gewicht"] == "Vorbehalt"]
+
+    # ---- Bestehende Rechtsgrundlagen ------------------------------------ #
+    bestehende, gesehen = [], set()
+    for e in befunde:
+        for g in (e["kartierung"].get("grundlagen") or []):
+            if not isinstance(g, dict) or not g.get("erlass"):
+                continue
+            # Eine Schrankennorm erscheint hier nie – sie ermächtigt nicht.
+            if ist_schrankennorm(g["erlass"]) or not g.get("ermaechtigt"):
+                continue
+            schluessel = g["erlass"].strip().lower()
+            if schluessel in gesehen:
+                continue
+            gesehen.add(schluessel)
+            teile = [t for t in (g.get("fundstelle"), g.get("geltung")) if t]
+            bestehende.append({
+                "rechtsgrundlage": g["erlass"],
+                "beschreibung": " – ".join(teile) or
+                                f"Deckt ab: {_kurz(e['taetigkeit'].get('taetigkeit'), 200)}",
+            })
+    if not bestehende:
+        bestehende = [{
+            "rechtsgrundlage": "Keine ermächtigende Grundlage nachgewiesen",
+            "beschreibung": "Für keine der geprüften Tätigkeiten liess sich eine "
+                            "Grundlage benennen, die sie ermächtigt.",
+        }]
+
+    # ---- Bevorstehende Änderungen --------------------------------------- #
+    bevorstehend = []
+    for e in befunde:
+        for g in (e["kartierung"].get("grundlagen") or []):
+            if isinstance(g, dict) and str(g.get("status", "")).lower() in (
+                    "bevorstehend", "hängig", "haengig"):
+                bevorstehend.append({
+                    "rechtsgrundlage": g.get("erlass", ""),
+                    "beschreibung": f"Status: {g.get('status')}. "
+                                    f"{_kurz(g.get('geltung'), 200)}".strip(),
+                    "auswirkung": "neutral",
+                })
+
+    # ---- Identifizierte Lücken ------------------------------------------ #
+    luecken = []
+    for m in muss:
+        luecken.append({"luecke": _kurz(m["taetigkeit"], 120),
+                        "beschreibung": m["meldung"]})
+    for e in befunde:
+        art = str((e["kartierung"].get("luecke") or {}).get("art", "")).lower()
+        if art == "rechtsluecke" and e["gap"].get("bestaetigt"):
+            stufe = e["gap"].get("erforderliche_normstufe", "")
+            organ, referendum = NORMSTUFE_VERFAHREN.get(str(stufe).lower(), ("", ""))
+            luecken.append({
+                "luecke": _kurz(e["taetigkeit"].get("taetigkeit"), 120),
+                "beschreibung": (f"{_kurz(e['gap'].get('begruendung'), 260)} "
+                                 f"Erforderliche Normstufe: {stufe}"
+                                 f"{f' ({organ}, {referendum})' if organ else ''}."),
+            })
+    for m in offen:
+        luecken.append({"luecke": f"Offen: {_kurz(m['taetigkeit'], 110)}",
+                        "beschreibung": m["meldung"]})
+    if not luecken:
+        luecken = [{"luecke": "Keine Lücke identifiziert",
+                    "beschreibung": "Jede geprüfte Tätigkeit ist durch eine "
+                                    "ermächtigende Grundlage der erforderlichen "
+                                    "Normstufe gedeckt und wurde gewürdigt."}]
+
+    # ---- Vorschläge zur Deckung ----------------------------------------- #
+    vorschlaege = []
+    for e in befunde:
+        name = _kurz(e["taetigkeit"].get("taetigkeit"), 120)
+        if e["gap"].get("deckungsvorschlag"):
+            vorschlaege.append({"luecke": name,
+                                "vorschlag": _kurz(e["gap"]["deckungsvorschlag"])})
+        for o in (e["optionen"].get("optionen") or []):
+            if isinstance(o, dict) and o.get("option"):
+                vorschlaege.append({
+                    "luecke": name,
+                    "vorschlag": (f"Option: {_kurz(o['option'], 240)} "
+                                  f"[Grundlage: {o.get('grundlage', '–')}; "
+                                  f"Grenzen: {o.get('grenzen', '–')}]"),
+                })
+    if not vorschlaege:
+        vorschlaege = [{
+            "luecke": "Entfällt" if not luecken or luecken[0]["luecke"].startswith(
+                "Keine Lücke") else "Offen",
+            "vorschlag": "Es besteht keine zu deckende Lücke."
+            if not muss and not offen else
+            "Zu den offenen Punkten liegt noch kein Vorschlag vor.",
+        }]
+
+    # ---- Beurteilung der Konsequenzen ----------------------------------- #
+    zeilen = []
+    for e in befunde:
+        w = e["wuerdigung"]
+        if not w.get("ergebnis"):
+            continue
+        zeilen.append(
+            f"{_kurz(e['taetigkeit'].get('taetigkeit'), 160)}: {w['ergebnis']}. "
+            f"{_kurz(w.get('begruendung'), 320)}")
+    if muss:
+        zeilen.append("Zwingend zu klären, bevor dieses Vorhaben weitergeführt "
+                      "werden kann: " + " ".join(m["meldung"] for m in muss))
+    konsequenzen = "\n".join(zeilen) or (
+        "Die Konsequenzen wurden nicht beurteilt. Dieses Dokument ist insoweit "
+        "unvollständig und ohne die Beurteilung nicht freigabefähig.")
+
+    # ---- Empfehlung ------------------------------------------------------ #
+    if not befunde:
+        empfehlung = ("Es liegt keine Empfehlung vor: aus dem Projektauftrag "
+                      "liessen sich keine zu prüfenden Tätigkeiten ableiten.")
+    elif muss:
+        empfehlung = (
+            "Das Vorhaben ist in der vorliegenden Form nicht weiterzuführen, "
+            "solange die zwingenden Punkte offen sind. Diese Analyse ist "
+            "beratend; die Beurteilung ist mit dem Rechtsdienst abzustimmen.")
+    elif darf_entwarnen(befunde):
+        empfehlung = (
+            "Für jede geprüfte Tätigkeit besteht eine ermächtigende Grundlage der "
+            "erforderlichen Normstufe, und jede wurde gewürdigt. Diese Analyse "
+            "ist beratend; die Beurteilung ist mit dem Rechtsdienst abzustimmen.")
+    else:
+        empfehlung = (
+            "Die Analyse ist nicht abgeschlossen: einzelne Punkte sind offen. "
+            "Bis zu ihrer Klärung kann diese Analyse keine Freigabe tragen.")
+
+    return {
+        "bestehende_rechtsgrundlagen": bestehende,
+        "bevorstehende_aenderungen": bevorstehend,
+        "identifizierte_luecken": luecken,
+        "vorschlaege_deckung": vorschlaege,
+        "konsequenzen": konsequenzen,
+        "empfehlung": empfehlung,
+        "_sperren": meldungen,
+    }

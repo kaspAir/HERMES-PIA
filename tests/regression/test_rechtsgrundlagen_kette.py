@@ -388,3 +388,105 @@ def test_die_regel_ist_ein_stufenvergleich(tiefe, stufe, blockiert):
     }]
     muss = [m for m in kette.sperren(befunde) if m["gewicht"] == "Muss"]
     assert bool(muss) is blockiert
+
+
+# ---- Der Lauf: ein Schritt je Schicht ------------------------------------ #
+
+def test_der_lauf_hat_sechs_schritte_und_endet_im_dokument():
+    from app.domains.ergebnisse.rechtsgrundlagen import kette as k
+
+    namen = k.schrittnamen()
+    assert len(namen) == 6
+    assert namen[0].startswith("Tätigkeiten")
+    assert namen[-1].startswith("Dokument")
+
+
+def test_die_ergebnisse_finden_ueber_die_nummer_zurueck():
+    """Die Schichten laufen je Schicht, nicht je Tätigkeit – die Nummer ist
+    das einzige Band zwischen Ergebnis und Tätigkeit."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "A"}, {"taetigkeit": "B"}]},
+        "kartierung": {"kartierungen": [{"nr": 1, "eingriff": {"tiefe": "schwer"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    b = kette.befunde_aus(lauf)
+    assert len(b) == 2
+    assert b[1]["kartierung"]["eingriff"]["tiefe"] == "schwer"
+    assert b[0]["wuerdigung"]["ergebnis"] == "zulässig"
+    assert b[1]["wuerdigung"] == {}          # fehlt, wird nicht erfunden
+
+
+def test_unsinnige_nummern_werfen_nichts_um():
+    lauf = {"taetigkeiten": {"taetigkeiten": [{"taetigkeit": "A"}]},
+            "kartierung": {"kartierungen": [{"nr": "x"}, {"nr": 99}, "kaputt"]}}
+    assert kette.befunde_aus(lauf)[0]["kartierung"] == {}
+
+
+# ---- Von der Kette ins Dokument ------------------------------------------ #
+
+def _lauf_gemessener_fall():
+    return {
+        "taetigkeiten": {"taetigkeiten": [
+            {"taetigkeit": "Gesichter im öffentlichen Raum anlasslos erfassen"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "schwer"},
+            "grundlagen": [{"erlass": "Bundesverfassung (BV)",
+                            "normstufe": "verfassung", "ermaechtigt": True}],
+            "luecke": {"art": "rechtsluecke"}}]},
+        "gap": {"luecken": [{"nr": 0, "bestaetigt": True,
+                             "erforderliche_normstufe": "gesetz",
+                             "begruendung": "Keine Grundlage vorhanden.",
+                             "deckungsvorschlag": ""}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "nicht zulässig",
+                                         "kerngehalt_verletzt": True,
+                                         "begruendung": "Unverhältnismässig."}]},
+    }
+
+
+def test_der_gemessene_fall_erreicht_das_dokument():
+    """Die Sperren müssen IM DOKUMENT stehen, nicht nur im Protokoll – sonst
+    liest der Auftraggeber eine Analyse, die etwas anderes sagt als die
+    Prüfung."""
+    k = kette.zu_kapiteln(_lauf_gemessener_fall())
+
+    # Keine Schrankennorm in der Grundlagen-Tabelle.
+    namen = " ".join(z["rechtsgrundlage"] for z in k["bestehende_rechtsgrundlagen"])
+    assert "Bundesverfassung" not in namen
+    assert "Keine ermächtigende Grundlage" in namen
+
+    luecken = json.dumps(k["identifizierte_luecken"], ensure_ascii=False)
+    assert "ermächtigt nicht" in luecken
+    assert "Art. 36 Abs. 1 BV" in luecken
+    assert "auch mit einer gesetzlichen Grundlage unzulässig" in luecken
+    assert "Legislative / Parlament" in luecken      # Normstufe als Fakt
+
+    assert "nicht weiterzuführen" in k["empfehlung"]
+    assert "Rechtsdienst" in k["empfehlung"]
+    assert "nicht zulässig" in k["konsequenzen"]
+
+
+def test_ein_sauberer_fall_wird_nicht_kuenstlich_beanstandet():
+    """Gegenprobe – eine Analyse, die immer warnt, ist so wertlos wie eine,
+    die nie warnt."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Ein Register führen"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "leicht"},
+            "grundlagen": [{"erlass": "Registergesetz", "normstufe": "gesetz",
+                            "ermaechtigt": True, "fundstelle": "SR 000.0"}],
+            "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig",
+                                         "kerngehalt_verletzt": False,
+                                         "begruendung": "Verhältnismässig."}]},
+    }
+    k = kette.zu_kapiteln(lauf)
+    assert k["bestehende_rechtsgrundlagen"][0]["rechtsgrundlage"] == "Registergesetz"
+    assert k["identifizierte_luecken"][0]["luecke"] == "Keine Lücke identifiziert"
+    assert "besteht eine ermächtigende Grundlage" in k["empfehlung"]
+
+
+def test_ohne_taetigkeiten_wird_nichts_behauptet():
+    k = kette.zu_kapiteln({})
+    assert "keine zu prüfenden Tätigkeiten" in k["empfehlung"]
+    assert "Keine ermächtigende Grundlage" in \
+        k["bestehende_rechtsgrundlagen"][0]["rechtsgrundlage"]

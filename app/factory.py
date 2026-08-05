@@ -75,6 +75,18 @@ def _migrate_db(engine):
                         f"ALTER TABLE pia_pruefung ADD COLUMN {spalte} {typ}"))
             conn.commit()
 
+    # ergebnis_entwurf: Laufzustand der Rechtsgrundlagen-Kette.
+    if "ergebnis_entwurf" in inspector.get_table_names():
+        ee = {c["name"] for c in inspector.get_columns("ergebnis_entwurf")}
+        with engine.connect() as conn:
+            for spalte, typ in (("lauf_status", "VARCHAR(20)"),
+                                ("lauf_schritt", "INTEGER"),
+                                ("lauf_json", "TEXT")):
+                if spalte not in ee:
+                    conn.execute(text(
+                        f"ALTER TABLE ergebnis_entwurf ADD COLUMN {spalte} {typ}"))
+            conn.commit()
+
     # corpus_chunks: strukturierte Initialisierungs-Dauer (nachträglich ergänzt).
     if "corpus_chunks" in inspector.get_table_names():
         cc_cols = {c["name"] for c in inspector.get_columns("corpus_chunks")}
