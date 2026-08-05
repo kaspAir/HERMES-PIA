@@ -761,7 +761,8 @@ def test_die_wuerdigung_nennt_ihren_massstab_im_dokument():
     }
     text = kette.zu_kapiteln(lauf)["konsequenzen"]
     assert "Sicherheit: eindeutig" in text
-    assert "geprüft an: Legalitätsprinzip (Art. 5 Abs. 1 BV)" in text
+    # Der Massstab steht jetzt als eigene STATION im Begründungsgraphen.
+    assert "Prüfmassstab: Legalitätsprinzip (Art. 5 Abs. 1 BV)" in text
     assert "Gestützt auf: Art. 5 Abs. 1 BV" in text
 
 
@@ -780,3 +781,124 @@ def test_die_schichten_verlangen_herkunft_und_sicherheit(skills_dir):
                              skills_dir=skills_dir)
     assert "HERKUNFT offen" in llm.system
     assert "hypothetische Gesetzgebungsoption" in llm.system
+
+
+# ---- Widerspruch zwischen den Schichten ---------------------------------- #
+
+def test_die_wuerdigung_darf_die_kartierung_korrigieren():
+    """Gemessen: die Kartierung stufte eine flächendeckende Videoüberwachung als
+    Eingriff «keiner» ein. Die Würdigung erkannte den Fehler – und schrieb ihn
+    als Fliesstext ins Dokument, während der Code weiter mit «keiner» rechnete.
+    Die Stufen-Sperre griff damit genau dort nicht, wo die Kartierung sich
+    geirrt hatte: im gefährlichsten Fall."""
+    kart = {"eingriff": {"tiefe": "keiner"}}
+    wuerd = {"eingriff_korrigiert": {"tiefe": "schwer", "begruendung": "Weil X."}}
+    tiefe, abweichung = kette.eingriff_von(kart, wuerd)
+    assert tiefe == "schwer"
+    assert abweichung["kartierung"] == "keiner"
+
+    befunde = [{"taetigkeit": {"taetigkeit": "T"}, "kartierung": kart,
+                "wuerdigung": dict(wuerd, ergebnis="nicht zulässig")}]
+    meldungen = kette.sperren(befunde)
+    # Der Widerspruch wird ausgewiesen …
+    assert any("Massgeblich ist die Würdigung" in m["meldung"] for m in meldungen)
+    # … und die Sperre rechnet mit der korrigierten Einstufung.
+    assert any("keine Grundlage auf Stufe «gesetz»" in m["meldung"]
+               for m in meldungen)
+
+
+def test_ohne_korrektur_bleibt_die_kartierung_massgeblich():
+    kart = {"eingriff": {"tiefe": "leicht"}}
+    assert kette.eingriff_von(kart, {}) == ("leicht", None)
+    assert kette.eingriff_von(kart, {"eingriff_korrigiert": {"tiefe": "leicht"}}) \
+        == ("leicht", None)
+    # Unsinn wird nicht uebernommen.
+    assert kette.eingriff_von(kart, {"eingriff_korrigiert": {"tiefe": "sehr"}}) \
+        == ("leicht", None)
+
+
+def test_systemsprache_erreicht_den_leser_nie():
+    """«Eingabefeld», «Eingabeobjekt» – der Leser sieht weder Felder noch
+    Objekte. Derselbe Fehler wie bei der Konsolidierung der Fachprüfung."""
+    assert kette.spricht_ueber_das_system(
+        "Obwohl das Eingabefeld 'eingriff.tiefe' auf 'keiner' gesetzt wurde")
+    assert kette.spricht_ueber_das_system("Die Eingriffseinstufung im Eingabeobjekt")
+    assert not kette.spricht_ueber_das_system("Art. 36 BV verlangt ein Gesetz")
+
+    w = {"geprueft_an": [
+        "Art. 36 BV – weil Grundrechte schwer eingeschränkt werden",
+        "Obwohl das Eingabefeld 'eingriff.tiefe' auf 'keiner' gesetzt wurde, gilt …",
+        "Legalitätsprinzip (Art. 5 Abs. 1 BV): Erfordernis einer Grundlage"]}
+    m = kette.massstaebe(w)
+    assert m == ["Art. 36 BV", "Legalitätsprinzip (Art. 5 Abs. 1 BV)"]
+
+
+# ---- Der Begründungsgraph ------------------------------------------------ #
+
+def test_der_begruendungsgraph_zeigt_den_ganzen_weg():
+    """Die Stationen sind keine Darstellungsidee, sondern der Ablauf selbst –
+    jede ist das Ergebnis einer Schicht. Sichtbar gemacht, kann der Leser eine
+    Empfehlung bis zu ihrem Ursprung zurückverfolgen und dort widersprechen."""
+    eintrag = {
+        "taetigkeit": {"taetigkeit": "Personen identifizieren",
+                       "betroffene": "Passantinnen und Passanten"},
+        "kartierung": {"eingriff": {"tiefe": "schwer",
+                                    "grundrechte": ["Art. 13 BV"]},
+                       "grundlagen": [], "luecke": {"art": "rechtsluecke"}},
+        "gap": {"bestaetigt": True, "erforderliche_normstufe": "gesetz"},
+        "wuerdigung": {"ergebnis": "nicht zulässig", "sicherheit": "eindeutig",
+                       "geprueft_an": ["Art. 36 BV"]},
+        "optionen": {"optionen": [{"option": "Anlassbezogen vorgehen",
+                                   "herkunft": "aus bestehender Norm abgeleitet"}]},
+    }
+    stationen = [s for s, _ in kette.begruendungsgraph(eintrag)]
+    assert stationen == ["Tätigkeit", "Betroffene", "Berührte Rechte", "Eingriff",
+                         "Prüfmassstab", "Würdigung", "Rechtslage", "Alternative"]
+    # Und die Reihenfolge folgt dem Katalog der Stationen.
+    reihenfolge = [kette.STATIONEN.index(s) for s in stationen]
+    assert reihenfolge == sorted(reihenfolge)
+
+
+def test_leere_stationen_fallen_weg():
+    """Eine leere Station wäre eine Behauptung über etwas, das nicht geprüft
+    wurde."""
+    mager = {"taetigkeit": {"taetigkeit": "T"}, "kartierung": {}, "wuerdigung": {},
+             "gap": {}, "optionen": {}}
+    assert [s for s, _ in kette.begruendungsgraph(mager)] == ["Tätigkeit"]
+
+
+def test_die_folgen_haengen_an_ihrer_taetigkeit():
+    """Eine Empfehlung ohne Weg dorthin ist eine Behauptung."""
+    befunde = [
+        {"taetigkeit": {"taetigkeit": "A"},
+         "kartierung": {"eingriff": {"tiefe": "schwer"}, "grundlagen": []},
+         "wuerdigung": {"ergebnis": "nicht zulässig"}, "gap": {}, "optionen": {}},
+        {"taetigkeit": {"taetigkeit": "B"},
+         "kartierung": {"eingriff": {"tiefe": "keiner"}, "grundlagen": [],
+                        "luecke": {"art": "keine"}},
+         "wuerdigung": {"ergebnis": "zulässig"}, "gap": {}, "optionen": {}},
+    ]
+    text = kette.graph_als_text(befunde, kette.sperren(befunde))
+    bloecke = text.split("\n\n")
+    assert len(bloecke) == 2
+    assert "Folge (Muss)" in bloecke[0]
+    assert "Folge" not in bloecke[1], "B ist sauber – keine Folge"
+
+
+def test_der_graph_steht_im_dokument():
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Ein Register führen"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "leicht"},
+            "grundlagen": [{"erlass": "Registergesetz", "normstufe": "gesetz",
+                            "ermaechtigt": True}], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig",
+                                         "sicherheit": "eindeutig",
+                                         "geprueft_an": ["Art. 5 Abs. 1 BV"],
+                                         "begruendung": "Gedeckt."}]},
+    }
+    text = kette.zu_kapiteln(lauf)["konsequenzen"]
+    for station in ("Tätigkeit:", "Eingriff:", "Prüfmassstab:", "Würdigung:",
+                    "Rechtslage:"):
+        assert station in text, station
+    assert "Begründung – " in text        # die Prosa ergaenzt den Graphen

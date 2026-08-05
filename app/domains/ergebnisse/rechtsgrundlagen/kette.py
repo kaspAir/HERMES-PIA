@@ -26,6 +26,7 @@ was nachprüfbar ist, entscheidet der Code – insbesondere die Sperren unten.
 """
 import json
 import logging
+import re
 
 from app.domains.llm.errors import PseudoFehler
 from app.domains.skills import compose_system, load_skills
@@ -69,6 +70,13 @@ EINGRIFF_MINDESTSTUFE = {
     "keiner": "",
 }
 
+# Sprachlich korrekt: aus «keiner» wurde durch blosses Anhaengen «keinerer».
+EINGRIFF_TEXT = {
+    "schwer": "schwerer Eingriff in Rechte und Pflichten",
+    "leicht": "leichter Eingriff in Rechte und Pflichten",
+    "keiner": "kein Eingriff in Rechte und Pflichten",
+}
+
 # Normen, die Grundrechte GARANTIEREN und Eingriffe BEGRENZEN. Sie sind nie die
 # Ermaechtigung fuer einen Eingriff. Gemessen: BV und EMRK standen als
 # «Bestehende Rechtsgrundlage» Nr. 01 und 02 ueber einem Ueberwachungsvorhaben -
@@ -91,6 +99,67 @@ SICHERHEITSGRADE = ("eindeutig", "überwiegend wahrscheinlich",
 OPTION_HERKUNFT = ("aus bestehender Norm abgeleitet", "bekannte Praxis",
                    "hypothetische Gesetzgebungsoption",
                    "Schlussfolgerung dieser Analyse")
+
+
+# Woran man erkennt, dass ein Text ueber die ANALYSE statt ueber das Vorhaben
+# spricht. Gemessen stand im Dokument: «Obwohl das Eingabefeld 'eingriff.tiefe'
+# auf 'keiner' gesetzt wurde …» - der Leser sieht weder Felder noch Objekte.
+_SYSTEMSPRACHE = re.compile(
+    r"eingabefeld|eingabeobjekt|eingangsobjekt|"
+    r"\bfeld\s*['\u2019\"]|\bschema\b|\bjson\b|\btoken\b|"
+    r"\bnr\.?\s*\d+\s*(?:des|im)\s*eingang",
+    re.IGNORECASE)
+
+
+def spricht_ueber_das_system(text):
+    """Redet der Text ueber die Analyse statt ueber das Vorhaben?"""
+    return bool(_SYSTEMSPRACHE.search(str(text or "")))
+
+
+def massstaebe(wuerdigung):
+    """Die angelegten Pruefmassstaebe – kurz und ohne Systemsprache.
+
+    Das Modell schrieb hierher ganze Absaetze samt Meta-Kommentar ueber die
+    Eingabedaten. Ein Massstab ist eine Norm, kein Aufsatz: was lang ist oder
+    ueber die Analyse spricht, gehoert nicht in diese Zeile.
+    """
+    raus = []
+    for m in (wuerdigung or {}).get("geprueft_an") or []:
+        t = str(m or "").strip()
+        if not t or spricht_ueber_das_system(t):
+            continue
+        # Nur den Kopf bis zum ersten Doppelpunkt/Gedankenstrich: dort steht
+        # die Norm, danach beginnt die Begruendung.
+        kopf = re.split(r"\s[–—-]\s|:\s", t, maxsplit=1)[0].strip(" .")
+        if kopf and len(kopf) <= 120:
+            raus.append(kopf)
+    return raus
+
+
+def eingriff_von(kartierung, wuerdigung):
+    """Die MASSGEBLICHE Eingriffstiefe – und ob die Schichten sich einig sind.
+
+    Rueckgabe: (tiefe, abweichung_oder_None)
+
+    Die Kartierung sieht eine Taetigkeit zuerst, die Wuerdigung sieht sie
+    genauer. Gemessen stufte die Kartierung eine flaechendeckende
+    Videoueberwachung als «keiner» ein; die Wuerdigung erkannte den Fehler und
+    schrieb ihn als Fliesstext ins Dokument - waehrend der Code weiter mit
+    «keiner» rechnete und die Stufen-Sperre gar nicht greifen konnte.
+
+    Massgeblich ist die spaetere, genauere Einschaetzung. Der Widerspruch
+    verschwindet aber nicht: er wird als Befund ausgewiesen.
+    """
+    aus_kart = str((kartierung or {}).get("eingriff", {}).get("tiefe", "")).strip().lower()
+    korrektur = (wuerdigung or {}).get("eingriff_korrigiert") or {}
+    aus_wuerd = str(korrektur.get("tiefe", "")).strip().lower()
+    if aus_wuerd and aus_wuerd in EINGRIFF_MINDESTSTUFE and aus_wuerd != aus_kart:
+        return aus_wuerd, {
+            "kartierung": aus_kart or "(nicht bestimmt)",
+            "wuerdigung": aus_wuerd,
+            "begruendung": str(korrektur.get("begruendung", "")).strip(),
+        }
+    return aus_kart, None
 
 
 def sicherheit_von(eintrag, vorgabe="offen"):
@@ -131,7 +200,6 @@ def stufe_reicht(gefunden, erforderlich):
 
 def _json_aus(roh):
     """(Daten, Grund) – Meldungen ohne Implementierungsbegriffe."""
-    import re
     if not roh or not str(roh).strip():
         return None, "Die Analyse hat kein Ergebnis geliefert."
     if str(roh).count("{") > str(roh).count("}"):
@@ -389,6 +457,14 @@ _SYSTEM_WUERDIGUNG = (
     "- Du erfindest keine Gerichtsentscheide und keine Fundstellen.\n"
     "- Deine Einschätzung ist BERATEND und ersetzt den Rechtsdienst nicht. "
     "Sag das im Feld 'vorbehalt'.\n"
+    "- Hältst du die mitgelieferte Eingriffseinstufung für unzutreffend, "
+    "KORRIGIERE sie im Feld 'eingriff_korrigiert' mit kurzer Begründung. "
+    "Schreibe das NICHT in den Fliesstext: der Leser sieht die Zwischenschritte "
+    "dieser Analyse nicht, und ein Hinweis auf Felder oder Eingabedaten ist für "
+    "ihn wertlos. Deine Texte sprechen über das VORHABEN, nie über diese "
+    "Analyse.\n"
+    "- 'geprueft_an' nennt die angelegten MASSSTÄBE knapp – die Norm, nicht die "
+    "Begründung. Die Begründung gehört in 'pruefung' und 'begruendung'.\n"
     "- JEDE Aussage traegt ihren SICHERHEITSGRAD: 'eindeutig' (die Rechtslage "
     "ist klar), 'überwiegend wahrscheinlich', 'vertretbare Auffassung' (andere "
     "Lesart begründbar) oder 'offen'. Im Recht ist dieser Unterschied der halbe "
@@ -412,6 +488,7 @@ _SCHEMA_WUERDIGUNG = (
     '"ergebnis":"zulässig|bedingt zulässig|nicht zulässig",'
     '"sicherheit":"eindeutig|überwiegend wahrscheinlich|vertretbare Auffassung|offen",'
     '"stuetzt_sich_auf":[""],'
+    '"eingriff_korrigiert":{"tiefe":"schwer|leicht|keiner","begruendung":""},'
     '"kerngehalt_verletzt":false,'
     '"kerngehalt_sicherheit":"eindeutig|überwiegend wahrscheinlich|vertretbare Auffassung|offen",'
     '"kerngehalt_stuetzt_sich_auf":[""],'
@@ -521,7 +598,19 @@ def sperren(befunde):
         wuerd = eintrag.get("wuerdigung") or {}
         gap = eintrag.get("gap") or {}
 
-        eingriff = str((kart.get("eingriff") or {}).get("tiefe", "")).strip().lower()
+        # MASSGEBLICH ist die spaetere, genauere Einschaetzung. Rechnete man
+        # weiter mit der Kartierung, griffe die Stufen-Sperre genau dort nicht,
+        # wo die Kartierung sich geirrt hat - also im gefaehrlichsten Fall.
+        eingriff, abweichung = eingriff_von(kart, wuerd)
+        if abweichung:
+            raus.append({
+                "gewicht": "Vorbehalt", "taetigkeit": name,
+                "meldung": (
+                    f"Die Kartierung stufte den Eingriff als "
+                    f"«{abweichung['kartierung']}» ein, die vertiefte Würdigung "
+                    f"als «{abweichung['wuerdigung']}». Massgeblich ist die "
+                    f"Würdigung. {abweichung['begruendung']}").strip(),
+            })
         # Eine NICHT BESTIMMTE Eingriffstiefe ist nicht «keiner». Ohne diese
         # Unterscheidung wuerde jede Taetigkeit, deren Eingriff das Modell nicht
         # einordnen konnte, still als harmlos durchgehen - und die Sperre unten
@@ -571,7 +660,8 @@ def sperren(befunde):
                              "desto höher die erforderliche Normstufe.")
                 raus.append({
                     "gewicht": "Muss", "taetigkeit": name,
-                    "meldung": (f"Für diese Tätigkeit ({eingriff}er Eingriff) ist "
+                    "meldung": (f"Für diese Tätigkeit "
+                                f"({EINGRIFF_TEXT.get(eingriff, eingriff)}) ist "
                                 f"keine Grundlage auf Stufe «{noetig}» "
                                 f"nachgewiesen. {warum}"),
                 })
@@ -842,7 +932,13 @@ def zu_kapiteln(lauf):
         }]
 
     # ---- Beurteilung der Konsequenzen ----------------------------------- #
-    zeilen = []
+    # Der BEGRUENDUNGSGRAPH: die Kette Taetigkeit -> Recht -> Massstab ->
+    # Wuerdigung -> Rechtslage -> Alternative -> Folge, je Taetigkeit. Diese
+    # Stationen durchlaeuft die Analyse ohnehin; sichtbar gemacht kann der
+    # Leser eine Empfehlung bis zu ihrem Ursprung zurueckverfolgen und dort
+    # widersprechen. Vorher stand hier ein Absatz je Taetigkeit, in dem alles
+    # vermischt war.
+    zeilen = [graph_als_text(befunde, meldungen)] if befunde else []
     for e in befunde:
         w = e["wuerdigung"]
         if not w.get("ergebnis"):
@@ -850,13 +946,10 @@ def zu_kapiteln(lauf):
         # Der angelegte Massstab und der Sicherheitsgrad gehoeren an die
         # Aussage, nicht in eine Fussnote: «nicht zulaessig» ohne beides liest
         # sich wie ein Urteil statt wie eine Einschaetzung.
-        massstab = ", ".join(str(m) for m in (w.get("geprueft_an") or [])
-                             if str(m).strip())
-        zeilen.append(
-            f"{_text(e['taetigkeit'].get('taetigkeit'))}: {w['ergebnis']} "
-            f"(Sicherheit: {sicherheit_von(w)}"
-            f"{f'; geprüft an: {massstab}' if massstab else ''}). "
-            f"{_text(w.get('begruendung'))}{_quellen(w)}")
+        # Die ausformulierte Begruendung ergaenzt den Graphen, sie ersetzt
+        # ihn nicht: der Graph zeigt den Weg, die Begruendung traegt ihn.
+        zeilen.append(f"Begründung – {_text(e['taetigkeit'].get('taetigkeit'))}: "
+                      f"{_text(w.get('begruendung'))}")
     if muss:
         zeilen.append("Zwingend zu klären, bevor dieses Vorhaben weitergeführt "
                       "werden kann: " + " ".join(m["meldung"] for m in muss))
@@ -895,3 +988,112 @@ def zu_kapiteln(lauf):
         "empfehlung": empfehlung,
         "_sperren": meldungen,
     }
+
+
+# ======================================================================== #
+#  Der Begründungsgraph
+# ======================================================================== #
+
+# Die Stationen, die eine Aussage dieser Analyse durchläuft. Sie sind keine
+# Darstellungsidee, sondern der Ablauf selbst: jede Station ist das Ergebnis
+# einer Schicht. Sichtbar gemacht, kann der Leser eine Empfehlung bis zur
+# Tätigkeit zurückverfolgen, aus der sie stammt - und dort widersprechen, wo
+# er anderer Meinung ist. Ohne diese Kette bleibt nur «vertraue dem Ergebnis».
+STATIONEN = ("Tätigkeit", "Betroffene", "Berührte Rechte", "Eingriff",
+             "Prüfmassstab", "Würdigung", "Rechtslage", "Alternative", "Folge")
+
+
+def begruendungsgraph(eintrag):
+    """Die Begründungskette EINER Tätigkeit als geordnete Stationen.
+
+    Rückgabe: [(Station, Inhalt)] – leere Stationen fallen weg, denn eine
+    leere Station wäre eine Behauptung über etwas, das nicht geprüft wurde.
+    """
+    t = eintrag.get("taetigkeit") or {}
+    kart = eintrag.get("kartierung") or {}
+    wuerd = eintrag.get("wuerdigung") or {}
+    gap = eintrag.get("gap") or {}
+    opt = eintrag.get("optionen") or {}
+    tiefe, abweichung = eingriff_von(kart, wuerd)
+
+    stationen = [("Tätigkeit", _text(t.get("taetigkeit")))]
+
+    betroffen = ", ".join(x for x in (t.get("betroffene"), t.get("daten")) if x)
+    if betroffen:
+        stationen.append(("Betroffene", betroffen))
+
+    rechte = [str(r) for r in (kart.get("eingriff") or {}).get("grundrechte") or []
+              if str(r).strip()]
+    if rechte:
+        stationen.append(("Berührte Rechte", ", ".join(rechte)))
+
+    if tiefe:
+        eintragstext = EINGRIFF_TEXT.get(tiefe, f"Eingriff: {tiefe}")
+        if abweichung:
+            eintragstext += (f" (die Kartierung sah «{abweichung['kartierung']}»; "
+                             f"massgeblich ist die Würdigung)")
+        noetig = EINGRIFF_MINDESTSTUFE.get(tiefe, "")
+        if noetig:
+            eintragstext += f" · erforderliche Normstufe: {noetig}"
+        stationen.append(("Eingriff", eintragstext))
+
+    mass = massstaebe(wuerd)
+    if mass:
+        stationen.append(("Prüfmassstab", ", ".join(mass)))
+
+    if wuerd.get("ergebnis"):
+        stationen.append(("Würdigung",
+                          f"{wuerd['ergebnis']} (Sicherheit: "
+                          f"{sicherheit_von(wuerd)}){_quellen(wuerd)}"))
+
+    tragend = [g.get("erlass") for g in (kart.get("grundlagen") or [])
+               if isinstance(g, dict) and g.get("ermaechtigt")
+               and not ist_schrankennorm(g.get("erlass"))]
+    art = str((kart.get("luecke") or {}).get("art", "")).lower()
+    if tragend:
+        stationen.append(("Rechtslage", "Ermächtigende Grundlage: "
+                          + ", ".join(str(x) for x in tragend if x)))
+    elif gap.get("bestaetigt"):
+        stufe = gap.get("erforderliche_normstufe", "")
+        organ, referendum = NORMSTUFE_VERFAHREN.get(str(stufe).lower(), ("", ""))
+        stationen.append(("Rechtslage",
+                          f"Rechtslücke bestätigt · zu schaffen auf Stufe "
+                          f"{stufe or '(offen)'}"
+                          f"{f' ({organ}, {referendum})' if organ else ''}"))
+    elif art in ("rechercheluecke", "informationsluecke"):
+        stationen.append(("Rechtslage", f"Offen – {art} (nicht geprüft ist nicht "
+                                        f"dasselbe wie nicht vorhanden)"))
+    elif art == "rechtsluecke":
+        stationen.append(("Rechtslage", "Keine ermächtigende Grundlage gefunden"))
+
+    for o in (opt.get("optionen") or []):
+        if isinstance(o, dict) and o.get("option"):
+            herkunft = str(o.get("herkunft", "")).strip() or \
+                "Schlussfolgerung dieser Analyse"
+            stationen.append(("Alternative",
+                              f"{_text(o['option'])} [{herkunft} · Sicherheit: "
+                              f"{sicherheit_von(o)}]"))
+
+    return stationen
+
+
+def graph_als_text(befunde, meldungen=None):
+    """Der Graph aller Tätigkeiten als lesbarer Block.
+
+    Die Folgen (Muss-/Vorbehaltsbefunde) hängen an der Tätigkeit, aus der sie
+    stammen – das ist der Punkt der ganzen Übung: eine Empfehlung ohne Weg
+    dorthin ist eine Behauptung.
+    """
+    nach_taetigkeit = {}
+    for m in meldungen or []:
+        nach_taetigkeit.setdefault(m.get("taetigkeit"), []).append(m)
+
+    bloecke = []
+    for eintrag in befunde or []:
+        stationen = begruendungsgraph(eintrag)
+        name = (eintrag.get("taetigkeit") or {}).get("taetigkeit")
+        for m in nach_taetigkeit.get(name, []):
+            stationen.append((f"Folge ({m['gewicht']})", m["meldung"]))
+        bloecke.append("\n".join(f"{station}: {inhalt}"
+                                  for station, inhalt in stationen))
+    return "\n\n".join(bloecke)
