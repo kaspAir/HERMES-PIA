@@ -32,24 +32,25 @@
           {% endfor %}
         </select>
       </div>
-      <button type="submit" class="btn-primary" style="margin-top:12px">
-        {{ 'Entwurf neu erzeugen' if entwurf else 'Entwurf erzeugen' }}
-      </button>
-    </form>
-
-    {# Die vollstaendige Analyse: alle vier Schichten, taetigkeitsweise. Sie
-       braucht mehrere Modellaufrufe und laeuft deshalb schrittweise. #}
-    <form method="post" style="margin-top:6px"
-          action="{{ url_for('ui.rechtsgrundlagen_kette', projekt_id=projekt.id) }}">
-      <input type="hidden" name="kanton" value="{{ entwurf.kanton if entwurf else '' }}">
-      {% for e in (entwurf.ebene or '').split(',') if entwurf and entwurf.ebene %}
-        <input type="hidden" name="ebene" value="{{ e }}">
-      {% endfor %}
-      <button type="submit" class="btn-primary">Vollständige Analyse durchführen</button>
-      <span class="fussnote">
-        Prüft je Tätigkeit des Vorhabens die Grundlage, die Lücke, die
-        Zulässigkeit und – wo nötig – die Handlungsoptionen.
-      </span>
+      {# BEIDE Knoepfe gehoeren in DIESES Formular. Der Knopf fuer die
+         vollstaendige Analyse stand vorher in einem eigenen und schickte den
+         GESPEICHERTEN Kanton mit - wer St. Gallen auswaehlte und direkt die
+         Analyse startete, schickte leer, und das Dokument meldete «Kanton
+         nicht spezifiziert». Mit formaction geht die aktuelle Auswahl mit. #}
+      <div style="margin-top:12px">
+        <button type="submit" class="btn-primary">
+          {{ 'Entwurf neu erzeugen' if entwurf else 'Entwurf erzeugen' }}
+        </button>
+        <button type="submit" class="btn-primary"
+                formaction="{{ url_for('ui.rechtsgrundlagen_kette', projekt_id=projekt.id) }}">
+          Vollständige Analyse durchführen
+        </button>
+      </div>
+      <p class="fussnote">
+        Die vollständige Analyse prüft je Tätigkeit des Vorhabens die Grundlage,
+        die Lücke, die Zulässigkeit und – wo nötig – die Handlungsoptionen. Sie
+        verwendet die oben gewählte Ebene und den gewählten Kanton.
+      </p>
     </form>
   </section>
 

@@ -334,7 +334,7 @@ _SYSTEM_KARTIERUNG = (
 _SCHEMA_KARTIERUNG = (
     '{"kartierungen":[{"nr":0,'
     '"grundrechtseingriff_denkbar":true,"weichenbegruendung":"",'
-    '"fachrecht":[""],'
+    '"fachrecht":[{"erlass":"","anforderung":""}],'
     '"grundlagen":[{"erlass":"","fundstelle":"","normstufe":'
     '"verfassung|gesetz|verordnung|richtlinie","status":"in Kraft|bevorstehend|hängig",'
     '"ermaechtigt":true,"geltung":""}],'
@@ -375,8 +375,13 @@ def kartiere(liste, wissen, llm, gefundene=None, tenant_id=None, skills_dir=None
         "greift in der Regel in keine Grundrechte ein. Lautet die Antwort "
         "NEIN, setze 'grundrechtseingriff_denkbar' auf false, begründe das "
         "kurz und nenne unter 'fachrecht' das einschlägige Spezialrecht "
-        "(etwa das Beschaffungs-, Archiv- oder Organisationsrecht). Der "
-        "Prüfpfad ist dann viel kürzer – das ist gewollt.\n"
+        "(etwa das Beschaffungs-, Archiv- oder Organisationsrecht) – je Erlass "
+        "MIT der konkreten Anforderung, die er an dieses Vorhaben stellt "
+        "(zum Beispiel eine Verfahrensart, eine Frist, eine Meldepflicht oder "
+        "einen Schwellenwert). Ein Erlassname allein hilft der Projektleitung "
+        "nicht weiter. Kennst du die Anforderung nicht sicher, lass das Feld "
+        "leer statt zu raten. Der Prüfpfad ist dann viel kürzer – das ist "
+        "gewollt.\n"
         "Bestimme je Tätigkeit sodann, wie stark sie in Rechte und Pflichten "
         "eingreift – 'schwer', 'leicht' oder 'keiner' – und begründe das. Trage "
         "unter 'grundrechte' NUR ein, was tatsächlich berührt ist; die meisten "
@@ -561,6 +566,11 @@ _SYSTEM_OPTIONEN = (
     "zu schaffen), und ihre Grenzen.\n"
     "- Benenne auch die NICHT gangbaren Wege – das schützt vor dem zweiten "
     "Anlauf in dieselbe Sackgasse.\n"
+    "- HÖCHSTENS DREI Optionen, und sie müssen sich WIRKLICH unterscheiden – "
+    "im Ansatz, nicht in der Formulierung. «Bestehende Grundlage nutzen» und "
+    "«bestehende Grundlage präzisieren» sind eine Option, nicht zwei. Fasse "
+    "dich je Option auf zwei bis drei Sätze; die Herleitung steht anderswo. "
+    "Findest du nur eine gangbare Option, nenne eine.\n"
     "- Deine Vorschläge sind BERATEND: jede gewählte Option ist erneut zu "
     "würdigen und mit dem Rechtsdienst abzustimmen.\n"
     "- JEDE Option legt ihre HERKUNFT offen: 'aus bestehender Norm abgeleitet' "
@@ -1090,7 +1100,24 @@ def zu_kapiteln(lauf):
     # alles Dinge, die in den Kapiteln 2–5 bereits stehen. Für den Entscheid
     # eines Projektausschusses genügen fünf Angaben je Tätigkeit; der
     # zurückgelegte Prüfpfad hält die Nachvollziehbarkeit in einer Zeile.
-    zeilen = [managemententscheid(befunde, meldungen)] if befunde else []
+    # Eine ÜBERSICHT vorweg. Mit der gestiegenen Detailtiefe ist das Dokument
+    # schwerer zu ueberblicken; wer entscheiden muss, braucht zuerst die Zahl
+    # und die Rangfolge, dann die Einzelheiten.
+    zeilen = []
+    if befunde:
+        offene = [m for m in meldungen if m["gewicht"] == "Muss"]
+        vorbehalte = [m for m in meldungen if m["gewicht"] == "Vorbehalt"]
+        kopf = [f"Geprüfte Tätigkeiten: {len(befunde)}",
+                f"Zwingend zu klären: {len({m['taetigkeit'] for m in offene})}",
+                f"Offene Vorbehalte: {len(vorbehalte)}"]
+        if offene:
+            kopf.append("Wichtigste offene Punkte:")
+            for i, m in enumerate(offene[:5], 1):
+                kopf.append(f"  {i}. {m['taetigkeit']} – {m['meldung']}")
+            if len(offene) > 5:
+                kopf.append(f"  … und {len(offene) - 5} weitere, siehe unten.")
+        zeilen.append("\n".join(kopf))
+        zeilen.append(managemententscheid(befunde, meldungen))
     konsequenzen = "\n".join(zeilen) or (
         "Die Konsequenzen wurden nicht beurteilt. Dieses Dokument ist insoweit "
         "unvollständig und ohne die Beurteilung nicht freigabefähig.")
@@ -1155,17 +1182,25 @@ def zu_kapiteln(lauf):
     for e in befunde:
         name = _text((e.get("taetigkeit") or {}).get("taetigkeit"))
         for f in (e["kartierung"].get("fachrecht") or []):
-            schluessel = str(f).strip()
-            if not schluessel or schluessel.lower() in gesehen_fach:
+            # Der Vertrag kennt jetzt Erlass UND Anforderung; aeltere Laeufe
+            # lieferten nur den Namen. Beides lesen, nichts erfinden.
+            erlass = str((f.get("erlass") if isinstance(f, dict) else f) or "").strip()
+            # «or ""» ist nicht Kosmetik: ohne das wird aus einem fehlenden
+            # Feld die Zeichenkette «None» - und die stuende im Dokument.
+            anforderung = str((f.get("anforderung") or "")
+                              if isinstance(f, dict) else "").strip()
+            if not erlass or erlass.lower() in gesehen_fach:
                 continue
-            gesehen_fach.add(schluessel.lower())
-            compliance.append({
-                "compliance": schluessel,
-                "beschreibung": (f"Einschlägig für: {name}. Die Anforderungen "
-                                 f"dieses Erlasses sind im weiteren Verlauf "
-                                 f"einzuhalten; diese Analyse hat sie nicht "
-                                 f"im Einzelnen erhoben."),
-            })
+            gesehen_fach.add(erlass.lower())
+            # Eine blosse Auflistung «einschlaegig, aber nicht erhoben» hilft
+            # niemandem. Steht die Anforderung da, steht sie VORNE.
+            if anforderung:
+                text = f"{anforderung} Einschlägig für: {name}."
+            else:
+                text = (f"Einschlägig für: {name}. Welche Anforderung dieser "
+                        f"Erlass an das Vorhaben stellt, wurde nicht erhoben – "
+                        f"das ist vor der Umsetzung zu klären.")
+            compliance.append({"compliance": erlass, "beschreibung": text})
     if not compliance:
         compliance = [{
             "compliance": "Kein Fachrecht mit Produktbezug erhoben",

@@ -1149,7 +1149,8 @@ def test_product_compliance_kommt_aus_dem_fachrecht():
     }
     c = kette.zu_kapiteln(lauf)["product_compliance"]
     assert [z["compliance"] for z in c] == ["BöB (SR 172.056.1)", "IVöB 2019"]
-    assert "nicht im Einzelnen erhoben" in c[0]["beschreibung"]
+    # Ohne genannte Anforderung sagt der Eintrag, dass sie fehlt.
+    assert "wurde nicht erhoben" in c[0]["beschreibung"]
 
 
 def test_ohne_fachrecht_wird_nichts_behauptet():
@@ -1175,3 +1176,116 @@ def test_luecken_werden_je_taetigkeit_zusammengefasst():
     luecken = kette.zu_kapiteln(lauf)["identifizierte_luecken"]
     assert len(luecken) == 1
     assert luecken[0]["luecke"] == "Eine Tätigkeit"
+
+
+# ---- Lesbarkeit und Substanz --------------------------------------------- #
+
+def test_der_kanton_geht_aus_der_aktuellen_auswahl_mit():
+    """Gemessen: der Nutzer wählte St. Gallen und startete die Analyse – das
+    Dokument meldete «Kanton nicht spezifiziert». Der Knopf stand in einem
+    EIGENEN Formular und schickte den GESPEICHERTEN Kanton mit, nicht den
+    gewählten."""
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+    v = Path(BASE_DIR, "app", "templates", "rechtsgrundlagen.html").read_text(
+        encoding="utf-8")
+    # Beide Knoepfe in EINEM Formular, der zweite ueber formaction.
+    assert "formaction=" in v
+    assert 'name="kanton" value="{{ entwurf.kanton' not in v
+
+
+def test_die_uebersicht_steht_vorne():
+    """Mit der gestiegenen Detailtiefe braucht der Leser zuerst die Zahl und
+    die Rangfolge, dann die Einzelheiten."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "A"}, {"taetigkeit": "B"}]},
+        "kartierung": {"kartierungen": [
+            {"nr": 0, "eingriff": {"tiefe": "keiner"}, "luecke": {"art": "keine"},
+             "grundlagen": [{"erlass": "G", "normstufe": "gesetz",
+                             "ermaechtigt": True}]},
+            {"nr": 1, "eingriff": {"tiefe": "schwer"}, "grundlagen": [],
+             "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"},
+                                        {"nr": 1, "ergebnis": "bedingt zulässig"}]},
+    }
+    text = kette.zu_kapiteln(lauf)["konsequenzen"]
+    assert text.startswith("Geprüfte Tätigkeiten: 2")
+    assert "Zwingend zu klären: 1" in text
+    assert "Wichtigste offene Punkte:" in text
+    # Die Uebersicht steht VOR den Einzelbloecken.
+    assert text.index("Wichtigste offene Punkte") < text.index("Tätigkeit: A")
+
+
+def test_die_uebersicht_deckelt_die_liste_und_sagt_es():
+    """Eine gekürzte Liste darf nie wie eine vollständige aussehen."""
+    n = 8
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": f"T{i}"} for i in range(n)]},
+        "kartierung": {"kartierungen": [
+            {"nr": i, "eingriff": {"tiefe": "schwer"}, "grundlagen": [],
+             "luecke": {"art": "keine"}} for i in range(n)]},
+        "wuerdigung": {"wuerdigungen": [{"nr": i, "ergebnis": "bedingt zulässig"}
+                                        for i in range(n)]},
+    }
+    text = kette.zu_kapiteln(lauf)["konsequenzen"]
+    assert "und 3 weitere, siehe unten" in text
+
+
+def test_fachrecht_nennt_seine_anforderung():
+    """«Einschlägig, aber nicht im Einzelnen erhoben» hilft niemandem. Steht
+    die Anforderung da, steht sie VORNE."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Beschaffen"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "grundrechtseingriff_denkbar": False,
+            "fachrecht": [{"erlass": "IVöB 2019",
+                           "anforderung": "Offenes Verfahren ab Schwellenwert."}],
+            "eingriff": {"tiefe": "keiner"}, "grundlagen": [],
+            "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    z = kette.zu_kapiteln(lauf)["product_compliance"][0]
+    assert z["compliance"] == "IVöB 2019"
+    assert z["beschreibung"].startswith("Offenes Verfahren ab Schwellenwert.")
+
+
+def test_fachrecht_ohne_anforderung_sagt_dass_sie_fehlt():
+    """Nicht erhoben ist nicht unbedenklich."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Beschaffen"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "fachrecht": [{"erlass": "IVöB 2019"}],
+            "eingriff": {"tiefe": "keiner"}, "grundlagen": [],
+            "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    z = kette.zu_kapiteln(lauf)["product_compliance"][0]
+    assert "nicht erhoben" in z["beschreibung"]
+    assert "vor der Umsetzung zu klären" in z["beschreibung"]
+
+
+def test_aeltere_laeufe_mit_blossem_erlassnamen_bleiben_lesbar():
+    """Der Vertrag hat sich geändert – ein laufender Entwurf darf daran nicht
+    zerbrechen."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Beschaffen"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "fachrecht": ["BöB (SR 172.056.1)"],
+            "eingriff": {"tiefe": "keiner"}, "grundlagen": [],
+            "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    z = kette.zu_kapiteln(lauf)["product_compliance"][0]
+    assert z["compliance"] == "BöB (SR 172.056.1)"
+
+
+def test_hoechstens_drei_klar_verschiedene_optionen(skills_dir):
+    """Die Vorschläge überlappten stark – «bestehende Grundlage nutzen» und
+    «bestehende Grundlage präzisieren» sind eine Option, nicht zwei."""
+    llm = _LLM({"faelle": []})
+    kette.entwickle_optionen([{"nr": 0, "taetigkeit": "T"}], llm,
+                             skills_dir=skills_dir)
+    assert "HÖCHSTENS DREI Optionen" in llm.system
+    assert "WIRKLICH unterscheiden" in llm.system
+    assert "zwei bis drei Sätze" in llm.system
