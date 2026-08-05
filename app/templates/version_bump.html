@@ -43,7 +43,11 @@
           {% endfor %}
         </ul>
       {% else %}
-        <p class="vb-hint">Keine Änderungen seit dem letzten Download erkannt.</p>
+        {# Die Meldung nennt den nächsten Schritt – beide sind zulässig. #}
+        <p class="vb-hint">Seit dem letzten Herunterladen hat sich am Inhalt
+          nichts geändert. Sie können trotzdem eine neue Version anlegen, wenn
+          etwas ausserhalb des Dokuments dafür spricht – oder das Fenster
+          schliessen und den bisherigen Stand weiterverwenden.</p>
       {% endif %}
 
       <label for="bemerkungen" class="vb-label">

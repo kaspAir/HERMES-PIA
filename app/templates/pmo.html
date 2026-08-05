@@ -135,7 +135,7 @@
     if (!file) return;
     setStatus('Lade «' + file.name + '» hoch …');
     var fr = new FileReader();
-    fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
+    fr.onerror = function () { setStatus('Die Datei liess sich nicht lesen. Prüfen Sie, ob sie noch in einem anderen Programm geöffnet ist, und wählen Sie sie danach erneut aus.'); };
     fr.onload = function () {
       var b64 = String(fr.result).split(',')[1] || '';
       fetch(url, {
@@ -149,9 +149,9 @@
       })
       .then(function (res) {
         if (res.ok) { location.reload(); }
-        else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); }
+        else { setStatus('Fehler: ' + (res.d.error || 'Die Datei wurde nicht angenommen. Wählen Sie sie erneut aus oder laden Sie die Seite neu.')); }
       })
-      .catch(function () { setStatus('Netzwerkfehler beim Upload.'); });
+      .catch(function () { setStatus('Die Verbindung zum Server brach ab. Ihre Datei wurde nicht gespeichert – versuchen Sie es gleich noch einmal.'); });
     };
     fr.readAsDataURL(file);
   }

@@ -104,7 +104,9 @@
           {% endfor %}
         </ul>
         {% elif block.modul.code != 'projektgrundlagen' %}
-        <p class="modul-empty muted">Noch keine Ergebnisse erfasst.</p>
+        <p class="modul-empty muted">In diesem Modul ist für dieses Projekt
+          noch nichts angelegt. Ergebnisse entstehen hier, sobald die
+          zugehörige Aufgabe beginnt – Sie müssen dafür nichts vorbereiten.</p>
         {% endif %}
         {% if block.modul.code == 'projektgrundlagen' %}
         <ul class="ergebnis-list">
@@ -229,7 +231,7 @@
     if (!file) return;
     setStatus('Lade «' + file.name + '» hoch …');
     var fr = new FileReader();
-    fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
+    fr.onerror = function () { setStatus('Die Datei liess sich nicht lesen. Prüfen Sie, ob sie noch in einem anderen Programm geöffnet ist, und wählen Sie sie danach erneut aus.'); };
     fr.onload = function () {
       var b64 = String(fr.result).split(',')[1] || '';
       fetch(url, {
@@ -243,9 +245,9 @@
       })
       .then(function (res) {
         if (res.ok) { location.reload(); }
-        else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); }
+        else { setStatus((res.d.error || 'Die Datei wurde nicht angenommen.') + ' Wählen Sie die Datei erneut aus oder laden Sie die Seite neu.'); }
       })
-      .catch(function () { setStatus('Netzwerkfehler beim Upload.'); });
+      .catch(function () { setStatus('Die Verbindung zum Server brach ab. Ihre Datei wurde nicht gespeichert – versuchen Sie es gleich noch einmal.'); });
     };
     fr.readAsDataURL(file);
   }

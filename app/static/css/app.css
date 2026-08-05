@@ -169,6 +169,29 @@ header strong { color: #e2e8f0; }
 }
 .btn-link:hover { text-decoration: underline; }
 
+/* ---- Nächster Schritt ----
+   Genau EIN Vorschlag, hervorgehoben; alles Weitere tritt zurück. Die Karte
+   trägt keinen eigenen Farbton: sie wirkt durch Ruhe und Position, nicht
+   durch Signalfarbe. Ein Aufruf, der schreit, wird übersehen wie zehn. */
+.naechster-schritt {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 32px;
+  max-width: 620px;
+}
+.ns-gruss { margin: 0 0 4px; color: var(--color-muted); font-size: 14px; }
+.ns-titel { margin: 0 0 6px; font-size: 19px; line-height: 1.35; }
+.ns-wo { margin: 0 0 10px; color: var(--color-muted); font-size: 13px; }
+.ns-warum { margin: 0 0 16px; font-size: 14px; line-height: 1.55; max-width: 60ch; }
+.ns-los { display: inline-block; }
+.ns-weitere { margin-top: 18px; font-size: 14px; }
+.ns-weitere summary { cursor: pointer; color: var(--color-muted); }
+.ns-liste { margin: 10px 0 0; padding-left: 18px; line-height: 1.9; }
+.ns-ruhig { margin: 14px 0 0; font-size: 13px; }
+
 /* ---- Index ---- */
 main { padding: 32px 28px; max-width: 900px; }
 main.wide { max-width: 100%; padding: 0; }
@@ -494,7 +517,15 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
   font-weight: bold;
   flex-shrink: 0;
 }
-.section-header h2 { margin: 0; font-size: 20px; }
+.section-header h2 { margin: 0; font-size: 20px; line-height: 1.35; }
+/* Herkunftsvermerk: der Fachbegriff bleibt sichtbar, tritt aber zurück.
+   Der negative Abstand holt ihn an die Frage heran, ohne den Abstand der
+   Kopfzeile zu ändern – die gilt auch dort, wo es keine Leitfrage gibt. */
+.section-herkunft {
+  margin: -14px 0 20px 46px;      /* auf Höhe des Titels, an der Nummer vorbei */
+  color: var(--color-muted);
+  font-size: 13px;
+}
 
 .question-list { margin-bottom: 16px; }
 .question-item {

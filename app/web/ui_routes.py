@@ -1,7 +1,8 @@
 import base64
 import io
 import json
-from datetime import date
+import logging
+from datetime import date, datetime
 
 from flask import (
     Blueprint, abort, current_app, g, jsonify, redirect, render_template, request,
@@ -37,7 +38,10 @@ from app.web.auth import (
     roles_required,
 )
 
+from app.domains.projekt.naechster_schritt import begruessung, naechster_schritt
+
 bp = Blueprint("ui", __name__)
+log = logging.getLogger("hermes.web")
 
 
 def _pseudonymisierung_aus():
@@ -161,6 +165,68 @@ def password_change_post():
 
 # ---- Startseite ------------------------------------------------------- #
 
+def _zustand_je_projekt(projekte, method):
+    """Was je Projekt offen ist – Rohstoff für den Vorschlag «nächster Schritt».
+
+    Bewusst hier und nicht im Rechenmodul: das Zusammensuchen kennt Datenbank
+    und Dienste, das Urteil darüber nicht. Ein Fehler beim Erheben eines
+    Projekts darf die Startseite nicht leeren – dann fehlt eben dieser eine
+    Vorschlag.
+    """
+    from app.domains.ergebnisse.models import ErgebnisEntwurf
+    from app.domains.qualitaet.models import PiaPruefung
+    from app.shared.database import SessionLocal
+
+    abschnitte = [s for s in (method or {}).get("sections", [])
+                  if s.get("type") in ("interview", "table")]
+    db = SessionLocal()
+    svc = current_app.projekt_service
+    raus = []
+    for p in projekte:
+        z = {"projekt_id": p.id, "name": p.name, "abschnitte_total": len(abschnitte)}
+        try:
+            sitzung = None
+            for modul in svc.structure(p)["module"]:
+                for erg in modul["ergebnisse"]:
+                    sitzung = (current_app.interview_service
+                               .session_for_ergebnis(erg.id)) or sitzung
+            if sitzung is not None:
+                z["session_id"] = sitzung.id
+                antworten = json.loads(sitzung.answers_json or "{}")
+                z["offene_abschnitte"] = sum(
+                    1 for s in abschnitte if s["id"] not in antworten)
+                pruefung = db.query(PiaPruefung).filter(
+                    PiaPruefung.session_id == sitzung.id,
+                    PiaPruefung.status == "fertig",
+                ).order_by(PiaPruefung.id.desc()).first()
+                if pruefung is not None:
+                    z["pruefung_vorhanden"] = True
+                    z["muss_befunde"] = _muss_befunde(pruefung)
+            else:
+                z["offene_abschnitte"] = len(abschnitte)
+            entwurf = db.query(ErgebnisEntwurf).filter(
+                ErgebnisEntwurf.projekt_id == p.id).first()
+            z["rga_vorhanden"] = entwurf is not None and bool(entwurf.answers_json)
+            z["rga_laeuft"] = entwurf is not None and entwurf.lauf_status == "laufend"
+        except Exception:                       # noqa: BLE001
+            log.warning("Zustand von Projekt %s nicht ermittelbar.", p.id,
+                        exc_info=True)
+            continue
+        raus.append(z)
+    return raus
+
+
+def _muss_befunde(pruefung):
+    """Zwingende Befunde eines fertigen Prüfprotokolls – gezählt, nicht erzählt."""
+    try:
+        protokoll = json.loads(pruefung.protokoll_json or "{}")
+    except ValueError:
+        return 0
+    return sum(1 for b in protokoll.get("befunde") or []
+               if isinstance(b, dict)
+               and str(b.get("gewicht", "")).capitalize() == "Muss")
+
+
 @bp.get("/")
 @login_required
 def index():
@@ -169,7 +235,11 @@ def index():
         return redirect(url_for("ui.admin_orgs"))
     method = current_app.method_service.get("hermes_pia")
     projekte = current_app.projekt_service.projekte_for_org(user.org_id)
-    return render_template("index.html", method=method, projekte=projekte)
+    vorschlag, weitere, ruhige = naechster_schritt(
+        _zustand_je_projekt(projekte, method))
+    return render_template("index.html", method=method, projekte=projekte,
+                           vorschlag=vorschlag, weitere=weitere, ruhige=ruhige,
+                           begruessung=begruessung(datetime.now().hour))
 
 
 @bp.post("/interview/start")

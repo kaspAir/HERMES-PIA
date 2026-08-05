@@ -104,10 +104,20 @@
 
     {% if state.phase == "question" %}
       {# ---- Normale Frage ---- #}
+      {# Die Leitfrage ist die Überschrift, der HERMES-Begriff der
+         Herkunftsvermerk darunter. Aus der Benutzerführungs-Richtlinie,
+         Abschnitt 07: gefragt wird in Alltagssprache, der Fachbegriff bleibt
+         sichtbar – wer ihn braucht, findet ihn; wer ihn nicht kennt, wird
+         nicht von ihm aufgehalten. #}
       <div class="section-header">
         <span class="section-num-badge">{{ state.section.number }}</span>
-        <h2>{{ state.section.title }}</h2>
+        <h2>{{ state.section.leitfrage or state.section.title }}</h2>
       </div>
+      {% if state.section.leitfrage %}
+      <p class="section-herkunft">
+        Im Dokument: Kapitel {{ state.section.number }} «{{ state.section.title }}»
+      </p>
+      {% endif %}
 
       {% if state.section.interview %}
         <div class="question-list">
@@ -312,8 +322,14 @@
       </div>
     {% else %}
       <div class="preview-empty">
-        <p>Noch keine Abschnitte erfasst.</p>
-        <p>Die Vorschau aktualisiert sich nach jeder Antwort.</p>
+        {# Leerer Zustand nach der Richtlinie: Zweck, Umfang, Dauer, Einstieg –
+           statt der blossen Feststellung, dass nichts da ist. #}
+        <p><strong>Hier entsteht Ihr Dokument – Abschnitt für Abschnitt.</strong></p>
+        <p>Sobald Sie die erste Frage beantwortet haben, steht der Text an
+          dieser Stelle und wächst mit jeder weiteren Antwort. Sie können ihn
+          jederzeit lesen, korrigieren und herunterladen – auch unfertig.</p>
+        <p>Beantworten Sie links die erste Frage. Ein Satz genügt für den
+          Anfang; nachschärfen können Sie später.</p>
       </div>
     {% endif %}
   </aside>

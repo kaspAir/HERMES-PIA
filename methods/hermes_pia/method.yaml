@@ -65,6 +65,7 @@ sections:
   - id: einleitung_zweck
     number: "0.1"
     title: "Ziel und Zweck des Dokuments"
+    leitfrage: "Wozu dient dieses Dokument?"
     type: standard_text
     required: false
     standard_text: >
@@ -77,6 +78,7 @@ sections:
   - id: ausgangslage
     number: "1"
     title: "Ausgangslage"
+    leitfrage: "Warum machen wir das überhaupt?"
     type: free_text
     required: true
     interview:
@@ -92,6 +94,7 @@ sections:
   - id: referenzierte_dokumente
     number: "0.2"
     title: "Referenzierte Dokumente"
+    leitfrage: "Auf welche Unterlagen stützt sich das Vorhaben?"
     type: table
     required: false
     columns:
@@ -102,6 +105,7 @@ sections:
   - id: mitgeltende_unterlagen
     number: "0.3"
     title: "Mitgeltende Unterlagen"
+    leitfrage: "Welche Vorgaben gelten zusätzlich?"
     type: table
     required: false
     columns:
@@ -111,6 +115,7 @@ sections:
   - id: definitionen
     number: "0.4"
     title: "Definitionen und Abkuerzungen"
+    leitfrage: "Welche Begriffe müssen alle gleich verstehen?"
     type: table
     required: false
     columns:
@@ -126,6 +131,7 @@ sections:
   - id: ziele
     number: "2.1"
     title: "Ziele der Phase Initialisierung"
+    leitfrage: "Was soll am Ende der Initialisierung erreicht sein?"
     type: table
     required: true
     gap_check: true
@@ -147,6 +153,7 @@ sections:
   - id: rahmenbedingungen
     number: "2.2"
     title: "Rahmenbedingungen"
+    leitfrage: "Was ist bereits vorgegeben und nicht verhandelbar?"
     type: table
     required: true
     columns:
@@ -162,6 +169,7 @@ sections:
   - id: termine
     number: "4.1"
     title: "Ergebnisse und Termine"
+    leitfrage: "Was liegt wann vor?"
     type: table
     required: true
     gap_check: true
@@ -179,6 +187,7 @@ sections:
   - id: personalaufwand
     number: "3.1"
     title: "Personalaufwand"
+    leitfrage: "Wer arbeitet wie lange mit?"
     type: table
     required: true
     columns:
@@ -189,6 +198,7 @@ sections:
   - id: sachmittel
     number: "3.2"
     title: "Sachmittel"
+    leitfrage: "Was wird ausser Personal noch gebraucht?"
     type: table
     required: false
     columns:
@@ -199,6 +209,7 @@ sections:
   - id: kosten
     number: "3.3"
     title: "Kosten (in CHF inkl. MwSt.)"
+    leitfrage: "Was kostet die Phase Initialisierung?"
     type: table
     required: true
     columns:
@@ -208,6 +219,7 @@ sections:
   - id: projektorganisation
     number: "5"
     title: "Projektorganisation und Personal"
+    leitfrage: "Wer entscheidet, und wer arbeitet mit?"
     type: table
     required: true
     columns:
@@ -226,6 +238,7 @@ sections:
   - id: kommunikation
     number: "6"
     title: "Kommunikation"
+    leitfrage: "Wer muss wann wovon erfahren?"
     type: table
     required: false
     columns:
@@ -238,6 +251,7 @@ sections:
   - id: risiken
     number: "7"
     title: "Risiken"
+    leitfrage: "Was könnte schiefgehen?"
     type: table
     required: true
     gap_check: true
