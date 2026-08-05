@@ -95,13 +95,13 @@ def test_jede_schicht_bekommt_nur_ihren_skill(skills_dir):
     faelle = [
         (lambda l: kette.taetigkeiten(_Wissen(), l, skills_dir=skills_dir),
          kette.SKILL_KARTIERUNG),
-        (lambda l: kette.kartiere({"taetigkeit": "T"}, _Wissen(), l,
+        (lambda l: kette.kartiere([{"taetigkeit": "T"}], _Wissen(), l,
                                   skills_dir=skills_dir), kette.SKILL_KARTIERUNG),
-        (lambda l: kette.analysiere_luecke({"taetigkeit": "T"}, {}, _Wissen(), l,
-                                           skills_dir=skills_dir), kette.SKILL_GAP),
-        (lambda l: kette.wuerdige({"taetigkeit": "T"}, {}, {}, l,
+        (lambda l: kette.analysiere_luecke([{"nr": 0, "taetigkeit": "T"}], _Wissen(),
+                                           l, skills_dir=skills_dir), kette.SKILL_GAP),
+        (lambda l: kette.wuerdige([{"nr": 0, "taetigkeit": "T"}], l,
                                   skills_dir=skills_dir), kette.SKILL_WUERDIGUNG),
-        (lambda l: kette.entwickle_optionen({"taetigkeit": "T"}, {}, {}, l,
+        (lambda l: kette.entwickle_optionen([{"nr": 0, "taetigkeit": "T"}], l,
                                             skills_dir=skills_dir), kette.SKILL_OPTIONEN),
     ]
     for aufruf, erwartet in faelle:
@@ -119,7 +119,7 @@ def test_jede_schicht_bekommt_nur_ihren_skill(skills_dir):
 
 def test_ohne_skill_kein_ergebnis(tmp_path):
     """Lieber kein Ergebnis als ein im Code nachgebautes."""
-    daten, versionen, grund = kette.kartiere({}, _Wissen(), _LLM({}),
+    daten, versionen, grund = kette.kartiere([], _Wissen(), _LLM({}),
                                              skills_dir=tmp_path)
     assert daten is None and versionen == [] and "nicht gefunden" in grund
 
@@ -282,3 +282,109 @@ def test_der_gemessene_fall_wird_nicht_mehr_entwarnt():
     muss = [m for m in meldungen if m["gewicht"] == "Muss"]
     assert len(muss) >= 3
     assert kette.darf_entwarnen(befunde) is False
+
+
+# ---- Allgemeinheit: die Sperren kennen keinen Einzelfall ----------------- #
+#
+# Wichtigste Anforderung an dieses Modul: es darf NICHT auf den gemessenen Fall
+# zugeschnitten sein. Die Sperren vergleichen ausschliesslich Struktur -
+# Eingriffstiefe gegen Normstufe, Schranke gegen Ermaechtigung, Lueckenart.
+# Kein Sachgebiet, kein Stichwort, kein Kanton kommt darin vor.
+
+def test_kein_fallwissen_im_modul():
+    """Ein Waechter gegen die Versuchung, den Einzelfall zu erkennen statt die
+    Struktur. Sachbegriffe gehören in keine Regel dieses Moduls."""
+    from pathlib import Path
+    import re as _re
+
+    quelle = Path(kette.__file__).read_text(encoding="utf-8")
+    # Kommentare und Doku duerfen den Auslöser nennen – der CODE nicht.
+    code = "\n".join(z for z in quelle.splitlines()
+                     if not z.strip().startswith("#"))
+    code = _re.sub(r'""".*?"""', "", code, flags=_re.DOTALL)
+    for wort in ("gesichtserkennung", "demonstration", "kamera", "überwachung",
+                 "biometr", "st. gallen", "polizei"):
+        assert wort not in code.lower(), f"Fallwissen im Code: {wort}"
+
+
+def test_alltagsfall_gebuehr_ohne_grundlage():
+    """Ein ganz gewöhnlicher Fall, weit weg vom Auslöser: eine Gebühr wird
+    erhoben, die Grundlage ist nur eine Richtlinie."""
+    befunde = [{
+        "taetigkeit": {"taetigkeit": "Eine Gebühr für die Aktenauskunft erheben"},
+        "kartierung": {
+            "eingriff": {"tiefe": "leicht", "grundrechte": ["Eigentumsgarantie"]},
+            "grundlagen": [{"erlass": "Weisung des Amtes", "normstufe": "richtlinie",
+                            "ermaechtigt": True}],
+            "luecke": {"art": "rechtsluecke"},
+        },
+        "wuerdigung": {"ergebnis": "bedingt zulässig"},
+    }]
+    muss = [m for m in kette.sperren(befunde) if m["gewicht"] == "Muss"]
+    assert muss, "Richtlinie trägt keinen Eingriff, für den eine Verordnung nötig ist"
+    assert kette.darf_entwarnen(befunde) is False
+
+
+def test_alltagsfall_datenbekanntgabe_mit_gesetz_ist_sauber():
+    """Und ebenso wichtig: ein korrekter Fall darf NICHT blockiert werden.
+    Eine Sperre, die immer greift, ist so wertlos wie eine, die nie greift."""
+    befunde = [{
+        "taetigkeit": {"taetigkeit": "Personendaten an eine andere Behörde bekanntgeben"},
+        "kartierung": {
+            "eingriff": {"tiefe": "leicht"},
+            "grundlagen": [{"erlass": "Kantonales Datenschutzgesetz",
+                            "normstufe": "gesetz", "ermaechtigt": True}],
+            "luecke": {"art": "keine"},
+        },
+        "wuerdigung": {"ergebnis": "zulässig", "kerngehalt_verletzt": False},
+    }]
+    assert kette.sperren(befunde) == []
+    assert kette.darf_entwarnen(befunde) is True
+
+
+def test_nicht_bestimmte_eingriffstiefe_gilt_nicht_als_harmlos():
+    """Die gefährlichste Lücke einer strukturellen Prüfung: was das Modell
+    nicht einordnen konnte, dürfte sonst still als unbedenklich durchgehen –
+    und die Sperren träfen nur, was ohnehin schon erkannt ist."""
+    befunde = [{
+        "taetigkeit": {"taetigkeit": "Irgendeine unklare Tätigkeit"},
+        "kartierung": {"eingriff": {}, "grundlagen": [], "luecke": {"art": "keine"}},
+        "wuerdigung": {"ergebnis": "zulässig"},
+    }]
+    meldungen = kette.sperren(befunde)
+    assert any("nicht bestimmt" in m["meldung"] for m in meldungen)
+    assert kette.darf_entwarnen(befunde) is False
+
+
+def test_ein_offener_vorbehalt_verhindert_die_entwarnung():
+    """«Offen» ist nicht «unbedenklich» – diese Gleichsetzung war der Fehler."""
+    befunde = [{
+        "taetigkeit": {"taetigkeit": "T"},
+        "kartierung": {"eingriff": {"tiefe": "keiner"}, "grundlagen": [],
+                       "luecke": {"art": "informationsluecke"}},
+        "wuerdigung": {"ergebnis": "zulässig"},
+    }]
+    assert [m["gewicht"] for m in kette.sperren(befunde)] == ["Vorbehalt"]
+    assert kette.darf_entwarnen(befunde) is False
+
+
+@pytest.mark.parametrize("tiefe,stufe,blockiert", [
+    ("schwer", "gesetz", False),
+    ("schwer", "verordnung", True),
+    ("schwer", "richtlinie", True),
+    ("leicht", "verordnung", False),
+    ("leicht", "richtlinie", True),
+    ("keiner", "richtlinie", False),
+])
+def test_die_regel_ist_ein_stufenvergleich(tiefe, stufe, blockiert):
+    """Sie gilt für jedes Sachgebiet gleich – das ist ihre Stärke."""
+    befunde = [{
+        "taetigkeit": {"taetigkeit": "beliebig"},
+        "kartierung": {"eingriff": {"tiefe": tiefe},
+                       "grundlagen": [{"erlass": "Erlass X", "normstufe": stufe,
+                                       "ermaechtigt": True}],
+                       "luecke": {"art": "keine"}},
+        "wuerdigung": {"ergebnis": "zulässig"},
+    }]
+    muss = [m for m in kette.sperren(befunde) if m["gewicht"] == "Muss"]
+    assert bool(muss) is blockiert

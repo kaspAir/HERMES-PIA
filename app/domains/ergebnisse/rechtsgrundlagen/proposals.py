@@ -89,10 +89,15 @@ def analysiere(wissen, llm, grounding=None, bestehende_namen=None, skill_bundle=
         '"vorschlaege":[{"luecke":"","vorschlag":""}],'
         '"compliance":[{"compliance":"","beschreibung":""}],'
         '"konsequenzen":"","empfehlung":""}\n'
+        # KEIN Fachgebiet als Beispiel: hier stand «z.B. im Justiz-/Strafregister-
+        # umfeld StReG/StReV, StGB, StPO». Das lenkt jedes Projekt in dieses eine
+        # Sachgebiet - ein Schulhausbau bekaeme einen Anstoss Richtung Strafrecht.
+        # Die Anweisung muss die METHODE beschreiben, nie den Inhalt.
         "- 'bestehende': ERMITTLE SELBST die einschlägigen bestehenden Rechtsgrundlagen "
         "für die geplanten Tätigkeiten – AUCH solche, die oben nicht aufgeführt sind, "
-        "sofern du sie sicher kennst (einschlägige Bundesgesetze/-verordnungen des "
-        "Fachbereichs, z.B. im Justiz-/Strafregisterumfeld StReG/StReV, StGB, StPO). "
+        "sofern du sie sicher kennst. Gehe dabei vom Sachgebiet des VORLIEGENDEN "
+        "Vorhabens aus und ziehe zu jedem einschlägigen Gesetz auch die "
+        "Ausführungsverordnung bei. "
         "Nenne je Eintrag den Gesetzesnamen MIT gebräuchlicher Abkürzung in Klammern und "
         "eine kurze Beschreibung, welche Tätigkeit die Grundlage abdeckt. KEINE erfundene "
         "SR-Nummer/Datierung – die Fundstelle wird separat verifiziert.\n"

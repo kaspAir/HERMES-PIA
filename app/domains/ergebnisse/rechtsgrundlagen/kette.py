@@ -152,7 +152,10 @@ _SYSTEM_TAETIGKEITEN = (
     "GRUNDSÄTZE:\n"
     "- Eine Tätigkeit ist eine HANDLUNG gegenüber Menschen oder Daten, kein Ziel "
     "und kein Projektergebnis. «Ein Konzept erstellen» ist keine Tätigkeit in "
-    "diesem Sinn; «Gesichter im öffentlichen Raum biometrisch erfassen» ist eine.\n"
+    "diesem Sinn. Beispiele für Tätigkeiten aus ganz verschiedenen Bereichen: "
+    "eine Gebühr erheben; Personendaten an eine andere Behörde bekanntgeben; ein "
+    "Register führen; eine Bewilligung verweigern; eine Leistung beschaffen; "
+    "einen Sachverhalt automatisiert auswerten.\n"
     "- Gemeint ist das VORHABEN, nicht die Projektphase. Dass in der "
     "Initialisierung nur Analysen entstehen, ändert nichts daran, was das "
     "Vorhaben tun soll.\n"
@@ -221,29 +224,36 @@ _SYSTEM_KARTIERUNG = (
 )
 
 _SCHEMA_KARTIERUNG = (
-    '{"grundlagen":[{"erlass":"","fundstelle":"","normstufe":'
+    '{"kartierungen":[{"nr":0,'
+    '"grundlagen":[{"erlass":"","fundstelle":"","normstufe":'
     '"verfassung|gesetz|verordnung|richtlinie","status":"in Kraft|bevorstehend|hängig",'
     '"ermaechtigt":true,"geltung":""}],'
     '"eingriff":{"tiefe":"schwer|leicht|keiner","grundrechte":[""],"begruendung":""},'
     '"luecke":{"art":"keine|rechtsluecke|rechercheluecke|informationsluecke",'
     '"beschreibung":""},'
-    '"gesucht_in":[""],"confidence":{"stufe":"hoch|mittel|tief","begruendung":""}}')
+    '"gesucht_in":[""],"confidence":{"stufe":"hoch|mittel|tief",'
+    '"begruendung":""}}]}')
 
 
-def kartiere(taetigkeit, wissen, llm, gefundene=None, tenant_id=None, skills_dir=None):
-    """Schicht 1 für EINE Tätigkeit: welche Grundlage besteht, welche fehlt?"""
+def kartiere(liste, wissen, llm, gefundene=None, tenant_id=None, skills_dir=None):
+    """Schicht 1 für ALLE Tätigkeiten: welche Grundlage besteht, welche fehlt?
+
+    Ein Schritt je SCHICHT statt je Tätigkeit: bei fünf Tätigkeiten wären es
+    sonst zwanzig Aufrufe. Die Nummer verbindet Ergebnis und Tätigkeit.
+    """
     eingang = {
-        "taetigkeit": taetigkeit,
+        "taetigkeiten": [dict(t, nr=i) for i, t in enumerate(liste or [])],
         "ebene": wissen.ebene or "nicht angegeben",
         "kanton": wissen.kanton or "nicht angegeben",
         "im_pia_genannte_erlasse": wissen.genannte_rechtsgrundlagen(),
         "bereits_verifizierte_fundstellen": gefundene or {},
     }
     user = (
-        "Kartiere die Rechtsgrundlagen für DIESE eine Tätigkeit.\n\n"
+        "Kartiere die Rechtsgrundlagen für JEDE dieser Tätigkeiten einzeln. "
+        "Gib je Tätigkeit einen Eintrag mit ihrer Nummer zurück.\n\n"
         f"{json.dumps(eingang, ensure_ascii=False)}\n\n"
-        "Bestimme zuerst die Eingriffstiefe: Welche Grundrechte berührt die "
-        "Tätigkeit, und ist der Eingriff schwer oder leicht? Begründe das.\n"
+        "Bestimme je Tätigkeit zuerst die Eingriffstiefe: Welche Grundrechte "
+        "berührt sie, und ist der Eingriff schwer oder leicht? Begründe das.\n"
         "Führe dann die Erlasse auf, die diese Tätigkeit ERMÄCHTIGEN, je mit "
         "Normstufe und Status. Setze 'ermaechtigt' nur auf true, wenn der "
         "Erlass die Tätigkeit tatsächlich erlaubt – nicht, wenn er sie nur "
@@ -277,24 +287,28 @@ _SYSTEM_GAP = (
 )
 
 _SCHEMA_GAP = (
-    '{"bestaetigt":true,"begruendung":"",'
+    '{"luecken":[{"nr":0,"bestaetigt":true,"begruendung":"",'
     '"erforderliche_normstufe":"verfassung|gesetz|verordnung|richtlinie",'
     '"stufenbegruendung":"","organ":"","referendum":"",'
-    '"deckungsvorschlag":"","confidence":{"stufe":"hoch|mittel|tief","begruendung":""}}')
+    '"deckungsvorschlag":"","confidence":{"stufe":"hoch|mittel|tief",'
+    '"begruendung":""}}]}')
 
 
-def analysiere_luecke(taetigkeit, kartierung, wissen, llm, tenant_id=None,
-                      skills_dir=None):
-    """Schicht 2: ist die Lücke echt, und welche Normstufe müsste sie tragen?"""
-    eingang = {"taetigkeit": taetigkeit, "kartierung": kartierung,
+def analysiere_luecke(faelle, wissen, llm, tenant_id=None, skills_dir=None):
+    """Schicht 2: sind die Lücken echt, und welche Normstufe müssten sie tragen?
+
+    `faelle`: [{nr, taetigkeit, kartierung}] – nur die gemeldeten Rechtslücken.
+    """
+    eingang = {"faelle": faelle,
                "ebene": wissen.ebene or "nicht angegeben",
                "kanton": wissen.kanton or "nicht angegeben"}
     user = (
-        "Prüfe diese gemeldete Rechtslücke.\n\n"
+        "Prüfe diese gemeldeten Rechtslücken – je Fall ein Eintrag mit seiner "
+        "Nummer.\n\n"
         f"{json.dumps(eingang, ensure_ascii=False)}\n\n"
-        "Bestätige zuerst, ob wirklich keine Grundlage besteht. Bestimme dann "
-        "die erforderliche Normstufe und begründe sie. Nenne Organ und "
-        "Referendumsart als Fakten der Stufe.\n"
+        "Bestätige je Fall zuerst, ob wirklich keine Grundlage besteht. "
+        "Bestimme dann die erforderliche Normstufe und begründe sie. Nenne "
+        "Organ und Referendumsart als Fakten der Stufe.\n"
         f"Gib NUR eine Antwort nach diesem Aufbau:\n{_SCHEMA_GAP}"
     )
     return _rufe(llm, SKILL_GAP, _SYSTEM_GAP, user, tenant_id, skills_dir)
@@ -320,23 +334,28 @@ _SYSTEM_WUERDIGUNG = (
 )
 
 _SCHEMA_WUERDIGUNG = (
-    '{"rechtsgueter":[""],"geprueft_an":[""],'
+    '{"wuerdigungen":[{"nr":0,"rechtsgueter":[""],"geprueft_an":[""],'
     '"pruefung":[{"kriterium":"","ergebnis":"erfüllt|fraglich|nicht erfüllt",'
     '"begruendung":""}],'
     '"ergebnis":"zulässig|bedingt zulässig|nicht zulässig",'
     '"kerngehalt_verletzt":false,"begruendung":"","vorbehalt":"",'
-    '"confidence":{"stufe":"hoch|mittel|tief","begruendung":""}}')
+    '"confidence":{"stufe":"hoch|mittel|tief","begruendung":""}}]}')
 
 
-def wuerdige(taetigkeit, kartierung, gap, llm, tenant_id=None, skills_dir=None):
+def wuerdige(faelle, llm, tenant_id=None, skills_dir=None):
     """Schicht 3: Verhältnismässigkeit und Kerngehalt – der Schritt, der im
-    gemessenen Fall vollständig fehlte."""
-    eingang = {"taetigkeit": taetigkeit, "kartierung": kartierung,
-               "gap_analyse": gap or "(keine Lücke gemeldet)"}
+    gemessenen Fall vollständig fehlte.
+
+    `faelle`: [{nr, taetigkeit, kartierung, gap}] – JEDE Tätigkeit wird
+    gewürdigt, auch die mit bestehender Grundlage. Eine Grundlage zu HABEN
+    heisst nicht, zulässig zu sein.
+    """
+    eingang = {"faelle": faelle}
     user = (
-        "Würdige, ob diese Tätigkeit rechtlich zulässig wäre.\n\n"
+        "Würdige für JEDE dieser Tätigkeiten, ob sie rechtlich zulässig wäre – "
+        "je Tätigkeit ein Eintrag mit ihrer Nummer.\n\n"
         f"{json.dumps(eingang, ensure_ascii=False)}\n\n"
-        "Prüfe den Eingriff an den Voraussetzungen von Art. 36 BV und – wo "
+        "Prüfe jeden Eingriff an den Voraussetzungen von Art. 36 BV und – wo "
         "einschlägig – an der EMRK. Halte ausdrücklich fest, wenn der "
         "Kerngehalt betroffen ist: dann wäre die Tätigkeit auch mit einer "
         "gesetzlichen Grundlage unzulässig.\n"
@@ -367,23 +386,27 @@ _SYSTEM_OPTIONEN = (
 )
 
 _SCHEMA_OPTIONEN = (
-    '{"eigentliches_ziel":"",'
+    '{"faelle":[{"nr":0,"eigentliches_ziel":"",'
     '"optionen":[{"option":"","grundlage":"","voraussetzungen":"","grenzen":""}],'
     '"nicht_gangbar":[{"weg":"","warum":""}],'
-    '"vorbehalt":"","confidence":{"stufe":"hoch|mittel|tief","begruendung":""}}')
+    '"vorbehalt":"","confidence":{"stufe":"hoch|mittel|tief",'
+    '"begruendung":""}}]}')
 
 
-def entwickle_optionen(taetigkeit, wuerdigung, gap, llm, tenant_id=None,
-                       skills_dir=None):
-    """Schicht 4: was wäre stattdessen rechtmässig möglich?"""
-    eingang = {"taetigkeit": taetigkeit, "wuerdigung": wuerdigung,
-               "gap_analyse": gap or "(keine)"}
+def entwickle_optionen(faelle, llm, tenant_id=None, skills_dir=None):
+    """Schicht 4: was wäre stattdessen rechtmässig möglich?
+
+    `faelle`: [{nr, taetigkeit, wuerdigung, gap}] – nur die nicht oder bedingt
+    zulässigen Tätigkeiten.
+    """
+    eingang = {"faelle": faelle}
     user = (
-        "Entwickle rechtmässige Handlungsoptionen.\n\n"
+        "Entwickle für jeden Fall rechtmässige Handlungsoptionen – je Fall ein "
+        "Eintrag mit seiner Nummer.\n\n"
         f"{json.dumps(eingang, ensure_ascii=False)}\n\n"
-        "Bestimme zuerst das eigentliche Regelungsziel hinter der Tätigkeit. "
-        "Entwickle daran ausgerichtete Optionen und benenne die nicht gangbaren "
-        "Wege.\n"
+        "Bestimme zuerst das eigentliche Regelungsziel hinter der jeweiligen "
+        "Tätigkeit. Entwickle daran ausgerichtete Optionen und benenne die "
+        "nicht gangbaren Wege.\n"
         f"Gib NUR eine Antwort nach diesem Aufbau:\n{_SCHEMA_OPTIONEN}"
     )
     return _rufe(llm, SKILL_OPTIONEN, _SYSTEM_OPTIONEN, user, tenant_id, skills_dir)
@@ -409,8 +432,20 @@ def sperren(befunde):
         wuerd = eintrag.get("wuerdigung") or {}
         gap = eintrag.get("gap") or {}
 
-        eingriff = (kart.get("eingriff") or {}).get("tiefe", "")
-        noetig = EINGRIFF_MINDESTSTUFE.get(str(eingriff).lower(), "")
+        eingriff = str((kart.get("eingriff") or {}).get("tiefe", "")).strip().lower()
+        # Eine NICHT BESTIMMTE Eingriffstiefe ist nicht «keiner». Ohne diese
+        # Unterscheidung wuerde jede Taetigkeit, deren Eingriff das Modell nicht
+        # einordnen konnte, still als harmlos durchgehen - und die Sperre unten
+        # traefe nur die Faelle, die ohnehin schon erkannt sind.
+        if eingriff not in EINGRIFF_MINDESTSTUFE:
+            raus.append({
+                "gewicht": "Vorbehalt", "taetigkeit": name,
+                "meldung": ("Die Eingriffstiefe dieser Tätigkeit wurde nicht "
+                            "bestimmt. Solange offen ist, ob und wie stark "
+                            "Grundrechte berührt sind, lässt sich die "
+                            "erforderliche Normstufe nicht beurteilen."),
+            })
+        noetig = EINGRIFF_MINDESTSTUFE.get(eingriff, "")
         grundlagen = [g for g in (kart.get("grundlagen") or [])
                       if isinstance(g, dict) and g.get("ermaechtigt")]
 
@@ -492,6 +527,9 @@ def darf_entwarnen(befunde):
     """
     if not befunde:
         return False
-    if any(b["gewicht"] == "Muss" for b in sperren(befunde)):
+    # Auch ein Vorbehalt verhindert die Entwarnung: er heisst «offen», und
+    # offen ist nicht dasselbe wie unbedenklich. Genau diese Gleichsetzung war
+    # der Fehler, den das Dokument dem Leser als Ergebnis verkaufte.
+    if sperren(befunde):
         return False
     return all((e.get("wuerdigung") or {}).get("ergebnis") for e in befunde)
