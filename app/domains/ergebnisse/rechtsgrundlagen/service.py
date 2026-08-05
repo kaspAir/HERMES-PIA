@@ -518,7 +518,9 @@ class RechtsgrundlagenService:
             row.kanton = kanton
         row.lauf_status = "laufend"
         row.lauf_schritt = 0
-        row.lauf_json = json.dumps({}, ensure_ascii=False)
+        row.lauf_json = json.dumps(
+            {"_kontext": {"ebene": row.ebene or "", "kanton": row.kanton or ""}},
+            ensure_ascii=False)
         db.commit()
         db.refresh(row)
         return row
@@ -633,15 +635,6 @@ class RechtsgrundlagenService:
             # hier die alte Einzelaufruf-Analyse mit und das Dokument mischte
             # zwei Verfahren.
             answers = self.build_answers(wissen, tenant_id=tenant, nur_basis=True)
-            # Produktkonformitaet ist nicht Gegenstand dieser Kette - das muss
-            # dastehen, statt «kein Hinweis identifiziert» zu behaupten.
-            answers["product_compliance"] = {"extracted": [{
-                "compliance": "Nicht Gegenstand dieser Analyse",
-                "beschreibung": "Die vierschichtige Prüfung betrifft die "
-                                "Rechtsgrundlagen der geplanten Tätigkeiten. "
-                                "Anforderungen an die Produktkonformität wurden "
-                                "hier nicht erhoben.",
-            }]}
             answers.update({
                 k: {"extracted": w} if isinstance(w, list)
                 else {"extracted": {"text": w}}

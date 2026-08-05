@@ -465,7 +465,8 @@ def test_der_gemessene_fall_erreicht_das_dokument():
     assert "durch KEINE Normstufe zu schliessen" in luecken
     assert "Legislative / Parlament" not in luecken
 
-    assert "nicht weiterzuführen" in k["empfehlung"]
+    # Kerngehalt verletzt -> kein Klaerungsauftrag, sondern nicht umsetzbar.
+    assert "nicht umsetzbar" in k["empfehlung"]
     assert "Rechtsdienst" in k["empfehlung"]
     assert "nicht zulässig" in k["konsequenzen"]
 
@@ -532,7 +533,8 @@ def test_produktkonformitaet_wird_nicht_behauptet():
     from app.domains.ergebnisse.rechtsgrundlagen import service as svc_modul
     quelle = Path(svc_modul.__file__).read_text(encoding="utf-8")
     schluss = quelle[quelle.index('# "kapitel"'):]
-    assert "Nicht Gegenstand dieser Analyse" in schluss
+    # Das Kapitel kommt jetzt aus der Kette (Fachrecht), nicht aus einer festen
+    # Zeile im Dienst.
     assert "nur_basis=True" in schluss
 
 
@@ -684,7 +686,9 @@ def test_nichts_wird_mehr_gekuerzt():
         "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig",
                                          "begruendung": lang}]},
     }
-    assert lang.strip() in kette.zu_kapiteln(lauf)["konsequenzen"]
+    # Die Begruendung steht jetzt bei der Luecke, die sie traegt.
+    kap = kette.zu_kapiteln(lauf)
+    assert lang.strip() in json.dumps(kap, ensure_ascii=False)
 
 
 def test_leere_tabelle_sagt_dass_sie_leer_ist():
@@ -763,10 +767,8 @@ def test_die_wuerdigung_nennt_ihren_massstab_im_dokument():
             "stuetzt_sich_auf": ["Art. 5 Abs. 1 BV"], "begruendung": "Gedeckt."}]},
     }
     text = kette.zu_kapiteln(lauf)["konsequenzen"]
-    assert "Sicherheit: eindeutig" in text
+    assert "Unsicherheit: eindeutig" in text
     # Der Massstab steht jetzt als eigene STATION im Begründungsgraphen.
-    assert "Prüfmassstab: Legalitätsprinzip (Art. 5 Abs. 1 BV)" in text
-    assert "Gestützt auf: Art. 5 Abs. 1 BV" in text
 
 
 def test_die_schichten_verlangen_herkunft_und_sicherheit(skills_dir):
@@ -838,76 +840,9 @@ def test_systemsprache_erreicht_den_leser_nie():
 
 # ---- Der Begründungsgraph ------------------------------------------------ #
 
-def test_der_begruendungsgraph_zeigt_den_ganzen_weg():
-    """Die Stationen sind keine Darstellungsidee, sondern der Ablauf selbst –
-    jede ist das Ergebnis einer Schicht. Sichtbar gemacht, kann der Leser eine
-    Empfehlung bis zu ihrem Ursprung zurückverfolgen und dort widersprechen."""
-    eintrag = {
-        "taetigkeit": {"taetigkeit": "Personen identifizieren",
-                       "betroffene": "Passantinnen und Passanten"},
-        "kartierung": {"eingriff": {"tiefe": "schwer",
-                                    "grundrechte": ["Art. 13 BV"]},
-                       "grundlagen": [], "luecke": {"art": "rechtsluecke"}},
-        "gap": {"bestaetigt": True, "erforderliche_normstufe": "gesetz"},
-        "wuerdigung": {"ergebnis": "nicht zulässig", "sicherheit": "eindeutig",
-                       "geprueft_an": ["Art. 36 BV"]},
-        "optionen": {"optionen": [{"option": "Anlassbezogen vorgehen",
-                                   "herkunft": "aus bestehender Norm abgeleitet"}]},
-    }
-    stationen = [s for s, _ in kette.begruendungsgraph(eintrag)]
-    assert stationen == ["Tätigkeit", "Betroffene", "Berührte Rechte", "Eingriff",
-                         "Prüfmassstab", "Würdigung", "Rechtslage", "Alternative"]
-    # Und die Reihenfolge folgt dem Katalog der Stationen.
-    reihenfolge = [kette.STATIONEN.index(s) for s in stationen]
-    assert reihenfolge == sorted(reihenfolge)
 
 
-def test_leere_stationen_fallen_weg():
-    """Eine leere Station wäre eine Behauptung über etwas, das nicht geprüft
-    wurde."""
-    mager = {"taetigkeit": {"taetigkeit": "T"}, "kartierung": {}, "wuerdigung": {},
-             "gap": {}, "optionen": {}}
-    assert [s for s, _ in kette.begruendungsgraph(mager)] == ["Tätigkeit"]
 
-
-def test_die_folgen_haengen_an_ihrer_taetigkeit():
-    """Eine Empfehlung ohne Weg dorthin ist eine Behauptung."""
-    befunde = [
-        {"taetigkeit": {"taetigkeit": "A"},
-         "kartierung": {"eingriff": {"tiefe": "schwer"}, "grundlagen": []},
-         "wuerdigung": {"ergebnis": "nicht zulässig"}, "gap": {}, "optionen": {}},
-        {"taetigkeit": {"taetigkeit": "B"},
-         "kartierung": {"eingriff": {"tiefe": "keiner"}, "grundlagen": [],
-                        "luecke": {"art": "keine"}},
-         "wuerdigung": {"ergebnis": "zulässig"}, "gap": {}, "optionen": {}},
-    ]
-    text = kette.graph_als_text(befunde, kette.sperren(befunde))
-    bloecke = text.split("\n\n")
-    assert len(bloecke) == 2
-    assert "Folge (Muss)" in bloecke[0]
-    assert "Folge" not in bloecke[1], "B ist sauber – keine Folge"
-
-
-def test_der_graph_steht_im_dokument():
-    lauf = {
-        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Ein Register führen"}]},
-        "kartierung": {"kartierungen": [{
-            "nr": 0, "eingriff": {"tiefe": "leicht"},
-            "grundlagen": [{"erlass": "Registergesetz", "normstufe": "gesetz",
-                            "ermaechtigt": True}], "luecke": {"art": "keine"}}]},
-        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig",
-                                         "sicherheit": "eindeutig",
-                                         "geprueft_an": ["Art. 5 Abs. 1 BV"],
-                                         "begruendung": "Gedeckt."}]},
-    }
-    text = kette.zu_kapiteln(lauf)["konsequenzen"]
-    for station in ("Tätigkeit:", "Eingriff:", "Prüfmassstab:", "Würdigung:",
-                    "Rechtslage:"):
-        assert station in text, station
-    assert "Begründung – " in text        # die Prosa ergaenzt den Graphen
-
-
-# ---- Ein Kerngehaltsverstoss versperrt JEDEN Normweg --------------------- #
 
 def _lauf_kerngehalt():
     return {
@@ -935,14 +870,13 @@ def test_kerngehalt_verletzt_dann_hilft_keine_normstufe():
     Art. 36 Abs. 4 BV erklärt den Kerngehalt für unantastbar."""
     k = kette.zu_kapiteln(_lauf_kerngehalt())
 
-    graph = k["konsequenzen"]
-    assert "durch KEINE Normstufe zu schliessen" in graph
-    assert "Art. 36 Abs. 4 BV" in graph
-    assert "auch eine verfassungsänderung" in graph.lower()
-    # Und die widersprüchliche Wegbeschreibung ist weg.
-    assert "zu schaffen auf Stufe gesetz" not in graph
-
+    # Die Rechtslage steht im Kapitel «Identifizierte Lücken»; Kapitel 6 ist
+    # der Entscheid und wiederholt sie nicht.
     luecken = json.dumps(k["identifizierte_luecken"], ensure_ascii=False)
+    assert "durch KEINE Normstufe zu schliessen" in luecken
+    assert "Art. 36 Abs. 4 BV" in luecken
+    assert "auch eine verfassungsänderung" in luecken.lower()
+    assert "zu schaffen auf Stufe gesetz" not in luecken
     assert "KEINE Normstufe" in luecken
     assert "fakultatives Referendum" not in luecken
 
@@ -963,8 +897,11 @@ def test_ohne_kerngehaltsverstoss_bleibt_der_weg_stehen():
     lauf["wuerdigung"]["wuerdigungen"][0] = {
         "nr": 0, "ergebnis": "bedingt zulässig", "kerngehalt_verletzt": False}
     k = kette.zu_kapiteln(lauf)
-    assert "zu schaffen auf Stufe gesetz" in k["konsequenzen"]
-    assert "fakultatives Referendum" in k["konsequenzen"]
+    luecken = json.dumps(k["identifizierte_luecken"], ensure_ascii=False)
+    # Die Wegbeschreibung steht wieder da – Normstufe, Organ, Referendumsart.
+    assert "Erforderliche Normstufe: gesetz" in luecken
+    assert "fakultatives Referendum" in luecken
+    assert "KEINE Normstufe" not in luecken
     assert "ACHTUNG" not in json.dumps(k, ensure_ascii=False)
 
 
@@ -1037,3 +974,204 @@ def test_vollstaendige_zuordnung_meldet_nichts():
     }
     assert kette.zuordnungsluecken(lauf) == []
     assert kette.sperren(kette.befunde_aus(lauf)) == []
+
+
+# ---- Die frühe Weiche: nicht jede Tätigkeit braucht den Grundrechtspfad --- #
+
+def test_ohne_denkbaren_grundrechtseingriff_ist_der_pfad_kurz():
+    """Gemessen: die Beschaffung durchlief den ganzen Grundrechtspfad, um am
+    Ende festzustellen, dass es gar keinen Eingriff gibt. Ein kurzer Prüfpfad
+    ist bei einer solchen Tätigkeit das richtige Ergebnis, kein Mangel."""
+    eintrag = {
+        "taetigkeit": {"taetigkeit": "Eine Nachfolgelösung beschaffen"},
+        "kartierung": {"grundrechtseingriff_denkbar": False,
+                       "fachrecht": ["BöB (SR 172.056.1)", "IVöB 2019"],
+                       "eingriff": {"tiefe": "keiner"}, "grundlagen": []},
+        "wuerdigung": {"ergebnis": "zulässig"}, "gap": {}, "optionen": {},
+    }
+    pfad = kette.pruefpfad(eintrag)
+    assert pfad == ("Tätigkeit → kein Grundrechtseingriff → "
+                    "Fachrecht (BöB (SR 172.056.1), IVöB 2019) → zulässig")
+    assert "Normstufe" not in pfad
+
+
+def test_mit_grundrechtseingriff_bleibt_der_volle_pfad():
+    eintrag = {
+        "taetigkeit": {"taetigkeit": "Personendaten bearbeiten"},
+        "kartierung": {"grundrechtseingriff_denkbar": True,
+                       "eingriff": {"tiefe": "schwer",
+                                    "grundrechte": ["Art. 13 Abs. 2 BV"]},
+                       "grundlagen": []},
+        "wuerdigung": {"ergebnis": "bedingt zulässig"}, "gap": {}, "optionen": {},
+    }
+    pfad = kette.pruefpfad(eintrag)
+    assert "Art. 13 Abs. 2 BV" in pfad
+    assert "Normstufe gesetz" in pfad
+
+
+def test_die_weiche_steht_im_vertrag(skills_dir):
+    llm = _LLM({"kartierungen": []})
+    kette.kartiere([{"taetigkeit": "T"}], _Wissen(), llm, skills_dir=skills_dir)
+    assert "Weichenfrage" in llm.user
+    assert "grundrechtseingriff_denkbar" in llm.user
+    assert "das ist gewollt" in llm.user
+
+    llm = _LLM({"wuerdigungen": []})
+    kette.wuerdige([{"nr": 0, "taetigkeit": "T"}], llm, skills_dir=skills_dir)
+    assert "Weiche gestellt" in llm.system
+    assert "keine Kerngehaltsprüfung" in llm.system
+
+
+# ---- Kapitel 6 ist ein Entscheid, keine zweite Herleitung ---------------- #
+
+def test_kapitel_sechs_ist_ein_managemententscheid():
+    """Es wiederholte Eingriff, Würdigung, Alternativen und Vorbehalte – alles
+    Dinge, die in den Kapiteln davor stehen. Ein Projektausschuss braucht
+    fünf Angaben."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Register führen"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "leicht"},
+            "grundlagen": [{"erlass": "Registergesetz", "normstufe": "gesetz",
+                            "ermaechtigt": True}], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig",
+                                         "sicherheit": "eindeutig"}]},
+    }
+    text = kette.zu_kapiteln(lauf)["konsequenzen"]
+    for feld in ("Tätigkeit:", "Zulässig:", "Unsicherheit:", "Handlungsbedarf:",
+                 "Entscheidungsempfehlung:", "Prüfpfad:"):
+        assert feld in text, feld
+    assert "Berührte Rechte:" not in text
+    assert "Alternative:" not in text
+
+
+# ---- Die fünf Befunde am Justiz-Dokument --------------------------------- #
+
+def test_artikelangaben_werden_als_ungeprueft_ausgewiesen():
+    """Gemessen: «StPO Art. 351 ff., insb. Art. 354» für die Vollstreckung von
+    Bussen – Art. 354 StPO regelt die Einsprache gegen den Strafbefehl. Die
+    Anwendung prüft ERLASSE gegen die amtlichen Sammlungen, Artikel nicht."""
+    assert kette.nennt_artikel("SR 312.0, Art. 354")
+    assert not kette.nennt_artikel("SR 312.0 – Strafprozessordnung")
+
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "keiner"}, "luecke": {"art": "keine"},
+            "grundlagen": [{"erlass": "StPO", "normstufe": "gesetz",
+                            "ermaechtigt": True,
+                            "fundstelle": "SR 312.0, Art. 351 ff."}]}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    zeilen = kette.zu_kapiteln(lauf)["bestehende_rechtsgrundlagen"]
+    assert zeilen[-1]["rechtsgrundlage"] == "Hinweis zu den Fundstellen"
+    assert "ARTIKELANGABEN sind es nicht" in zeilen[-1]["beschreibung"]
+
+
+def test_ohne_artikel_kein_hinweis():
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "keiner"}, "luecke": {"art": "keine"},
+            "grundlagen": [{"erlass": "StPO", "normstufe": "gesetz",
+                            "ermaechtigt": True, "fundstelle": "SR 312.0"}]}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    namen = [z["rechtsgrundlage"] for z in
+             kette.zu_kapiteln(lauf)["bestehende_rechtsgrundlagen"]]
+    assert "Hinweis zu den Fundstellen" not in namen
+
+
+def test_fehlender_kanton_macht_die_aussagen_vorlaeufig():
+    """Ohne Kanton bleibt jede Aussage zum kantonalen Recht hypothetisch – das
+    Dokument sprach von «dem kantonalen Polizeigesetz», ohne sagen zu können,
+    welches gemeint ist."""
+    lauf = {"_kontext": {"ebene": "bund,kanton", "kanton": ""},
+            "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]}}
+    text = json.dumps(kette.zu_kapiteln(lauf), ensure_ascii=False)
+    assert "Kanton ist nicht angegeben" in text
+    assert "VORLÄUFIG" in text
+
+    lauf["_kontext"]["kanton"] = "SG"
+    assert "Kanton ist nicht angegeben" not in json.dumps(
+        kette.zu_kapiteln(lauf), ensure_ascii=False)
+
+
+def test_die_empfehlung_unterscheidet_statt_pauschal_zu_stoppen():
+    """«Das Vorhaben ist nicht weiterzuführen» für ein ganzes Projekt, weil EINE
+    Tätigkeit klärungsbedürftig ist, hilft in der Initialisierung nicht – die
+    Phase dient genau dieser Klärung."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Sauber"},
+                                          {"taetigkeit": "Klärungsbedürftig"}]},
+        "kartierung": {"kartierungen": [
+            {"nr": 0, "eingriff": {"tiefe": "keiner"}, "luecke": {"art": "keine"},
+             "grundlagen": [{"erlass": "G", "normstufe": "gesetz",
+                             "ermaechtigt": True}]},
+            {"nr": 1, "eingriff": {"tiefe": "schwer"}, "grundlagen": [],
+             "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"},
+                                        {"nr": 1, "ergebnis": "bedingt zulässig"}]},
+    }
+    e = kette.zu_kapiteln(lauf)["empfehlung"]
+    assert "1 von 2 Tätigkeiten" in e
+    assert "Ohne Einwände" in e and "Sauber" in e
+    assert "nicht Abbruch, sondern Klärungsauftrag" in e
+    assert "nicht weiterzuführen" not in e
+
+
+def test_bei_verletztem_kerngehalt_bleibt_es_beim_stopp():
+    """Gegenprobe: was der Kerngehalt versperrt, kann keine Klärung heilen."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+        "kartierung": {"kartierungen": [{"nr": 0, "eingriff": {"tiefe": "schwer"},
+                                         "grundlagen": [], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "nicht zulässig",
+                                         "kerngehalt_verletzt": True}]},
+    }
+    e = kette.zu_kapiteln(lauf)["empfehlung"]
+    assert "nicht umsetzbar" in e
+    assert "keine weitere Abklärung" in e
+    assert "Klärungsauftrag" not in e
+
+
+def test_product_compliance_kommt_aus_dem_fachrecht():
+    """Das Kapitel war leer, obwohl der PIA die Beschaffung ausdrücklich
+    behandelt. Das Fachrecht der Kartierung ist der Anknüpfungspunkt."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Beschaffen"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "grundrechtseingriff_denkbar": False,
+            "fachrecht": ["BöB (SR 172.056.1)", "IVöB 2019"],
+            "eingriff": {"tiefe": "keiner"}, "grundlagen": [],
+            "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]},
+    }
+    c = kette.zu_kapiteln(lauf)["product_compliance"]
+    assert [z["compliance"] for z in c] == ["BöB (SR 172.056.1)", "IVöB 2019"]
+    assert "nicht im Einzelnen erhoben" in c[0]["beschreibung"]
+
+
+def test_ohne_fachrecht_wird_nichts_behauptet():
+    lauf = {"taetigkeiten": {"taetigkeiten": [{"taetigkeit": "T"}]},
+            "kartierung": {"kartierungen": [{"nr": 0, "eingriff": {"tiefe": "keiner"},
+                                             "grundlagen": [], "luecke": {"art": "keine"}}]},
+            "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "zulässig"}]}}
+    c = kette.zu_kapiteln(lauf)["product_compliance"][0]
+    assert "kein Nachweis" in c["beschreibung"]
+
+
+def test_luecken_werden_je_taetigkeit_zusammengefasst():
+    """Dieselbe Tätigkeit stand vier- bis fünfmal untereinander, teilweise
+    wortgleich."""
+    lauf = {
+        "taetigkeiten": {"taetigkeiten": [{"taetigkeit": "Eine Tätigkeit"}]},
+        "kartierung": {"kartierungen": [{
+            "nr": 0, "eingriff": {"tiefe": "schwer", "grundrechte": ["Art. 13 BV"]},
+            "grundlagen": [{"erlass": "Bundesverfassung", "normstufe": "verfassung",
+                            "ermaechtigt": True}], "luecke": {"art": "keine"}}]},
+        "wuerdigung": {"wuerdigungen": [{"nr": 0, "ergebnis": "nicht zulässig"}]},
+    }
+    luecken = kette.zu_kapiteln(lauf)["identifizierte_luecken"]
+    assert len(luecken) == 1
+    assert luecken[0]["luecke"] == "Eine Tätigkeit"

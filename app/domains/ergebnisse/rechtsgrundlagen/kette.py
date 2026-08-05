@@ -333,6 +333,8 @@ _SYSTEM_KARTIERUNG = (
 
 _SCHEMA_KARTIERUNG = (
     '{"kartierungen":[{"nr":0,'
+    '"grundrechtseingriff_denkbar":true,"weichenbegruendung":"",'
+    '"fachrecht":[""],'
     '"grundlagen":[{"erlass":"","fundstelle":"","normstufe":'
     '"verfassung|gesetz|verordnung|richtlinie","status":"in Kraft|bevorstehend|hängig",'
     '"ermaechtigt":true,"geltung":""}],'
@@ -367,7 +369,15 @@ def kartiere(liste, wissen, llm, gefundene=None, tenant_id=None, skills_dir=None
         "Kartiere die Rechtsgrundlagen für JEDE dieser Tätigkeiten einzeln. "
         "Gib je Tätigkeit einen Eintrag mit ihrer Nummer zurück.\n\n"
         f"{json.dumps(eingang, ensure_ascii=False)}\n\n"
-        "Bestimme je Tätigkeit zuerst, wie stark sie in Rechte und Pflichten "
+        "Stelle je Tätigkeit ZUERST die Weichenfrage: Ist ein staatlicher "
+        "Grundrechtseingriff überhaupt denkbar? Eine Beschaffung, eine "
+        "behördeninterne Koordination oder eine Systemablösung als solche "
+        "greift in der Regel in keine Grundrechte ein. Lautet die Antwort "
+        "NEIN, setze 'grundrechtseingriff_denkbar' auf false, begründe das "
+        "kurz und nenne unter 'fachrecht' das einschlägige Spezialrecht "
+        "(etwa das Beschaffungs-, Archiv- oder Organisationsrecht). Der "
+        "Prüfpfad ist dann viel kürzer – das ist gewollt.\n"
+        "Bestimme je Tätigkeit sodann, wie stark sie in Rechte und Pflichten "
         "eingreift – 'schwer', 'leicht' oder 'keiner' – und begründe das. Trage "
         "unter 'grundrechte' NUR ein, was tatsächlich berührt ist; die meisten "
         "Verwaltungstätigkeiten schränken keine Grundrechte ein, und dann bleibt "
@@ -458,6 +468,12 @@ _SYSTEM_WUERDIGUNG = (
     "Gesetz unzulässig; sag das dann ausdrücklich.\n"
     "  · Wo einschlägig: die Anforderungen des massgeblichen Spezialrechts, der "
     "Zuständigkeitsordnung und des Verfahrensrechts.\n"
+    "- Sagt die Kartierung 'grundrechtseingriff_denkbar: false', ist die "
+    "Weiche gestellt: prüfe NUR das Legalitätsprinzip und das genannte "
+    "Fachrecht. Keine Normstufenherleitung, keine Verhältnismässigkeit, keine "
+    "Kerngehaltsprüfung – und keine Begründung, warum du sie weglässt. Halte "
+    "dich kurz; ein kurzer Prüfpfad ist bei einer solchen Tätigkeit das "
+    "richtige Ergebnis, kein Mangel.\n"
     "- Berührt die Tätigkeit keine Grundrechte, prüfst du KEINE "
     "Grundrechtsschranke. Erfinde keinen Eingriff, um etwas zu prüfen zu haben – "
     "die meisten Verwaltungsvorhaben schränken keine Grundrechte ein, und für "
@@ -832,6 +848,66 @@ def _text(wert):
     return str(wert or "").strip()
 
 
+# Artikelangaben sind NICHT verifiziert. Die Anwendung prueft Erlasse gegen die
+# amtlichen Sammlungen (Fedlex/lexfind), einzelne Artikel nicht. Gemessen stand
+# im Dokument «StPO Art. 351 ff., insb. Art. 354» fuer die Vollstreckung von
+# Bussen - Art. 354 StPO regelt die Einsprache gegen den Strafbefehl. Eine
+# falsche Artikelangabe ist gefaehrlicher als gar keine: sie sieht praeziser
+# aus, als sie belegt ist.
+_ARTIKEL = re.compile(r"\bArt\.\s*\d", re.IGNORECASE)
+
+ARTIKEL_HINWEIS = {
+    "rechtsgrundlage": "Hinweis zu den Fundstellen",
+    "beschreibung": ("Die aufgeführten ERLASSE sind gegen die amtlichen "
+                     "Sammlungen geprüft. Die ARTIKELANGABEN sind es nicht – "
+                     "sie stammen aus der Analyse und sind vor einer Freigabe "
+                     "einzeln zu verifizieren."),
+}
+
+
+def nennt_artikel(text):
+    """Enthält der Text eine Artikelangabe? (Die ist nie verifiziert.)"""
+    return bool(_ARTIKEL.search(str(text or "")))
+
+
+def nicht_heilbar(wuerdigung):
+    """Ist die Tätigkeit durch KEINE Normstufe zu retten?
+
+    Bei einer Kerngehaltsverletzung hilft weder ein Gesetz noch eine
+    Verfassungsänderung: Art. 36 Abs. 4 BV erklärt den Kerngehalt für
+    unantastbar. Gemessen stand im Dokument «Kerngehalt verletzt» und eine
+    Zeile darunter «zu schaffen auf Stufe gesetz» – ein Weg, den es nicht
+    gibt, direkt neben der Feststellung, dass es ihn nicht gibt.
+
+    Die Gap-Analyse kann das nicht wissen: sie läuft VOR der Würdigung.
+    Auflösen muss es deshalb der Code beim Zusammenbauen.
+    """
+    return bool((wuerdigung or {}).get("kerngehalt_verletzt"))
+
+
+def _kontextvorbehalte(lauf):
+    """Vorbehalte, die aus fehlenden PROJEKTANGABEN folgen.
+
+    Ohne Kanton bleibt jede Aussage zum kantonalen Recht hypothetisch - das
+    Dokument sprach dann von «dem kantonalen Polizeigesetz», ohne sagen zu
+    koennen, welches gemeint ist. Das gehoert an den Anfang, nicht zwischen
+    die Befunde.
+    """
+    kontext = lauf.get("_kontext") or {}
+    ebene = str(kontext.get("ebene") or "").lower()
+    raus = []
+    if ("kanton" in ebene or "kommun" in ebene) and not (kontext.get("kanton") or "").strip():
+        raus.append({
+            "gewicht": "Vorbehalt", "taetigkeit": "(ganzes Vorhaben)",
+            "meldung": ("Der Kanton ist nicht angegeben. Alle Aussagen zum "
+                        "kantonalen Recht sind deshalb VORLÄUFIG – welcher "
+                        "Erlass gilt, lässt sich ohne diese Angabe nicht "
+                        "bestimmen. Die Analyse ist nach Angabe des Kantons zu "
+                        "wiederholen."),
+        })
+    return raus
+
+
 def zu_kapiteln(lauf):
     """Bildet die Ergebnisse der Kette auf die Dokumentkapitel ab.
 
@@ -846,7 +922,7 @@ def zu_kapiteln(lauf):
       der Auftraggeber eine Analyse, die etwas anderes sagt als die Prüfung.
     """
     befunde = befunde_aus(lauf)
-    meldungen = sperren(befunde)
+    meldungen = _kontextvorbehalte(lauf) + sperren(befunde)
     # Fehlende Schichtergebnisse werden AUSGEWIESEN, nicht verschwiegen: eine
     # Taetigkeit ohne Kartierung oder ohne Wuerdigung ist nicht geprueft, und
     # das Dokument darf nicht so tun, als waere sie es.
@@ -878,6 +954,8 @@ def zu_kapiteln(lauf):
                 "beschreibung": " – ".join(teile) or
                                 f"Deckt ab: {_text(e['taetigkeit'].get('taetigkeit'))}",
             })
+    if bestehende and any(nennt_artikel(z["beschreibung"]) for z in bestehende):
+        bestehende.append(dict(ARTIKEL_HINWEIS))
     if not bestehende:
         bestehende = [{
             "rechtsgrundlage": "Keine ermächtigende Grundlage nachgewiesen",
@@ -912,10 +990,23 @@ def zu_kapiteln(lauf):
         }]
 
     # ---- Identifizierte Lücken ------------------------------------------ #
+    # Je Taetigkeit EINE Zeile. Vorher erzeugte jede Sperre ihre eigene, und
+    # dieselbe Taetigkeit stand vier- bis fuenfmal untereinander - mit
+    # teilweise wortgleichem Text. Das erschwerte das Lesen erheblich.
     luecken = []
+    gesammelt = {}
     for m in muss:
-        luecken.append({"luecke": _text(m["taetigkeit"]),
-                        "beschreibung": m["meldung"]})
+        gesammelt.setdefault(_text(m["taetigkeit"]), []).append(m["meldung"])
+    begruendungen = {_text((e.get("taetigkeit") or {}).get("taetigkeit")):
+                     _text((e.get("wuerdigung") or {}).get("begruendung"))
+                     for e in befunde}
+    for name, meldungstexte in gesammelt.items():
+        # Die ausformulierte Begruendung steht bei der Luecke, die sie traegt -
+        # nicht ein zweites Mal im Entscheid-Kapitel.
+        text = " ".join(meldungstexte)
+        if begruendungen.get(name):
+            text = f"{text} {begruendungen[name]}"
+        luecken.append({"luecke": name, "beschreibung": text})
     for e in befunde:
         art = str((e["kartierung"].get("luecke") or {}).get("art", "")).lower()
         if art == "rechtsluecke" and e["gap"].get("bestaetigt"):
@@ -933,9 +1024,12 @@ def zu_kapiteln(lauf):
                 "luecke": _text(e["taetigkeit"].get("taetigkeit")),
                 "beschreibung": f"{_text(e['gap'].get('begruendung'))} {zusatz}",
             })
+    offen_gesammelt = {}
     for m in offen:
-        luecken.append({"luecke": f"Offen: {_text(m['taetigkeit'])}",
-                        "beschreibung": m["meldung"]})
+        offen_gesammelt.setdefault(_text(m["taetigkeit"]), []).append(m["meldung"])
+    for name, meldungstexte in offen_gesammelt.items():
+        luecken.append({"luecke": f"Offen: {name}",
+                        "beschreibung": " ".join(meldungstexte)})
     if not luecken:
         luecken = [{"luecke": "Keine Lücke identifiziert",
                     "beschreibung": "Jede geprüfte Tätigkeit ist durch eine "
@@ -991,21 +1085,12 @@ def zu_kapiteln(lauf):
     # Leser eine Empfehlung bis zu ihrem Ursprung zurueckverfolgen und dort
     # widersprechen. Vorher stand hier ein Absatz je Taetigkeit, in dem alles
     # vermischt war.
-    zeilen = [graph_als_text(befunde, meldungen)] if befunde else []
-    for e in befunde:
-        w = e["wuerdigung"]
-        if not w.get("ergebnis"):
-            continue
-        # Der angelegte Massstab und der Sicherheitsgrad gehoeren an die
-        # Aussage, nicht in eine Fussnote: «nicht zulaessig» ohne beides liest
-        # sich wie ein Urteil statt wie eine Einschaetzung.
-        # Die ausformulierte Begruendung ergaenzt den Graphen, sie ersetzt
-        # ihn nicht: der Graph zeigt den Weg, die Begruendung traegt ihn.
-        zeilen.append(f"Begründung – {_text(e['taetigkeit'].get('taetigkeit'))}: "
-                      f"{_text(w.get('begruendung'))}")
-    if muss:
-        zeilen.append("Zwingend zu klären, bevor dieses Vorhaben weitergeführt "
-                      "werden kann: " + " ".join(m["meldung"] for m in muss))
+    # Kapitel 6 ist ein MANAGEMENTENTSCHEID, keine zweite Herleitung. Es
+    # wiederholte zuvor Eingriff, Würdigung, Alternativen und Vorbehalte –
+    # alles Dinge, die in den Kapiteln 2–5 bereits stehen. Für den Entscheid
+    # eines Projektausschusses genügen fünf Angaben je Tätigkeit; der
+    # zurückgelegte Prüfpfad hält die Nachvollziehbarkeit in einer Zeile.
+    zeilen = [managemententscheid(befunde, meldungen)] if befunde else []
     konsequenzen = "\n".join(zeilen) or (
         "Die Konsequenzen wurden nicht beurteilt. Dieses Dokument ist insoweit "
         "unvollständig und ohne die Beurteilung nicht freigabefähig.")
@@ -1015,13 +1100,42 @@ def zu_kapiteln(lauf):
         empfehlung = ("Es liegt keine Empfehlung vor: aus dem Projektauftrag "
                       "liessen sich keine zu prüfenden Tätigkeiten ableiten.")
     elif muss:
-        empfehlung = (
-            "Das Vorhaben ist in der vorliegenden Form nicht weiterzuführen, "
-            "solange die zwingenden Punkte offen sind. Diese Einschätzung "
-            "stützt sich auf die vorstehende Würdigung und auf die im PIA "
-            "beschriebenen Tätigkeiten; ändern sich diese, ist sie neu zu "
-            "bilden. Die Analyse ist beratend und ersetzt die Beurteilung "
-            "durch den Rechtsdienst nicht.")
+        # DIFFERENZIEREN statt pauschal stoppen. Ein Muss-Befund betrifft EINE
+        # Taetigkeit, nicht das Vorhaben. Und in der Initialisierung ist «zu
+        # klaeren» die richtige Anweisung - nicht «Stopp»: die Phase dient
+        # genau dieser Klaerung. Etwas anderes gilt nur beim Kerngehalt, denn
+        # den kann keine Klaerung heilen.
+        betroffen = sorted({m["taetigkeit"] for m in muss})
+        sauber = sorted({_text((e.get("taetigkeit") or {}).get("taetigkeit"))
+                         for e in befunde} - set(betroffen))
+        endgueltig = [e for e in befunde if nicht_heilbar(e.get("wuerdigung"))]
+        teile = []
+        if endgueltig:
+            teile.append(
+                "Für mindestens eine Tätigkeit sieht die Würdigung den "
+                "Kerngehalt eines Grundrechts verletzt. Diese Tätigkeit ist in "
+                "der vorgesehenen Form nicht umsetzbar – dort hilft keine "
+                "weitere Abklärung, sondern nur eine Änderung des Vorhabens.")
+        teile.append(
+            f"Zwingend zu klären ({len(betroffen)} von {len(befunde)} "
+            f"Tätigkeiten): {'; '.join(betroffen)}.")
+        if sauber:
+            teile.append(
+                f"Ohne Einwände aus Sicht der Rechtsgrundlagen sind: "
+                f"{'; '.join(sauber)}. Diese Tätigkeiten können unabhängig "
+                f"weiterverfolgt werden.")
+        if not endgueltig:
+            teile.append(
+                "Für die Initialisierungsphase heisst das nicht Abbruch, "
+                "sondern Klärungsauftrag: die genannten Punkte sind in dieser "
+                "Phase zu bereinigen, bevor der Durchführungsauftrag "
+                "freigegeben wird.")
+        teile.append(
+            "Diese Einschätzung stützt sich auf die vorstehende Würdigung und "
+            "auf die im PIA beschriebenen Tätigkeiten; ändern sich diese, ist "
+            "sie neu zu bilden. Die Analyse ist beratend und ersetzt die "
+            "Beurteilung durch den Rechtsdienst nicht.")
+        empfehlung = " ".join(teile)
     elif darf_entwarnen(befunde):
         empfehlung = (
             "Für jede geprüfte Tätigkeit besteht eine ermächtigende Grundlage der "
@@ -1032,7 +1146,38 @@ def zu_kapiteln(lauf):
             "Die Analyse ist nicht abgeschlossen: einzelne Punkte sind offen. "
             "Bis zu ihrer Klärung kann diese Analyse keine Freigabe tragen.")
 
+    # ---- Product Compliance --------------------------------------------- #
+    # Sie war «nicht Gegenstand dieser Analyse», obwohl der PIA die Beschaffung
+    # ausdruecklich behandelt. Das Fachrecht, das die Kartierung je Taetigkeit
+    # nennt, IST der Anknuepfungspunkt - es aufzufuehren ist ehrlicher, als das
+    # Kapitel leer zu lassen.
+    compliance, gesehen_fach = [], set()
+    for e in befunde:
+        name = _text((e.get("taetigkeit") or {}).get("taetigkeit"))
+        for f in (e["kartierung"].get("fachrecht") or []):
+            schluessel = str(f).strip()
+            if not schluessel or schluessel.lower() in gesehen_fach:
+                continue
+            gesehen_fach.add(schluessel.lower())
+            compliance.append({
+                "compliance": schluessel,
+                "beschreibung": (f"Einschlägig für: {name}. Die Anforderungen "
+                                 f"dieses Erlasses sind im weiteren Verlauf "
+                                 f"einzuhalten; diese Analyse hat sie nicht "
+                                 f"im Einzelnen erhoben."),
+            })
+    if not compliance:
+        compliance = [{
+            "compliance": "Kein Fachrecht mit Produktbezug erhoben",
+            "beschreibung": ("Die Kartierung hat zu den geprüften Tätigkeiten "
+                             "kein Fachrecht mit Anforderungen an die "
+                             "Produktkonformität benannt. Erhoben wurde es "
+                             "nicht eigens – das Fehlen von Einträgen ist "
+                             "deshalb kein Nachweis."),
+        }]
+
     return {
+        "product_compliance": compliance,
         "bestehende_rechtsgrundlagen": bestehende,
         "bevorstehende_aenderungen": bevorstehend,
         "identifizierte_luecken": luecken,
@@ -1047,133 +1192,83 @@ def zu_kapiteln(lauf):
 #  Der Begründungsgraph
 # ======================================================================== #
 
-# Die Stationen, die eine Aussage dieser Analyse durchläuft. Sie sind keine
-# Darstellungsidee, sondern der Ablauf selbst: jede Station ist das Ergebnis
-# einer Schicht. Sichtbar gemacht, kann der Leser eine Empfehlung bis zur
-# Tätigkeit zurückverfolgen, aus der sie stammt - und dort widersprechen, wo
-# er anderer Meinung ist. Ohne diese Kette bleibt nur «vertraue dem Ergebnis».
-STATIONEN = ("Tätigkeit", "Betroffene", "Berührte Rechte", "Eingriff",
-             "Prüfmassstab", "Würdigung", "Rechtslage", "Alternative", "Folge")
+def pruefpfad(eintrag):
+    """Der zurückgelegte Weg in EINER Zeile.
 
-
-def nicht_heilbar(wuerdigung):
-    """Ist die Tätigkeit durch KEINE Normstufe zu retten?
-
-    Bei einer Kerngehaltsverletzung hilft weder ein Gesetz noch eine
-    Verfassungsänderung: Art. 36 Abs. 4 BV erklärt den Kerngehalt für
-    unantastbar. Gemessen stand im Dokument «Kerngehalt verletzt» und eine
-    Zeile darunter «zu schaffen auf Stufe gesetz» – ein Weg, den es nicht
-    gibt, direkt neben der Feststellung, dass es ihn nicht gibt.
-
-    Die Gap-Analyse kann das nicht wissen: sie läuft VOR der Würdigung.
-    Auflösen muss es deshalb der Code beim Zusammenbauen.
+    Der ausführliche Begründungsgraph wiederholte, was in den Kapiteln 2–5
+    ohnehin steht – Eingriff, Würdigung, Alternativen, Vorbehalte. Für den
+    Entscheid genügt der Weg; die Einzelheiten stehen dort, wo sie hingehören.
     """
-    return bool((wuerdigung or {}).get("kerngehalt_verletzt"))
-
-
-def begruendungsgraph(eintrag):
-    """Die Begründungskette EINER Tätigkeit als geordnete Stationen.
-
-    Rückgabe: [(Station, Inhalt)] – leere Stationen fallen weg, denn eine
-    leere Station wäre eine Behauptung über etwas, das nicht geprüft wurde.
-    """
-    t = eintrag.get("taetigkeit") or {}
     kart = eintrag.get("kartierung") or {}
     wuerd = eintrag.get("wuerdigung") or {}
-    gap = eintrag.get("gap") or {}
-    opt = eintrag.get("optionen") or {}
-    tiefe, abweichung = eingriff_von(kart, wuerd)
-
-    stationen = [("Tätigkeit", _text(t.get("taetigkeit")))]
-
-    betroffen = ", ".join(x for x in (t.get("betroffene"), t.get("daten")) if x)
-    if betroffen:
-        stationen.append(("Betroffene", betroffen))
-
-    rechte = [str(r) for r in (kart.get("eingriff") or {}).get("grundrechte") or []
-              if str(r).strip()]
-    if rechte:
-        stationen.append(("Berührte Rechte", ", ".join(rechte)))
-
-    if tiefe:
-        eintragstext = EINGRIFF_TEXT.get(tiefe, f"Eingriff: {tiefe}")
-        if abweichung:
-            eintragstext += (f" (die Kartierung sah «{abweichung['kartierung']}»; "
-                             f"massgeblich ist die Würdigung)")
+    tiefe, _ = eingriff_von(kart, wuerd)
+    stationen = ["Tätigkeit"]
+    if kart.get("grundrechtseingriff_denkbar") is False:
+        # Die frühe Weiche: kein Grundrechtseingriff denkbar -> direkt Fachrecht.
+        fach = ", ".join(str(f) for f in (kart.get("fachrecht") or []) if str(f).strip())
+        stationen.append("kein Grundrechtseingriff")
+        stationen.append(f"Fachrecht ({fach})" if fach else "Fachrecht")
+    else:
+        rechte = [str(r) for r in (kart.get("eingriff") or {}).get("grundrechte") or []
+                  if str(r).strip()]
+        if rechte:
+            stationen.append(", ".join(rechte))
+        if tiefe:
+            stationen.append(EINGRIFF_TEXT.get(tiefe, tiefe))
         noetig = EINGRIFF_MINDESTSTUFE.get(tiefe, "")
         if noetig:
-            eintragstext += f" · erforderliche Normstufe: {noetig}"
-        stationen.append(("Eingriff", eintragstext))
-
-    mass = massstaebe(wuerd)
-    if mass:
-        stationen.append(("Prüfmassstab", ", ".join(mass)))
-
+            stationen.append(f"Normstufe {noetig}")
     if wuerd.get("ergebnis"):
-        stationen.append(("Würdigung",
-                          f"{wuerd['ergebnis']} (Sicherheit: "
-                          f"{sicherheit_von(wuerd)}){_quellen(wuerd)}"))
-
-    tragend = [g.get("erlass") for g in (kart.get("grundlagen") or [])
-               if isinstance(g, dict) and g.get("ermaechtigt")
-               and not ist_schrankennorm(g.get("erlass"))]
-    art = str((kart.get("luecke") or {}).get("art", "")).lower()
-    if tragend:
-        stationen.append(("Rechtslage", "Ermächtigende Grundlage: "
-                          + ", ".join(str(x) for x in tragend if x)))
-    elif gap.get("bestaetigt"):
-        stufe = gap.get("erforderliche_normstufe", "")
-        organ, referendum = NORMSTUFE_VERFAHREN.get(str(stufe).lower(), ("", ""))
-        if nicht_heilbar(wuerd):
-            # Kein Normweg. Die Stufenangabe der Gap-Analyse waere hier eine
-            # Wegbeschreibung ins Nichts.
-            stationen.append((
-                "Rechtslage",
-                "Rechtslücke bestätigt – aber durch KEINE Normstufe zu "
-                "schliessen: die Würdigung sieht den Kerngehalt verletzt, und "
-                "der Kerngehalt ist nach Art. 36 Abs. 4 BV unantastbar. Auch "
-                "eine Verfassungsänderung hülfe nicht. Die Tätigkeit müsste "
-                "so geändert werden, dass sie den Kerngehalt nicht mehr "
-                "berührt."))
-        else:
-            stationen.append(("Rechtslage",
-                              f"Rechtslücke bestätigt · zu schaffen auf Stufe "
-                              f"{stufe or '(offen)'}"
-                              f"{f' ({organ}, {referendum})' if organ else ''}"))
-    elif art in ("rechercheluecke", "informationsluecke"):
-        stationen.append(("Rechtslage", f"Offen – {art} (nicht geprüft ist nicht "
-                                        f"dasselbe wie nicht vorhanden)"))
-    elif art == "rechtsluecke":
-        stationen.append(("Rechtslage", "Keine ermächtigende Grundlage gefunden"))
-
-    for o in (opt.get("optionen") or []):
-        if isinstance(o, dict) and o.get("option"):
-            herkunft = str(o.get("herkunft", "")).strip() or \
-                "Schlussfolgerung dieser Analyse"
-            stationen.append(("Alternative",
-                              f"{_text(o['option'])} [{herkunft} · Sicherheit: "
-                              f"{sicherheit_von(o)}]"))
-
-    return stationen
+        stationen.append(str(wuerd["ergebnis"]))
+    return " → ".join(stationen)
 
 
-def graph_als_text(befunde, meldungen=None):
-    """Der Graph aller Tätigkeiten als lesbarer Block.
+def managemententscheid(befunde, meldungen=None):
+    """Kapitel «Beurteilung der Konsequenzen» für den Projektausschuss.
 
-    Die Folgen (Muss-/Vorbehaltsbefunde) hängen an der Tätigkeit, aus der sie
-    stammen – das ist der Punkt der ganzen Übung: eine Empfehlung ohne Weg
-    dorthin ist eine Behauptung.
+    Fünf Angaben je Tätigkeit – Zulässigkeit, Unsicherheit, Handlungsbedarf,
+    Empfehlung und der zurückgelegte Prüfpfad. Mehr braucht ein Ausschuss für
+    seinen Entscheid nicht; die Herleitung steht in den Kapiteln davor.
     """
     nach_taetigkeit = {}
     for m in meldungen or []:
         nach_taetigkeit.setdefault(m.get("taetigkeit"), []).append(m)
 
     bloecke = []
-    for eintrag in befunde or []:
-        stationen = begruendungsgraph(eintrag)
-        name = (eintrag.get("taetigkeit") or {}).get("taetigkeit")
-        for m in nach_taetigkeit.get(name, []):
-            stationen.append((f"Folge ({m['gewicht']})", m["meldung"]))
-        bloecke.append("\n".join(f"{station}: {inhalt}"
-                                  for station, inhalt in stationen))
+    for e in befunde or []:
+        t = e.get("taetigkeit") or {}
+        name = _text(t.get("taetigkeit"))
+        w = e.get("wuerdigung") or {}
+        eigene = nach_taetigkeit.get(name, [])
+        muss = [m for m in eigene if m["gewicht"] == "Muss"]
+        offen = [m for m in eigene if m["gewicht"] == "Vorbehalt"]
+
+        if muss:
+            entscheid = ("So nicht weiterführen – die zwingenden Punkte sind "
+                         "vor jedem weiteren Schritt zu klären.")
+        elif offen:
+            entscheid = ("Weiterführen möglich, sobald die offenen Punkte "
+                         "geklärt sind.")
+        elif w.get("ergebnis"):
+            entscheid = "Keine Einwände aus Sicht der Rechtsgrundlagen."
+        else:
+            entscheid = "Kein Entscheid möglich – diese Tätigkeit wurde nicht gewürdigt."
+
+        handlungsbedarf = [m["meldung"] for m in muss] or \
+                          [m["meldung"] for m in offen] or ["keiner"]
+
+        zeilen = [
+            f"Tätigkeit: {name}",
+            f"Zulässig: {w.get('ergebnis') or 'nicht beurteilt'}",
+            f"Unsicherheit: {sicherheit_von(w)}",
+            "Handlungsbedarf: " + " · ".join(handlungsbedarf),
+            f"Entscheidungsempfehlung: {entscheid}",
+            f"Prüfpfad: {pruefpfad(e)}",
+        ]
+        # Die ausformulierte Begründung steht bei der Lücke, die sie trägt.
+        # Gibt es keine Lücke, gibt es dort auch keinen Platz – dann gehört sie
+        # hierher, sonst stünde «zulässig» völlig unbegründet da.
+        if not eigene and _text(w.get("begruendung")):
+            zeilen.append(f"Begründung: {_text(w.get('begruendung'))}")
+        bloecke.append("\n".join(zeilen))
     return "\n\n".join(bloecke)
