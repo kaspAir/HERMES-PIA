@@ -490,3 +490,42 @@ def test_ohne_taetigkeiten_wird_nichts_behauptet():
     assert "keine zu prüfenden Tätigkeiten" in k["empfehlung"]
     assert "Keine ermächtigende Grundlage" in \
         k["bestehende_rechtsgrundlagen"][0]["rechtsgrundlage"]
+
+
+def test_der_schlussschritt_ruft_kein_modell():
+    """Gemessen an der eigenen Zusage: Schritt 6 rief über build_answers die
+    ALTE Einzelaufruf-Analyse auf. Ihre Ergebnisse wurden teils überschrieben,
+    teils nicht – das Dokument mischte zwei Verfahren."""
+    from app.domains.ergebnisse.rechtsgrundlagen import service as svc_modul
+
+    gerufen = []
+    echt = svc_modul.analysiere
+
+    class _Wissen2(_Wissen):
+        def referenzierte(self): return []
+        def mitgeltende(self): return []
+        def definitionen(self): return []
+
+    try:
+        svc_modul.analysiere = lambda *a, **kw: gerufen.append(1) or {}
+        s = svc_modul.RechtsgrundlagenService.__new__(
+            svc_modul.RechtsgrundlagenService)
+        s.llm = None
+        s.recherche = None
+
+        s.build_answers(_Wissen2(), nur_basis=True)
+        assert gerufen == [], "nur_basis darf kein Modell rufen"
+    finally:
+        svc_modul.analysiere = echt
+
+
+def test_produktkonformitaet_wird_nicht_behauptet():
+    """Die Kette erhebt sie nicht – dann darf dort auch nicht «kein Hinweis
+    identifiziert» stehen. Nicht erhoben ist nicht dasselbe wie unbedenklich."""
+    from pathlib import Path
+
+    from app.domains.ergebnisse.rechtsgrundlagen import service as svc_modul
+    quelle = Path(svc_modul.__file__).read_text(encoding="utf-8")
+    schluss = quelle[quelle.index('# "kapitel"'):]
+    assert "Nicht Gegenstand dieser Analyse" in schluss
+    assert "nur_basis=True" in schluss

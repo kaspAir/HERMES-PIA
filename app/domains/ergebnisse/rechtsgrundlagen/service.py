@@ -384,7 +384,16 @@ class RechtsgrundlagenService:
                      "müsste. Aus dem Fehlen von Befunden darf deshalb nicht "
                      "geschlossen werden, dass eine Rechtsgrundlage besteht.")}]
 
-    def build_answers(self, wissen, tenant_id=None):
+    def build_answers(self, wissen, tenant_id=None, nur_basis=False):
+        """Die Abschnitts-Antworten.
+
+        `nur_basis=True` laesst den alten Einzelaufruf weg und liefert nur die
+        DETERMINISTISCHEN Abschnitte (referenzierte Dokumente, mitgeltende
+        Unterlagen, Definitionen). Der Schlussschritt der vierschichtigen Kette
+        braucht genau das: sonst liefe dort die alte Analyse ein zweites Mal
+        mit, ihre Ergebnisse wuerden teilweise ueberschrieben und teilweise
+        nicht - und das Dokument mischte zwei Verfahren.
+        """
         relevante = self._relevante_gesetze(wissen)
         # Skills laden. Mapping Skill↔Schritt: der Entwurfs-/Kartierungsschritt
         # nutzt NUR die Kartierung – die weiteren Skills der Kette (Gap, Würdigung,
@@ -395,7 +404,9 @@ class RechtsgrundlagenService:
                              only={"rechtsgrundlagen-kartierung"})
         # LLM ermittelt selbst die einschlägigen Rechtsgrundlagen (auch im PIA nicht
         # genannte, z.B. StReG/StReV) und prüft je Ziel, ob eine Grundlage besteht.
-        v = analysiere(wissen, self.llm, bestehende_namen=relevante, skill_bundle=bundle)
+        v = ({} if nur_basis else
+             analysiere(wissen, self.llm, bestehende_namen=relevante,
+                        skill_bundle=bundle))
         entdeckt = [str(r.get("rechtsgrundlage", "")).strip()
                     for r in (v.get("bestehende") or []) if isinstance(r, dict)]
         # Kap.-1-Kandidaten: PIA-Recht + vom LLM ergänzte, gefiltert (echte Gesetze).
@@ -581,7 +592,19 @@ class RechtsgrundlagenService:
                     faelle, self.llm, tenant_id=tenant, skills_dir=skills_dir)
         else:                                   # "kapitel" – ohne Modellaufruf
             kapitel = kette.zu_kapiteln(lauf)
-            answers = self.build_answers(wissen, tenant_id=tenant)
+            # nur_basis: NUR die deterministischen Abschnitte. Ohne das liefe
+            # hier die alte Einzelaufruf-Analyse mit und das Dokument mischte
+            # zwei Verfahren.
+            answers = self.build_answers(wissen, tenant_id=tenant, nur_basis=True)
+            # Produktkonformitaet ist nicht Gegenstand dieser Kette - das muss
+            # dastehen, statt «kein Hinweis identifiziert» zu behaupten.
+            answers["product_compliance"] = {"extracted": [{
+                "compliance": "Nicht Gegenstand dieser Analyse",
+                "beschreibung": "Die vierschichtige Prüfung betrifft die "
+                                "Rechtsgrundlagen der geplanten Tätigkeiten. "
+                                "Anforderungen an die Produktkonformität wurden "
+                                "hier nicht erhoben.",
+            }]}
             answers.update({
                 k: {"extracted": w} if isinstance(w, list)
                 else {"extracted": {"text": w}}
