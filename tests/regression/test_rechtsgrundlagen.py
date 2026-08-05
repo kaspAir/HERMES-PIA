@@ -57,7 +57,9 @@ def test_seeding_ohne_llm_uebernimmt_pia_gesetze():
     # 0.4 Definitionen: enthält die Kürzel der genannten Gesetze
     abk = [r["abkuerzung"] for r in answers["definitionen"]["extracted"]]
     assert "StPO" in abk and "PrHG" in abk
-    assert answers["konsequenzen"]["extracted"]["text"] == ""
+    # Frueher: leerer Text. Ein leeres Pflichtkapitel liest sich aber wie
+    # «geprueft und unbedenklich» - jetzt sagt es, dass es fehlt.
+    assert "nicht beurteilt" in answers["konsequenzen"]["extracted"]["text"]
 
 
 def test_datenschutz_und_ebene_filter():
@@ -221,7 +223,10 @@ def test_llm_entdeckt_zusaetzliches_gesetz_und_weist_keine_luecke_aus():
     namen = [r["rechtsgrundlage"] for r in answers["bestehende_rechtsgrundlagen"]["extracted"]]
     assert "Strafregistergesetz (StReG)" in namen          # vom LLM selbst gefunden (nicht im PIA)
     luecken = answers["identifizierte_luecken"]["extracted"]
-    assert luecken and "Keine Lücke" in luecken[0]["luecke"]  # explizit ausgewiesen
+    # Frueher: «Keine Lücke identifiziert» samt Behauptung, es bestehe eine
+    # Rechtsgrundlage. Diese Analyse prueft die Ziele aber nicht einzeln - sie
+    # darf deshalb keine Entwarnung geben.
+    assert luecken and luecken[0]["luecke"] == "Nicht abschliessend geprüft"
 
 
 def test_betriebskonzept_ist_keine_rechtsgrundlage():
@@ -340,3 +345,51 @@ def test_vorhandene_vorschlaege_bleiben_unangetastet():
     svc = _svc()
     echte = [{"luecke": "L", "vorschlag": "Verordnung anpassen"}]
     assert svc._deckungsvorschlaege(echte, []) == echte
+
+
+# ---- Keine unverdiente Entwarnung ---------------------------------------- #
+
+def test_verfassung_und_emrk_sind_keine_ermaechtigungsgrundlage():
+    """Gemessen (BKI Test 6, biometrische Massenüberwachung): BV und EMRK
+    standen als «Bestehende Rechtsgrundlage» Nr. 01 und 02. Das ist eine
+    Umkehrung – sie sind die SCHRANKE des Eingriffs, nicht seine Ermächtigung.
+    Ein Dokument, das sie so aufführt, liest sich wie eine Erlaubnis."""
+    svc = _svc()
+    for name in ("Bundesverfassung der Schweizerischen Eidgenossenschaft (BV)",
+                 "Europäische Menschenrechtskonvention (EMRK)",
+                 "Kantonsverfassung des Kantons St. Gallen"):
+        assert svc._ist_schrankennorm(name), name
+        assert not svc._kap1_geeignet(name, "Bund und Kanton")
+    # Ein echtes Ermächtigungsgesetz bleibt unberührt.
+    assert not svc._ist_schrankennorm("Polizeigesetz des Kantons St. Gallen")
+
+
+def test_schrankennorm_als_grundlage_wird_zur_luecke():
+    """Sie darf nicht still verschwinden: dass nur Schrankennormen genannt
+    wurden, IST der Befund – es wurde keine Ermächtigung gefunden."""
+    svc = _svc()
+    rows = svc._luecken(None, ["Europäische Menschenrechtskonvention (EMRK)"])
+    assert len(rows) == 1
+    assert "Keine Ermächtigungsgrundlage" in rows[0]["luecke"]
+    assert "Art. 36 Abs. 1 BV" in rows[0]["beschreibung"]
+
+
+def test_ohne_befund_keine_behauptung_einer_rechtsgrundlage():
+    """Der alte Satz «Für die im Projekt geplanten Tätigkeiten besteht nach
+    dieser Analyse eine Rechtsgrundlage» war eine nie geprüfte Behauptung –
+    und stand über einem Vorhaben zur Massenüberwachung."""
+    svc = _svc()
+    rows = svc._luecken(None)
+    assert rows[0]["luecke"] == "Nicht abschliessend geprüft"
+    text = rows[0]["beschreibung"]
+    assert "besteht" not in text.split("darf")[0] or "nicht" in text
+    assert "nicht geschlossen werden" in text
+    assert "je Projektziel" in text
+
+
+def test_pflichtkapitel_bleiben_nie_wortlos():
+    """Im gemessenen Lauf waren «Beurteilung der Konsequenzen» und
+    «Empfehlung» vollständig leer – das Dokument sah abgeschlossen aus."""
+    svc = _svc()
+    assert "nicht freigabefähig" in svc._pflichttext("", "x ist nicht freigabefähig")
+    assert svc._pflichttext("Echte Beurteilung.", "ersatz") == "Echte Beurteilung."

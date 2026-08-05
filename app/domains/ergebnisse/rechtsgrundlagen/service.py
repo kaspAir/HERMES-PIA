@@ -38,6 +38,18 @@ _NAME_FUELLWORTE = {"über", "ueber", "betreffend", "sowie", "bzw", "und", "oder
                     "einschlägige", "einschlaegige", "zugehörige", "zugehoerige"}
 
 # Tabellen-Abschnitte mit ihren Spalten-Schlüsseln (für Leerzeilen-Fallback).
+# Normen, die Grundrechte GARANTIEREN und Eingriffe BEGRENZEN. Sie sind nie
+# die Ermaechtigung fuer einen Eingriff - sie sind seine Schranke. Gemessen an
+# einem echten Lauf (BKI Test 6, biometrische Massenueberwachung) fuehrte die
+# Analyse BV und EMRK als «Bestehende Rechtsgrundlage» Nr. 01 und 02 auf. Das
+# ist keine Ungenauigkeit, sondern eine Umkehrung: das Dokument liest sich dann
+# wie eine Erlaubnis.
+_SCHRANKENNORMEN = (
+    "bundesverfassung", "kantonsverfassung", "staatsverfassung",
+    "europäische menschenrechtskonvention", "menschenrechtskonvention",
+    "emrk", "(bv)", " bv", "grundrechte", "grundrechtskatalog",
+)
+
 _TABELLEN = {
     "bestehende_rechtsgrundlagen": ("rechtsgrundlage", "beschreibung"),
     "bevorstehende_aenderungen": ("rechtsgrundlage", "beschreibung", "auswirkung"),
@@ -184,6 +196,12 @@ class RechtsgrundlagenService:
         return any(k in (name or "").lower() for k in _KANTONAL_KW)
 
     @staticmethod
+    def _ist_schrankennorm(name):
+        """Garantiert die Norm Grundrechte, statt einen Eingriff zu erlauben?"""
+        n = f" {(name or '').lower()} "
+        return any(k in n for k in _SCHRANKENNORMEN)
+
+    @staticmethod
     def _ist_rechtsgrundlage(name):
         """Kap. 1 führt nur echte Rechtsgrundlagen (Gesetz/Verordnung/…), keine
         Konzepte/Strategien/Dokumentationen (z.B. Betriebskonzept)."""
@@ -196,6 +214,9 @@ class RechtsgrundlagenService:
         ebenen = (ebene or "").lower()
         nur_bund = "bund" in ebenen and "kanton" not in ebenen and "kommun" not in ebenen
         if self._ist_datenschutz(name):
+            return False
+        # Eine Schrankennorm gehoert nie in die Spalte «bestehende Grundlage».
+        if self._ist_schrankennorm(name):
             return False
         if nur_bund and self._ist_kantonal(name):
             return False
@@ -319,15 +340,48 @@ class RechtsgrundlagenService:
             rows.append({"rechtsgrundlage": name, "beschreibung": beschreibung})
         return rows or [{"rechtsgrundlage": "", "beschreibung": ""}]
 
-    def _luecken(self, vorschlag):
-        """Lücken übernehmen; wenn KEINE identifiziert wurden, das explizit ausweisen
-        (es muss nicht um jeden Preis eine Lücke gefunden werden)."""
+    @staticmethod
+    def _pflichttext(wert, ersatz):
+        """Ein Pflichtkapitel bleibt nie wortlos – Schweigen liest sich wie
+        Zustimmung."""
+        text = (wert or "").strip()
+        return text or ersatz
+
+    def _luecken(self, vorschlag, schranken_als_grundlage=()):
+        """Lücken übernehmen – und die unverdiente Entwarnung verhindern.
+
+        Der frühere Satz «Für die im Projekt geplanten Tätigkeiten besteht nach
+        dieser Analyse eine Rechtsgrundlage» war eine BEHAUPTUNG, die diese
+        Analyse nie geprüft hat: sie fragt (noch) nicht je Ziel, welche Tätigkeit
+        welchen Grundrechtseingriff bewirkt und welche Normstufe ihn tragen
+        müsste (Legalitätsprinzip, Art. 36 Abs. 1 BV). Gemessen an einem
+        Vorhaben zur biometrischen Massenüberwachung stand dieser Satz als
+        Entwarnung im Dokument. Eine falsche Entwarnung ist schlimmer als keine
+        Analyse.
+        """
         rows = self._bereinige(vorschlag)
-        if rows:
-            return rows
-        return [{"luecke": "Keine Lücke identifiziert",
-                 "beschreibung": "Für die im Projekt geplanten Tätigkeiten besteht nach "
-                                 "dieser Analyse eine Rechtsgrundlage."}]
+        befunde = []
+        # Wurden nur Schrankennormen als «Grundlage» genannt, ist das selbst der
+        # Befund: es wurde keine Ermächtigung gefunden.
+        for name in schranken_als_grundlage:
+            befunde.append({
+                "luecke": f"Keine Ermächtigungsgrundlage – «{name}» ist eine Schranke",
+                "beschreibung": (
+                    "Diese Norm garantiert Grundrechte und begrenzt Eingriffe; sie "
+                    "ermächtigt nicht zu ihnen. Dass sie als Grundlage genannt wurde, "
+                    "zeigt an, dass eine tragfähige Ermächtigung nicht gefunden ist. "
+                    "Für einen schweren Grundrechtseingriff verlangt Art. 36 Abs. 1 BV "
+                    "eine Grundlage im formellen Gesetz."),
+            })
+        if rows or befunde:
+            return befunde + rows
+        return [{"luecke": "Nicht abschliessend geprüft",
+                 "beschreibung": (
+                     "Diese Analyse hat die einschlägigen Erlasse kartiert. Sie hat "
+                     "NICHT je Projektziel geprüft, welche Tätigkeit welchen "
+                     "Grundrechtseingriff bewirkt und welche Normstufe ihn tragen "
+                     "müsste. Aus dem Fehlen von Befunden darf deshalb nicht "
+                     "geschlossen werden, dass eine Rechtsgrundlage besteht.")}]
 
     def build_answers(self, wissen, tenant_id=None):
         relevante = self._relevante_gesetze(wissen)
@@ -344,10 +398,18 @@ class RechtsgrundlagenService:
         entdeckt = [str(r.get("rechtsgrundlage", "")).strip()
                     for r in (v.get("bestehende") or []) if isinstance(r, dict)]
         # Kap.-1-Kandidaten: PIA-Recht + vom LLM ergänzte, gefiltert (echte Gesetze).
-        kap1, gesehen = [], set()
+        # Schrankennormen werden dabei NICHT still verworfen: dass sie als
+        # «Grundlage» genannt wurden, ist selbst ein Befund und wandert in die
+        # Lücken. Sonst verschwände der Hinweis, dass keine Ermächtigung
+        # gefunden wurde.
+        kap1, gesehen, schranken = [], set(), []
         for name in relevante + entdeckt:
-            if name and name.lower() not in gesehen and self._kap1_geeignet(name, wissen.ebene):
-                gesehen.add(name.lower())
+            if not name or name.lower() in gesehen:
+                continue
+            gesehen.add(name.lower())
+            if name in entdeckt and self._ist_schrankennorm(name):
+                schranken.append(name)
+            elif self._kap1_geeignet(name, wissen.ebene):
                 kap1.append(name)
         # Alle Namen (PIA-Verweise für 0.2/0.3 + Kap.-1-Recht) einmal gegen Fedlex prüfen.
         alle_namen = list({*wissen.genannte_rechtsgrundlagen(), *kap1})
@@ -355,7 +417,7 @@ class RechtsgrundlagenService:
         kap1 = self._ohne_dubletten(kap1, grounded)
         klink = self._kantonslink(wissen)
         # Einmal ermittelt: Kapitel «Vorschläge zur Deckung» hängt daran.
-        luecken = self._luecken(v.get("luecken"))
+        luecken = self._luecken(v.get("luecken"), schranken)
         return {
             # Nachweis (Auditierbarkeit): welche Skill-Version(en) diesen Entwurf
             # gesteuert haben. Reservierter Schlüssel – kein Dokumentabschnitt.
@@ -373,8 +435,17 @@ class RechtsgrundlagenService:
             "product_compliance": {"extracted": self._rows_or_blank(
                 self._ohne_datenschutz(v.get("compliance")),
                 _TABELLEN["product_compliance"], "product_compliance")},
-            "konsequenzen": {"extracted": {"text": (v.get("konsequenzen") or "").strip()}},
-            "empfehlung": {"extracted": {"text": (v.get("empfehlung") or "").strip()}},
+            # Leer heisst hier NICHT «unbedenklich». Im gemessenen Lauf blieben
+            # beide Kapitel wortlos - das Dokument sah dadurch abgeschlossen aus.
+            "konsequenzen": {"extracted": {"text": self._pflichttext(
+                v.get("konsequenzen"),
+                "Die Konsequenzen wurden nicht beurteilt. Dieses Dokument ist "
+                "insoweit unvollständig und ohne die Beurteilung nicht "
+                "freigabefähig.")}},
+            "empfehlung": {"extracted": {"text": self._pflichttext(
+                v.get("empfehlung"),
+                "Es liegt keine Empfehlung vor. Ohne Beurteilung der Konsequenzen "
+                "kann diese Analyse keine Empfehlung tragen.")}},
         }
 
     def grounding_status(self, projekt):
