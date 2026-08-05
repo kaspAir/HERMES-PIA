@@ -81,7 +81,9 @@ def _migrate_db(engine):
         with engine.connect() as conn:
             for spalte, typ in (("lauf_status", "VARCHAR(20)"),
                                 ("lauf_schritt", "INTEGER"),
-                                ("lauf_json", "TEXT")):
+                                ("lauf_json", "TEXT"),
+                                ("changelog_json", "TEXT"),
+                                ("last_snapshot_json", "TEXT")):
                 if spalte not in ee:
                     conn.execute(text(
                         f"ALTER TABLE ergebnis_entwurf ADD COLUMN {spalte} {typ}"))

@@ -5,6 +5,7 @@ speichert sie als ErgebnisEntwurf und erzeugt das Dokument über die generische
 Generierung. Der PIA bleibt unangetastet.
 """
 import json
+import logging
 import re
 
 from app.domains.ergebnisse.models import ErgebnisEntwurf
@@ -20,7 +21,10 @@ from app.domains.rechtsquellen.lexfind import LexfindClient
 from app.domains.rechtsquellen.recherche import RechercheClient
 from app.domains.skills import load_skills
 from app.domains.rechtsquellen.kantone import sammlung_link
+from app.shared import versionierung
 from app.shared.database import SessionLocal
+
+log = logging.getLogger("hermes.rechtsgrundlagen")
 
 METHOD_ID = "rechtsgrundlagenanalyse"
 
@@ -643,10 +647,16 @@ class RechtsgrundlagenService:
             lauf["fundstellen"] = kette.pruefe_fundstellen(
                 befunde, artikel_pruefer=getattr(self, "artikel", None),
                 bger=getattr(self, "bger", None))
-            _takt("Fundstellen geprueft")
+            # Aus der Fachpruefung uebernommen, wo es ein _takt() gibt - hier
+            # nicht. Der Schritt kann je nach Zahl der Erlasse dauern (ein
+            # Abruf je Erlass), deshalb gehoert seine Dauer ins Protokoll.
+            log.warning("Fundstellen geprüft: %d Tätigkeit(en), %d zitierbare "
+                        "Entscheide",
+                        len((lauf["fundstellen"].get("je_taetigkeit") or {})),
+                        len(lauf["fundstellen"].get("zitierbare_entscheide") or []))
             lauf["_teil"] = 0
             row.lauf_schritt = index + 1
-            row.lauf_json = _json.dumps(lauf, ensure_ascii=False)
+            row.lauf_json = json.dumps(lauf, ensure_ascii=False)
             db.commit()
             return self._kettenzustand(row, lauf), ""
 
@@ -701,6 +711,33 @@ class RechtsgrundlagenService:
                 "teil": int(lauf.get("_teil") or 0),
                 "teile": int(lauf.get("_teile") or 0),
                 "naechstes": namen[i] if i < len(namen) else ""}
+
+    # ---- Versionierung -------------------------------------------------- #
+    # Die Logik liegt im geteilten Baustein; hier steht nur, WORAUF sie
+    # angewendet wird. Genau so soll es fuer jedes weitere Ergebnis gehen.
+    def version_stand(self, projekt):
+        entwurf = self.get_entwurf(projekt.id)
+        if entwurf is None:
+            return {"current_version": "0.1", "changelog": [],
+                    "changed_sections": []}
+        method = self.generation.methods.get(METHOD_ID)
+        abschnitte = [{"id": a["id"], "number": a.get("number", ""),
+                       "title": a.get("title", a["id"])}
+                      for a in (method or {}).get("sections", [])]
+        return versionierung.stand(entwurf, abschnitte)
+
+    def version_eintragen(self, projekt, art="minor", name="", bemerkungen=""):
+        db = SessionLocal()
+        zeile = db.query(ErgebnisEntwurf).filter(
+            ErgebnisEntwurf.projekt_id == projekt.id,
+            ErgebnisEntwurf.ergebnistyp == METHOD_ID,
+        ).first()
+        if zeile is None:
+            return "0.1", []
+        neu, protokoll = versionierung.eintragen(
+            zeile, art=art, name=name, bemerkungen=bemerkungen)
+        db.commit()
+        return neu, protokoll
 
     # ---- Metadaten (Deckblatt) ------------------------------------------ #
     def _metadata(self, projekt, session):

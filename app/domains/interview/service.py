@@ -1764,20 +1764,7 @@ def _assign_termine_dates(rows, start_datum_str, factor=1.0, ziel_wochen=None):
 
 
 def _bump_version(version_str, bump_type):
-    """
-    bump_type: 'minor' (+0.1) oder 'patch' (+0.0.1)
-    '0.1' + minor = '0.2'
-    '0.1' + patch = '0.1.1'
-    '0.1.1' + minor = '0.2'
-    """
-    parts = [int(p) for p in str(version_str).split('.')]
-    while len(parts) < 3:
-        parts.append(0)
-    if bump_type == 'minor':
-        parts[1] += 1
-        parts[2] = 0
-    else:
-        parts[2] += 1
-    if parts[2] == 0:
-        return f"{parts[0]}.{parts[1]}"
-    return f"{parts[0]}.{parts[1]}.{parts[2]}"
+    """Die Zaehlweise liegt im geteilten Baustein – EINE Rechenweise fuer alle
+    Ergebnisse, nicht eine je Dokument."""
+    from app.shared.versionierung import naechste_version
+    return naechste_version(version_str, bump_type)

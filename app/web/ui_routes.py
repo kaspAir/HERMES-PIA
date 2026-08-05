@@ -498,6 +498,34 @@ def rechtsgrundlagen_kette_schritt(projekt_id):
     return jsonify(zustand)
 
 
+@bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/version")
+@permission_required("write")
+def rechtsgrundlagen_version(projekt_id):
+    """Versionsstand der Rechtsgrundlagenanalyse – dieselbe Seite wie beim PIA."""
+    projekt = _load_projekt(projekt_id)
+    svc = current_app.rechtsgrundlagen_service
+    return render_template(
+        "version_bump.html", session=None,
+        info=svc.version_stand(projekt),
+        titel=projekt.name, dokumentname="Rechtsgrundlagenanalyse",
+        zurueck_url=url_for("ui.rechtsgrundlagen", projekt_id=projekt.id))
+
+
+@bp.post("/projekt/<int:projekt_id>/rechtsgrundlagen/version")
+@permission_required("write")
+def rechtsgrundlagen_version_post(projekt_id):
+    projekt = _load_projekt(projekt_id)
+    svc = current_app.rechtsgrundlagen_service
+    neu, _ = svc.version_eintragen(
+        projekt, art=request.form.get("bump_type", "minor"),
+        name=(current_user() or {}).get("email", "") if callable(current_user) else "",
+        bemerkungen=request.form.get("bemerkungen", "").strip())
+    name = (f"{_safe_filename(projekt.name or 'Projekt')}"
+            f"_Rechtsgrundlagenanalyse_V{neu}.docx")
+    return redirect(url_for("ui.rechtsgrundlagen_download",
+                            projekt_id=projekt.id, filename=name))
+
+
 @bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/download/<path:filename>")
 @permission_required("read")
 def rechtsgrundlagen_download(projekt_id, filename):
@@ -997,7 +1025,10 @@ def interview_version(session_id):
     svc = current_app.interview_service
     session = _load_session(session_id)
     info = svc.version_info(session)
-    return render_template("version_bump.html", session=session, info=info)
+    return render_template(
+        "version_bump.html", session=session, info=info,
+        titel=session.project_name, dokumentname="PIA",
+        zurueck_url=url_for("ui.interview_workspace", session_id=session.id))
 
 
 def _safe_filename(name_part):

@@ -183,8 +183,13 @@
         <p class="muted vorlage-status">&#9888; Keine Fedlex-Fundstelle verknüpft. Falls Ebene «Bund» gewählt ist, erreicht der Server den Fedlex-Dienst nicht — bitte melden.</p>
       {% endif %}
     {% endif %}
-    <a href="{{ url_for('ui.rechtsgrundlagen_download', projekt_id=projekt.id, filename=download_name) }}"
+    {# Der Weg ueber den Versionsstand ist derselbe wie beim PIA: wer
+       herunterlaedt, bestaetigt eine Version und traegt sie ins
+       Aenderungsprotokoll ein. #}
+    <a href="{{ url_for('ui.rechtsgrundlagen_version', projekt_id=projekt.id) }}"
        class="btn-primary btn-large">&#8595; Rechtsgrundlagenanalyse herunterladen (.docx)</a>
+    <a href="{{ url_for('ui.rechtsgrundlagen_download', projekt_id=projekt.id, filename=download_name) }}"
+       class="btn-link">ohne Versionseintrag herunterladen</a>
   </section>
   {% endif %}
 

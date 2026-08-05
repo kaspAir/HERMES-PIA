@@ -1,12 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Versionsstand – {{ session.project_name }}{% endblock %}
+{# Dokumentneutral: JEDES Ergebnis nutzt diese Seite. Der Aufrufer
+   liefert titel, dokumentname und zurueck_url. #}
+{% block title %}Versionsstand – {{ titel }}{% endblock %}
 
 {% block content %}
 <div class="version-bump-page">
 
   <div class="vb-header">
-    <h1>{{ session.project_name }}</h1>
-    <p class="vb-subtitle">PIA herunterladen &mdash; Versionsstand bestätigen</p>
+    <h1>{{ titel }}</h1>
+    <p class="vb-subtitle">{{ dokumentname }} herunterladen &mdash; Versionsstand bestätigen</p>
   </div>
 
   <form method="post" class="vb-form">
@@ -72,9 +74,9 @@
 
     <div class="vb-actions">
       <button type="submit" class="btn-primary btn-large">
-        &#8595; PIA herunterladen
+        &#8595; {{ dokumentname }} herunterladen
       </button>
-      <a href="{{ url_for('ui.interview_workspace', session_id=session.id) }}"
+      <a href="{{ zurueck_url }}"
          class="btn-secondary">Zurück</a>
     </div>
 

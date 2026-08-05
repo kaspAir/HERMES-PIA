@@ -1444,3 +1444,105 @@ def test_ohne_recherche_bleibt_alles_beim_alten():
     ergebnis = kette.pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None)
     assert ergebnis["je_taetigkeit"]["0"]["artikel"] == []
     assert ergebnis["zitierbare_entscheide"] == []
+
+
+# ---- Der Lauf wird AUSGEFÜHRT, nicht nur gelesen ------------------------- #
+#
+# Ein NameError im Schritt «Fundstellen prüfen» ging durch 703 Tests hindurch,
+# weil der zugehörige Test den QUELLTEXT las statt den Schritt auszuführen.
+# Das sieht aus wie Deckung und ist keine. Dieser Test läuft die ganze Kette
+# durch – jeder Schritt wird wirklich ausgeführt.
+
+@pytest.fixture
+def app(tmp_path):
+    from app.config import Config
+    from app.factory import create_app
+    from app.shared.database import SessionLocal
+
+    class _Cfg(Config):
+        DATABASE_URL = "sqlite:///" + str(tmp_path / "k.db").replace("\\", "/")
+        SECRET_KEY = "x"
+        PSEUDO_BASIS_URL = ""
+        RECHERCHE_LIVE = False
+
+    SessionLocal.remove()
+    anwendung = create_app(_Cfg)
+    SessionLocal.remove()
+    yield anwendung
+    SessionLocal.remove()
+
+
+class _KettenLLM:
+    """Antwortet je Schicht mit dem, was ihr Vertrag verlangt."""
+    def complete(self, system, messages, max_tokens=1024, timeout=None, **kw):
+        auftrag = messages[0]["content"]
+        if "Tätigkeiten des VORHABENS" in auftrag:
+            return json.dumps({"taetigkeiten": [
+                {"taetigkeit": "Personendaten bearbeiten", "hoheitlich": True}],
+                "nicht_erkennbar": []})
+        if "Kartiere die Rechtsgrundlagen" in auftrag:
+            return json.dumps({"kartierungen": [{
+                "nr": 0, "grundrechtseingriff_denkbar": True,
+                "eingriff": {"tiefe": "leicht", "grundrechte": ["Art. 13 BV"]},
+                "grundlagen": [{"erlass": "Datenschutzgesetz",
+                                "normstufe": "gesetz", "ermaechtigt": True,
+                                "fundstelle": "SR 235.1, Art. 34"}],
+                "luecke": {"art": "keine"}}]})
+        if "gemeldeten Rechtslücken" in auftrag:
+            return json.dumps({"luecken": []})
+        if "Würdige für JEDE" in auftrag:
+            return json.dumps({"wuerdigungen": [{
+                "nr": 0, "ergebnis": "zulässig", "sicherheit": "eindeutig",
+                "geprueft_an": ["Art. 5 Abs. 1 BV"],
+                "begruendung": "Durch das Datenschutzgesetz gedeckt."}]})
+        if "Handlungsoptionen" in auftrag:
+            return json.dumps({"faelle": []})
+        return "{}"
+
+
+def test_die_ganze_kette_laeuft_durch(app, monkeypatch):
+    """Sieben Schritte, jeder wirklich ausgeführt – bis ins Dokument."""
+    from app.domains.ergebnisse.models import ErgebnisEntwurf
+    from app.domains.projekt.models import Projekt
+    from app.shared.database import SessionLocal
+
+    # Attrappen-Skills fuer alle vier Schichten – der echte Skill-Ordner ist
+    # hier nicht das Pruefungsziel.
+    class _Buendel:
+        text = "METHODE"
+        versions = [{"name": "attrappe", "version": "1.0", "scope": "base"}]
+
+    monkeypatch.setattr("app.domains.ergebnisse.rechtsgrundlagen.kette.load_skills",
+                        lambda *a, **kw: _Buendel())
+    svc = app.rechtsgrundlagen_service
+    svc.llm = _KettenLLM()
+
+    db = SessionLocal()
+    projekt = Projekt(name="Testprojekt")
+    db.add(projekt)
+    db.commit()
+    projekt_id = projekt.id          # die Sitzung wird zwischendurch geleert
+
+    with app.app_context():
+        projekt = db.get(Projekt, projekt_id)
+        svc.starte_kette(projekt, ebene="bund", kanton="")
+        for _ in range(len(kette.SCHRITTE) + 1):
+            projekt = db.get(Projekt, projekt_id)
+            zustand, grund = svc.kette_schritt(projekt)
+            assert zustand is not None, f"Schritt gescheitert: {grund}"
+            if zustand["fertig"]:
+                break
+        else:
+            raise AssertionError("Der Lauf wurde nicht fertig")
+
+    entwurf = db.query(ErgebnisEntwurf).filter(
+        ErgebnisEntwurf.projekt_id == projekt_id).first()
+    assert entwurf.lauf_status == "fertig"
+    answers = json.loads(entwurf.answers_json)
+    # Die Kapitel sind da und tragen den Inhalt der Kette.
+    text = json.dumps(answers, ensure_ascii=False)
+    assert "Datenschutzgesetz" in text
+    assert "Personendaten bearbeiten" in text
+    assert "Keine Lücke identifiziert" in text
+    # Ohne Live-Recherche wird nichts erfunden.
+    assert "amtlich geprüft" not in text
