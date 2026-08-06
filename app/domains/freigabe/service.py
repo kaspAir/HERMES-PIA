@@ -155,9 +155,10 @@ class FreigabeService:
         checkliste = self.checkliste(projekt.id)
         if checkliste is not None and checkliste.status == "freigegeben":
             raise FreigabeFehler(
-                "Die Checkliste ist bereits freigegeben und wird nicht neu "
-                "bewertet. Ein Nachweis, der sich nachträglich ändert, ist "
-                "kein Nachweis.")
+                "Die Checkliste ist freigegeben und wird nicht neu bewertet – "
+                "ein Nachweis, der sich nachträglich ändert, ist kein Nachweis. "
+                "Legen Sie eine neue Version an, wenn sich seither etwas "
+                "geändert hat; der freigegebene Stand bleibt dabei erhalten.")
 
         wissen, herkunft, dokumente, _, _ = self.projektwissen(projekt)
         vorhanden = self.zeilen(checkliste)
@@ -256,3 +257,81 @@ class FreigabeService:
         ))
         db.commit()
         return eintrag
+
+    # ---- Änderungskontrolle ---------------------------------------------- #
+    #
+    # Derselbe Baustein wie beim Projektinitialisierungsauftrag und bei der
+    # Rechtsgrundlagenanalyse. Er wurde genau dafür herausgelöst: beim dritten
+    # Ergebnis wäre eine kopierte Versionierung dreimal verschieden.
+
+    # Wie die drei Kapitel im Änderungsprotokoll heissen.
+    KAPITEL_BESCHRIFTUNG = (
+        {"id": "generell", "number": "1.1", "title": "Generelle Prüfpunkte"},
+        {"id": "organisation", "number": "1.2",
+         "title": "Organisationsspezifische Prüfpunkte"},
+        {"id": "projekt", "number": "1.3", "title": "Projektspezifische Prüfpunkte"},
+    )
+
+    def versionsstand(self, projekt_id):
+        """Aktuelle Version, Protokoll und was sich seit der Ausgabe geändert hat."""
+        from app.shared import versionierung
+
+        checkliste = self.checkliste(projekt_id)
+        if checkliste is None:
+            return {"current_version": "0.0", "changelog": [], "changed_sections": []}
+        return versionierung.stand(checkliste, list(self.KAPITEL_BESCHRIFTUNG))
+
+    def neue_version(self, projekt_id, art="minor", name="", bemerkungen=""):
+        """Die nächste Fassung anlegen und den Nachweis fortschreiben.
+
+        Nach einer Freigabe geht es so weiter: der freigegebene Stand bleibt
+        als Fassung erhalten, die Arbeit läuft auf der nächsten Nummer. Die
+        Checkliste wird dadurch wieder ein Entwurf – ohne dass der Nachweis,
+        der einmal freigegeben wurde, sich nachträglich ändert.
+        """
+        from app.shared import versionierung
+
+        checkliste = self.checkliste(projekt_id)
+        if checkliste is None:
+            raise FreigabeFehler("Für dieses Projekt gibt es noch keine Checkliste.")
+        db = SessionLocal()
+        eintrag = db.get(FreigabeCheckliste, checkliste.id)
+        neu, protokoll = versionierung.eintragen(
+            eintrag, art=art, name=name, bemerkungen=bemerkungen)
+        eintrag.status = "entwurf"
+        eintrag.freigegeben_am = None
+        eintrag.freigegeben_durch = None
+        db.commit()
+        return neu, protokoll
+
+    # ---- Fassungen ------------------------------------------------------- #
+
+    ERGEBNISTYP = "checkliste_projektinitialisierungsfreigabe"
+
+    def lege_fassung_ab(self, projekt_id, art, filename, daten, durch="",
+                        doc_version=""):
+        """Eine hochgeladene Fassung ablegen – freigabebereit oder freigegeben."""
+        from app.domains.freigabe.models import Dokumentfassung
+
+        if art not in pia_quelle.DOKUMENTARTEN:
+            raise FreigabeFehler(f"Unbekannte Art «{art}».")
+        db = SessionLocal()
+        fassung = Dokumentfassung(
+            projekt_id=int(projekt_id), ergebnistyp=self.ERGEBNISTYP, art=art,
+            filename=filename, size=len(daten or b""), data=daten,
+            hochgeladen_durch=durch or "", doc_version=doc_version or "")
+        db.add(fassung)
+        # Die freigegebene Fassung ist der Endzustand – der Nachweis steht.
+        checkliste = self.checkliste(projekt_id)
+        if checkliste is not None and art == "freigegeben":
+            db.get(FreigabeCheckliste, checkliste.id).status = "freigegeben"
+        db.commit()
+        return fassung
+
+    def fassungen(self, projekt_id):
+        from app.domains.freigabe.models import Dokumentfassung
+
+        return SessionLocal().query(Dokumentfassung).filter(
+            Dokumentfassung.projekt_id == int(projekt_id),
+            Dokumentfassung.ergebnistyp == self.ERGEBNISTYP,
+        ).order_by(Dokumentfassung.id.desc()).all()

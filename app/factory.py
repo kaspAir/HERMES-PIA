@@ -99,6 +99,20 @@ def _migrate_db(engine):
                 conn.execute(text("ALTER TABLE corpus_chunks ADD COLUMN init_dauer_wochen INTEGER"))
                 conn.commit()
 
+    # Die Checkliste traegt seit V0.35.1 dieselbe Aenderungskontrolle wie die
+    # uebrigen Ergebnisse.
+    if "freigabe_checkliste" in inspector.get_table_names():
+        vorhanden = {c["name"] for c in inspector.get_columns("freigabe_checkliste")}
+        for spalte, typ, standard in (("doc_version", "VARCHAR(20)", "'0.1'"),
+                                      ("changelog_json", "TEXT", "'[]'"),
+                                      ("last_snapshot_json", "TEXT", "'{}'")):
+            if spalte not in vorhanden:
+                with engine.connect() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE freigabe_checkliste ADD COLUMN {spalte} "
+                        f"{typ} DEFAULT {standard}"))
+                    conn.commit()
+
     # Die Phase traegt seit der Projektinitialisierungsfreigabe einen Zustand:
     # sie ist geplant, bis ihr Entscheid-Meilenstein erreicht ist.
     if "phase" in inspector.get_table_names():

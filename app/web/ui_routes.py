@@ -596,6 +596,8 @@ def _freigabe_seite(projekt, fehler=None, hinweis=None, auto_download=None):
         entscheide=svc.entscheide(projekt.id),
         heute=date.today().isoformat(),
         dateinamen=_freigabe_dateinamen(projekt),
+        versionsstand=svc.versionsstand(projekt.id),
+        fassungen=svc.fassungen(projekt.id),
         auto_download=auto_download,
         fehler=fehler, hinweis=hinweis)
 
@@ -775,6 +777,23 @@ def freigabe_checkliste_upload(projekt_id):
     filename, daten = _json_upload(".docx")
     if filename is None:
         return jsonify({"error": daten}), 400
+
+    # Die ART entscheidet, was mit der Datei geschieht. Ein Arbeitsstand
+    # fliesst in die Bewertungen zurueck; eine Freigabeversion und die
+    # freigegebene Fassung werden ABGELEGT - sie sind Nachweise und werden
+    # nicht in Einzelteile zerlegt.
+    art = (request.args.get("art") or "arbeitsstand").strip()
+    if art != "arbeitsstand":
+        try:
+            svc.lege_fassung_ab(
+                projekt_id, art, filename, daten,
+                durch=(getattr(current_user(), "name", None)
+                       or getattr(current_user(), "email", "")),
+                doc_version=checkliste.doc_version or "")
+        except FreigabeFehler as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"ok": True, "abgelegt": art})
+
     try:
         gelesen = dokumente.checkliste_aus_docx(daten)
     except Exception as e:                      # noqa: BLE001
@@ -861,6 +880,41 @@ def kopfdaten_uebernehmen(projekt_id):
     return _kopfdaten_seite(
         projekt, hinweis=f"{len(gewaehlt)} Angabe(n) aus dem hochgeladenen "
                          "Auftrag uebernommen.")
+
+
+@bp.post("/projekt/<int:projekt_id>/freigabe/version")
+@permission_required("write")
+def freigabe_neue_version(projekt_id):
+    """Die naechste Fassung der Checkliste anlegen."""
+    from app.domains.freigabe.service import FreigabeFehler
+
+    projekt = _load_projekt(projekt_id)
+    user = current_user()
+    try:
+        neu, _ = current_app.freigabe_service.neue_version(
+            projekt.id, art=(request.form.get("art") or "minor"),
+            name=(getattr(user, "name", None) or getattr(user, "email", "")),
+            bemerkungen=(request.form.get("bemerkungen") or "").strip())
+    except FreigabeFehler as e:
+        return _freigabe_seite(projekt, fehler=str(e))
+    return _freigabe_seite(
+        projekt, hinweis=f"Version {neu} angelegt. Die Checkliste ist wieder ein "
+                         "Entwurf; der freigegebene Stand bleibt als Fassung "
+                         "erhalten.")
+
+
+@bp.get("/projekt/<int:projekt_id>/freigabe/fassung/<int:fassung_id>/<path:filename>")
+@permission_required("read")
+def freigabe_fassung_download(projekt_id, fassung_id, filename):
+    from app.domains.freigabe.models import Dokumentfassung
+    from app.shared.database import SessionLocal
+
+    _load_projekt(projekt_id)
+    fassung = SessionLocal().get(Dokumentfassung, fassung_id)
+    if fassung is None or fassung.projekt_id != int(projekt_id):
+        abort(404)
+    return send_file(io.BytesIO(fassung.data), mimetype=DOCX_MIME,
+                     as_attachment=True, download_name=filename)
 
 
 @bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/version")

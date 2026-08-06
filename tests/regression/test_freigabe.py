@@ -212,7 +212,8 @@ def test_eine_freigegebene_checkliste_wird_nicht_mehr_veraendert(app, projekt):
 
     with pytest.raises(FreigabeFehler, match="nicht mehr ändern"):
         svc.speichere_zeilen(projekt.id, zeilen)
-    with pytest.raises(FreigabeFehler, match="bereits freigegeben"):
+    # Die Meldung nennt jetzt den nächsten Schritt: eine neue Version.
+    with pytest.raises(FreigabeFehler, match="neue Version"):
         svc.erzeuge(projekt)
 
 
@@ -545,3 +546,168 @@ def test_nach_der_freigabe_nimmt_sie_nichts_mehr_an(app):
                                dokumente.checkliste_docx(zeilen).read()).decode()})
     assert antwort.status_code == 409
     assert "nicht mehr ändern" in antwort.get_json()["error"]
+
+
+# ---- Änderungskontrolle --------------------------------------------------- #
+#
+# «Aus der Änderungskontrolle haben wir doch auch schon ein Modul gemacht,
+# oder (für die RGA)? Die sollten wir schon reinbringen.» – Ja: der Baustein
+# `app/shared/versionierung.py` wurde genau dafür herausgelöst. Die Checkliste
+# erfüllt seinen Vertrag über eine Eigenschaft `answers_json`, ohne dass das
+# Datenmodell seine eigene Sprache aufgibt.
+
+def _bewertet(app, c, p):
+    svc = app.freigabe_service
+    zeilen = svc.zeilen(svc.checkliste(p.id))
+    for z in svc.alle_zeilen(zeilen):
+        z["bewertung"] = pp.ERFUELLT
+    svc.speichere_zeilen(p.id, zeilen)
+    return svc
+
+
+def test_der_erste_entwurf_ist_version_0_1(app):
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    assert app.freigabe_service.checkliste(p.id).doc_version == "0.1"
+
+
+def test_die_version_steht_auf_der_seite(app):
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    html = c.get(f"/projekt/{p.id}/freigabe").get_data(as_text=True)
+    assert "Version 0.1" in html
+    assert "Änderungskontrolle" in html
+
+
+def test_eine_neue_version_macht_aus_dem_nachweis_wieder_einen_entwurf(app):
+    """Der freigegebene Stand bleibt – die Arbeit läuft auf der nächsten Nummer."""
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = _bewertet(app, c, p)
+    svc.gib_frei(p.id, "Frau Muster")
+    assert svc.checkliste(p.id).status == "freigegeben"
+
+    neu, protokoll = svc.neue_version(p.id, name="Frau Muster",
+                                      bemerkungen="Kapitel 1.3 ergänzt.")
+    assert neu == "0.2"
+    checkliste = svc.checkliste(p.id)
+    assert checkliste.status == "entwurf"
+    assert checkliste.freigegeben_am is None
+    assert protokoll[-1]["bemerkungen"] == "Kapitel 1.3 ergänzt."
+
+
+def test_nach_der_neuen_version_laesst_sich_wieder_erzeugen(app):
+    """«Die Checkliste sollte mehrfach generiert werden können, wenn
+    Änderungen durchgeführt worden sind.»"""
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = _bewertet(app, c, p)
+    svc.gib_frei(p.id, "Frau Muster")
+    with pytest.raises(FreigabeFehler, match="neue Version"):
+        svc.erzeuge(p)
+    svc.neue_version(p.id, name="Frau Muster")
+    svc.erzeuge(p)                       # jetzt geht es
+    assert svc.checkliste(p.id).doc_version == "0.2"
+
+
+def test_das_protokoll_wird_fortgeschrieben(app):
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    svc.neue_version(p.id, name="A", bemerkungen="erste Änderung")
+    svc.neue_version(p.id, name="B", bemerkungen="zweite Änderung")
+    stand = svc.versionsstand(p.id)
+    assert stand["current_version"] == "0.3"
+    assert [e["version"] for e in stand["changelog"]] == ["0.2", "0.3"]
+
+
+def test_geaenderte_kapitel_werden_benannt(app):
+    """Der Baustein vergleicht den GANZEN Abschnitt, nicht nur einen Text."""
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    svc.neue_version(p.id, name="A")            # Schnappschuss setzen
+    assert svc.versionsstand(p.id)["changed_sections"] == []
+
+    zeilen = svc.zeilen(svc.checkliste(p.id))
+    zeilen["generell"][0]["bewertung"] = pp.ERFUELLT
+    svc.speichere_zeilen(p.id, zeilen)
+    geaendert = svc.versionsstand(p.id)["changed_sections"]
+    assert [g["number"] for g in geaendert] == ["1.1"]
+
+
+def test_die_neue_version_ueber_die_route(app):
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    html = c.post(f"/projekt/{p.id}/freigabe/version",
+                  data={"bemerkungen": "Nach Rückmeldung angepasst."}).get_data(as_text=True)
+    assert "Version 0.2 angelegt" in html
+    assert "Nach Rückmeldung angepasst." in html
+
+
+# ---- Fassungen ablegen ---------------------------------------------------- #
+
+def test_die_freigabeversion_wird_abgelegt_und_nicht_zerlegt(app):
+    """«Die Freigabeversion und die freigegebene Version sollten auch
+    hochgeladen werden können.» – Sie sind Nachweise, keine Eingabe."""
+    import base64
+
+    from app.domains.freigabe import dokumente
+
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    datei = dokumente.checkliste_docx(svc.zeilen(svc.checkliste(p.id))).read()
+
+    antwort = c.post(f"/projekt/{p.id}/freigabe/checkliste/upload?art=freigabe",
+                     json={"filename": "CL_v0.1.docx",
+                           "data": base64.b64encode(datei).decode()})
+    assert antwort.status_code == 200 and antwort.get_json()["abgelegt"] == "freigabe"
+    fassungen = svc.fassungen(p.id)
+    assert len(fassungen) == 1
+    assert fassungen[0].art == "freigabe" and fassungen[0].doc_version == "0.1"
+    assert svc.checkliste(p.id).status == "entwurf"     # noch nicht freigegeben
+
+
+def test_die_freigegebene_fassung_schliesst_ab(app):
+    import base64
+
+    from app.domains.freigabe import dokumente
+
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    datei = dokumente.checkliste_docx(svc.zeilen(svc.checkliste(p.id))).read()
+    c.post(f"/projekt/{p.id}/freigabe/checkliste/upload?art=freigegeben",
+           json={"filename": "CL_v1.0.docx",
+                 "data": base64.b64encode(datei).decode()})
+    assert svc.checkliste(p.id).status == "freigegeben"
+
+
+def test_eine_abgelegte_fassung_laesst_sich_wieder_herunterladen(app):
+    import base64
+
+    from app.domains.freigabe import dokumente
+
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    datei = dokumente.checkliste_docx(svc.zeilen(svc.checkliste(p.id))).read()
+    c.post(f"/projekt/{p.id}/freigabe/checkliste/upload?art=freigabe",
+           json={"filename": "CL.docx", "data": base64.b64encode(datei).decode()})
+    fassung = svc.fassungen(p.id)[0]
+
+    antwort = c.get(f"/projekt/{p.id}/freigabe/fassung/{fassung.id}/CL.docx")
+    assert antwort.status_code == 200
+    assert antwort.get_data() == datei          # unveraendert, Byte fuer Byte
+
+
+def test_eine_unbekannte_art_wird_abgewiesen(app):
+    import base64
+
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    antwort = c.post(f"/projekt/{p.id}/freigabe/checkliste/upload?art=irgendwas",
+                     json={"filename": "X.docx",
+                           "data": base64.b64encode(b"PK\x03\x04").decode()})
+    assert antwort.status_code == 400

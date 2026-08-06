@@ -11,6 +11,8 @@
     <h1>Darf die Phase Initialisierung beginnen?</h1>
     <p class="section-herkunft freigabe-herkunft">
       Im Dokument: Checkliste Projektinitialisierungsfreigabe
+      {%- if checkliste %} · Version {{ checkliste.doc_version or '0.1' }}
+      ({{ 'freigegeben' if freigegeben else 'in Arbeit' }}){% endif %}
       {%- if checkliste and checkliste.quelle %} · bewertet auf Grundlage von:
       {{ checkliste.quelle }}{% endif %}
     </p>
@@ -189,7 +191,79 @@
       <input type="file" accept=".docx" class="upload-input"
              data-url="{{ url_for('ui.freigabe_checkliste_upload', projekt_id=projekt.id) }}">
     </label>
+    {% endif %}
+    {% if current_user.can_write %}
+    {# Derselbe Weg wie beim Auftrag: die geprueften Fassungen werden ABGELEGT,
+       nicht in Einzelteile zerlegt. Sie sind Nachweise. #}
+    <label class="btn-link upload-label">
+      Freigabeversion hochladen (.docx)
+      <input type="file" accept=".docx" class="upload-input"
+             data-url="{{ url_for('ui.freigabe_checkliste_upload', projekt_id=projekt.id) }}?art=freigabe">
+    </label>
+    <label class="btn-link upload-label">
+      Freigegebene Fassung hochladen (.docx)
+      <input type="file" accept=".docx" class="upload-input"
+             data-url="{{ url_for('ui.freigabe_checkliste_upload', projekt_id=projekt.id) }}?art=freigegeben">
+    </label>
+    {% endif %}
     <div id="upload-status" class="muted upload-status"></div>
+
+    {% if fassungen %}
+    <table class="freigabe-tabelle fassungen-tabelle">
+      <thead><tr><th>Art</th><th>Version</th><th>Datei</th><th>Abgelegt</th></tr></thead>
+      <tbody>
+      {% for f in fassungen %}
+        <tr>
+          <td>{{ 'freigegeben' if f.art == 'freigegeben' else 'zur Freigabe' }}</td>
+          <td class="freigabe-nr">{{ f.doc_version or '–' }}</td>
+          <td><a class="btn-link"
+                 href="{{ url_for('ui.freigabe_fassung_download', projekt_id=projekt.id,
+                                  fassung_id=f.id, filename=f.filename) }}">{{ f.filename }}</a></td>
+          <td class="muted">{{ f.erstellt_am.strftime('%d.%m.%Y %H:%M') if f.erstellt_am }}
+            {%- if f.hochgeladen_durch %} · {{ f.hochgeladen_durch }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  {# ---- Änderungskontrolle ---- #}
+  <section class="freigabe-kapitel">
+    <h2>Änderungskontrolle</h2>
+    {% set stand = versionsstand %}
+    {% if stand.changelog %}
+    <table class="freigabe-tabelle">
+      <thead><tr><th>Version</th><th>Name</th><th>Datum</th><th>Bemerkungen</th></tr></thead>
+      <tbody>
+      {% for e in stand.changelog %}
+        <tr><td class="freigabe-nr">{{ e.version }}</td><td>{{ e.name }}</td>
+            <td>{{ e.datum }}</td><td>{{ e.bemerkungen }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Version {{ checkliste.doc_version or '0.1' }} ist der erste
+      Entwurf – es gibt noch nichts zu protokollieren. Sobald Sie eine neue
+      Version anlegen, steht hier, was sich wann geändert hat.</p>
+    {% endif %}
+
+    {% if current_user.can_write %}
+    <form method="post" action="{{ url_for('ui.freigabe_neue_version', projekt_id=projekt.id) }}">
+      {% if stand.changed_sections %}
+      <p class="muted">Geändert seit der letzten Ausgabe:
+        {{ stand.changed_sections | map(attribute='number') | join(', ') }}.</p>
+      {% else %}
+      <p class="muted">Seit der letzten Ausgabe hat sich am Inhalt nichts
+        geändert. Eine neue Version können Sie trotzdem anlegen, wenn etwas
+        ausserhalb des Dokuments dafür spricht.</p>
+      {% endif %}
+      <label class="vb-label" for="bemerkungen">Bemerkungen (erscheinen in der
+        Änderungskontrolle):</label>
+      <textarea id="bemerkungen" name="bemerkungen" rows="2"
+                class="vb-textarea">{% if stand.changed_sections %}Kapitel {{ stand.changed_sections | map(attribute='number') | join(', ') }} angepasst.{% endif %}</textarea>
+      <button type="submit" class="btn-link">Neue Version anlegen</button>
+    </form>
     {% endif %}
   </section>
   {% endif %}
