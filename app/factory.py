@@ -15,6 +15,7 @@ import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registr
 import app.domains.projekt.models     # noqa: F401 – Projektstruktur-Tabellen registrieren
 import app.domains.ergebnisse.models   # noqa: F401 – Ergebnis-Entwuerfe-Tabelle registrieren
 import app.domains.qualitaet.models    # noqa: F401 – Pruefprotokoll-Tabelle registrieren
+import app.domains.freigabe.models      # noqa: F401 – Checkliste/Entscheid registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
 from app.domains.praesentation.service import PraesentationService
@@ -97,6 +98,15 @@ def _migrate_db(engine):
                 conn.execute(text("ALTER TABLE corpus_chunks ADD COLUMN init_dauer_wochen INTEGER"))
                 conn.commit()
 
+    # Die Phase traegt seit der Projektinitialisierungsfreigabe einen Zustand:
+    # sie ist geplant, bis ihr Entscheid-Meilenstein erreicht ist.
+    if "phase" in inspector.get_table_names():
+        if "status" not in {c["name"] for c in inspector.get_columns("phase")}:
+            with engine.connect() as conn:
+                conn.execute(text(
+                    "ALTER TABLE phase ADD COLUMN status VARCHAR(30) DEFAULT 'geplant'"))
+                conn.commit()
+
 
 def _backfill_projekte(app):
     """Wickelt bestehende PIAs einmalig in die Projektstruktur ein.
@@ -176,6 +186,11 @@ def create_app(config_class=None):
         projekt_service=app.projekt_service,
     )
     app.generation_service = GenerationService(app.method_service)
+    # Projektinitialisierungsfreigabe: Checkliste, Tor, Projektentscheid.
+    from app.domains.freigabe.service import FreigabeService
+    from app.domains.praesentation.parser import parse_pia
+    app.freigabe_service = FreigabeService(
+        app.projekt_service, app.interview_service, parser=parse_pia)
     # Abgeleitete Initialisierungs-Ergebnisse (eigene Module, PIA unberührt).
     from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
     # Live-Rechtsquellen-Recherche (lexfind: Bund + 26 Kantone). Abschaltbar, weil

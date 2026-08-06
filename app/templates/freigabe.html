@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Projektinitialisierungsfreigabe – {{ projekt.name }}{% endblock %}
+
+{% block content %}
+<div class="projekt-page">
+
+  <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}"
+     class="breadcrumb-back">&#8592; {{ projekt.name }}</a>
+
+  <div class="projekt-head">
+    <h1>Darf die Phase Initialisierung beginnen?</h1>
+    <p class="section-herkunft freigabe-herkunft">
+      Im Dokument: Checkliste Projektinitialisierungsfreigabe
+      {%- if checkliste and checkliste.quelle %} · bewertet auf Grundlage von:
+      {{ checkliste.quelle }}{% endif %}
+    </p>
+  </div>
+
+  {% if fehler %}<p class="freigabe-fehler">{{ fehler }}</p>{% endif %}
+  {% if hinweis %}<p class="freigabe-hinweis">{{ hinweis }}</p>{% endif %}
+
+  {% if not checkliste %}
+  {# Leerer Zustand: Zweck, Umfang, Dauer, Einstieg. #}
+  <section class="naechster-schritt">
+    <h2 class="ns-titel">Die Checkliste ist noch nicht erstellt.</h2>
+    <p class="ns-warum">
+      Sie hält fest, dass geprüft wurde, bevor der Auftraggeber entscheidet:
+      sechs generelle Prüfpunkte, dazu organisations- und projektspezifische.
+      HERMES PIA bewertet die generellen aus dem Projektinitialisierungsauftrag
+      und schlägt die übrigen vor – Sie prüfen, ergänzen und bewerten.
+      Rechnen Sie mit rund 10 Minuten.
+    </p>
+    {% if current_user.can_write %}
+    <form method="post" action="{{ url_for('ui.freigabe_erzeugen', projekt_id=projekt.id) }}">
+      <button type="submit" class="btn-primary">Checkliste erstellen</button>
+    </form>
+    {% endif %}
+  </section>
+  {% else %}
+
+  <form method="post" action="{{ url_for('ui.freigabe_speichern', projekt_id=projekt.id) }}">
+    {% for kapitel, nummer, titel in [
+         ('generell', '1.1', 'Generelle Prüfpunkte'),
+         ('organisation', '1.2', 'Organisationsspezifische Prüfpunkte'),
+         ('projekt', '1.3', 'Projektspezifische Prüfpunkte')] %}
+    <section class="freigabe-kapitel">
+      <h2>{{ nummer }} {{ titel }}</h2>
+      {% set zeilen = alle[kapitel] %}
+      {% if not zeilen %}
+        <p class="muted">
+          {% if kapitel == 'organisation' %}
+            Aus dem Auftrag liess sich hier nichts ableiten – Kapitel 0.5 nennt
+            keine Vorgabe der Stammorganisation. Ergänzen Sie eigene Prüfpunkte
+            im Dokument, wenn welche gelten.
+          {% else %}
+            Aus dem Auftrag liess sich hier nichts ableiten – Kapitel 7 nennt
+            keine Massnahmen. Ergänzen Sie eigene Prüfpunkte, wenn welche gelten.
+          {% endif %}
+        </p>
+      {% else %}
+      <table class="freigabe-tabelle">
+        <thead>
+          <tr><th>Nr.</th><th>Kriterium</th><th>Bewertung</th><th>Erläuterung</th></tr>
+        </thead>
+        <tbody>
+        {% for z in zeilen %}
+          <tr class="bewertung-{{ (z.bewertung or 'offen') | replace(' ', '-') }}">
+            <td class="freigabe-nr">{{ z.nr }}</td>
+            <td>
+              {% if z.pruefpunkt %}<strong>{{ z.pruefpunkt }}</strong><br>{% endif %}
+              {{ z.kriterium }}
+              {% if z.herkunft and z.herkunft != 'HERMES PIA' %}
+              <span class="freigabe-herkunftsvermerk">{{ z.herkunft }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if freigegeben %}
+                {{ z.bewertung or '–' }}
+              {% else %}
+              <select name="bewertung-{{ kapitel }}-{{ loop.index0 }}" class="mic-select">
+                <option value="">– noch nicht bewertet –</option>
+                {% for wert in bewertungen %}
+                <option value="{{ wert }}" {% if z.bewertung == wert %}selected{% endif %}>
+                  {{ wert }}</option>
+                {% endfor %}
+              </select>
+              {% endif %}
+            </td>
+            <td class="freigabe-erlaeuterung">
+              {% if freigegeben %}
+                {{ z.erlaeuterung }}
+              {% else %}
+              <textarea name="erlaeuterung-{{ kapitel }}-{{ loop.index0 }}"
+                        rows="2" class="vb-textarea">{{ z.erlaeuterung }}</textarea>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </section>
+    {% endfor %}
+
+    {% if not freigegeben and current_user.can_write %}
+    <div class="freigabe-aktionen">
+      <button type="submit" class="btn-primary">Bewertungen sichern</button>
+      <button type="submit" class="btn-link"
+              formaction="{{ url_for('ui.freigabe_erzeugen', projekt_id=projekt.id) }}">
+        Generelle Prüfpunkte neu bewerten
+      </button>
+    </div>
+    {% endif %}
+  </form>
+
+  {# ---- Das Tor ---- #}
+  <section class="freigabe-tor">
+    <h2>Freigabe</h2>
+    {% if freigegeben %}
+      <p class="freigabe-erledigt">
+        Checkliste freigegeben
+        {%- if checkliste.freigegeben_am %} am
+        {{ checkliste.freigegeben_am.strftime('%d.%m.%Y') }}{% endif %}
+        {%- if checkliste.freigegeben_durch %} durch
+        {{ checkliste.freigegeben_durch }}{% endif %}.
+      </p>
+      {% if meilenstein and meilenstein.status == 'erreicht' %}
+        <p class="freigabe-erledigt">
+          Meilenstein Projektinitialisierungsfreigabe erreicht – die Phase
+          Initialisierung läuft.
+        </p>
+      {% elif current_user.can_write %}
+        <p>Damit kann der Auftraggeber den Meilenstein setzen. Der Entscheid
+          wird in der Liste Projektentscheide Steuerung nachgetragen.</p>
+        <form method="post"
+              action="{{ url_for('ui.freigabe_meilenstein', projekt_id=projekt.id) }}">
+          <label class="vb-label" for="datum">Entscheidungsdatum</label>
+          <input type="date" id="datum" name="datum" value="{{ heute }}"
+                 class="vb-textarea freigabe-datum">
+          <button type="submit" class="btn-primary">
+            Meilenstein als erreicht markieren</button>
+        </form>
+      {% endif %}
+    {% else %}
+      {% if offen %}
+      <p>{{ offen | length }}
+        {{ 'Prüfpunkt ist' if offen | length == 1 else 'Prüfpunkte sind' }}
+        noch offen oder nicht erfüllt:
+        {{ offen | map(attribute='nr') | join(', ') }}.
+        Solange bleibt die Freigabe gesperrt.</p>
+      {% else %}
+      <p>Alle Prüfpunkte sind bewertet. Mit der Freigabe wird die Checkliste
+        unveränderlich – sie ist ab dann der Nachweis, dass geprüft wurde.</p>
+      {% endif %}
+      {% if current_user.can_write %}
+      <form method="post" action="{{ url_for('ui.freigabe_geben', projekt_id=projekt.id) }}">
+        <button type="submit" class="btn-primary" {% if offen %}disabled{% endif %}>
+          Checkliste freigeben</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </section>
+
+  {% if entscheide %}
+  <section class="freigabe-kapitel">
+    <h2>Liste Projektentscheide Steuerung</h2>
+    <table class="freigabe-tabelle">
+      <thead><tr><th>Nr.</th><th>Entscheid</th><th>Grundlagen</th>
+        <th>Entscheidungsträger</th><th>Datum</th></tr></thead>
+      <tbody>
+      {% for e in entscheide %}
+        <tr>
+          <td class="freigabe-nr">{{ e.nr }}</td>
+          <td>{{ e.entscheid }}</td>
+          <td>{{ e.grundlagen.replace('\n', ' · ') if e.grundlagen }}</td>
+          <td>{{ e.entscheidungstraeger }}</td>
+          <td>{{ e.entscheidungsdatum }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

@@ -568,6 +568,108 @@ def rechtsgrundlagen_kette_schritt(projekt_id):
     return jsonify(zustand)
 
 
+# ---- Projektinitialisierungsfreigabe ---------------------------------- #
+#
+# Die Reihenfolge (Checkliste -> Freigabe -> Meilenstein -> Entscheid) steht im
+# Dienst, nicht hier. Diese Routen zeigen an, nehmen entgegen und melden
+# zurueck, warum ein Schritt nicht geht - entscheiden tun sie nichts.
+
+def _freigabe_seite(projekt, fehler=None, hinweis=None):
+    svc = current_app.freigabe_service
+    checkliste = svc.checkliste(projekt.id)
+    alle = svc.zeilen(checkliste)
+    from app.domains.freigabe.pruefpunkte import (
+        ERFUELLT, NICHT_ERFUELLT, TEILWEISE, ZU_BESTAETIGEN, offene_punkte)
+    return render_template(
+        "freigabe.html", projekt=projekt, checkliste=checkliste, alle=alle,
+        freigegeben=(checkliste is not None and checkliste.status == "freigegeben"),
+        offen=offene_punkte(svc.alle_zeilen(alle)),
+        bewertungen=(ERFUELLT, TEILWEISE, NICHT_ERFUELLT, ZU_BESTAETIGEN),
+        meilenstein=svc.meilenstein(projekt.id),
+        entscheide=svc.entscheide(projekt.id),
+        heute=date.today().isoformat(),
+        fehler=fehler, hinweis=hinweis)
+
+
+@bp.get("/projekt/<int:projekt_id>/freigabe")
+@permission_required("read")
+def freigabe(projekt_id):
+    return _freigabe_seite(_load_projekt(projekt_id))
+
+
+@bp.post("/projekt/<int:projekt_id>/freigabe/erzeugen")
+@permission_required("write")
+def freigabe_erzeugen(projekt_id):
+    from app.domains.freigabe.service import FreigabeFehler
+
+    projekt = _load_projekt(projekt_id)
+    try:
+        current_app.freigabe_service.erzeuge(projekt)
+    except FreigabeFehler as e:
+        return _freigabe_seite(projekt, fehler=str(e))
+    return redirect(url_for("ui.freigabe", projekt_id=projekt.id))
+
+
+@bp.post("/projekt/<int:projekt_id>/freigabe/speichern")
+@permission_required("write")
+def freigabe_speichern(projekt_id):
+    """Bewertungen und Erlaeuterungen aus dem Formular uebernehmen."""
+    from app.domains.freigabe.service import FreigabeFehler
+
+    projekt = _load_projekt(projekt_id)
+    svc = current_app.freigabe_service
+    zeilen = svc.zeilen(svc.checkliste(projekt.id))
+    for kapitel, liste in zeilen.items():
+        for i, zeile in enumerate(liste):
+            bewertung = request.form.get(f"bewertung-{kapitel}-{i}")
+            if bewertung is not None:
+                zeile["bewertung"] = bewertung.strip()
+            erlaeuterung = request.form.get(f"erlaeuterung-{kapitel}-{i}")
+            if erlaeuterung is not None:
+                zeile["erlaeuterung"] = erlaeuterung.strip()
+    try:
+        svc.speichere_zeilen(projekt.id, zeilen)
+    except FreigabeFehler as e:
+        return _freigabe_seite(projekt, fehler=str(e))
+    return redirect(url_for("ui.freigabe", projekt_id=projekt.id))
+
+
+@bp.post("/projekt/<int:projekt_id>/freigabe/geben")
+@permission_required("write")
+def freigabe_geben(projekt_id):
+    from app.domains.freigabe.service import FreigabeFehler
+
+    projekt = _load_projekt(projekt_id)
+    user = current_user()
+    try:
+        current_app.freigabe_service.gib_frei(
+            projekt.id, getattr(user, "name", None) or getattr(user, "email", ""))
+    except FreigabeFehler as e:
+        return _freigabe_seite(projekt, fehler=str(e))
+    return _freigabe_seite(
+        projekt, hinweis="Die Checkliste ist freigegeben. Der Auftraggeber kann "
+                         "den Meilenstein jetzt setzen.")
+
+
+@bp.post("/projekt/<int:projekt_id>/freigabe/meilenstein")
+@permission_required("write")
+def freigabe_meilenstein(projekt_id):
+    from app.domains.freigabe.service import FreigabeFehler
+
+    projekt = _load_projekt(projekt_id)
+    user = current_user()
+    try:
+        current_app.freigabe_service.erreiche_meilenstein(
+            projekt.id, getattr(user, "name", None) or getattr(user, "email", ""),
+            entscheidungsdatum=(request.form.get("datum") or "").strip() or None)
+    except FreigabeFehler as e:
+        return _freigabe_seite(projekt, fehler=str(e))
+    return _freigabe_seite(
+        projekt, hinweis="Der Meilenstein ist erreicht, der Entscheid ist in der "
+                         "Liste Projektentscheide Steuerung nachgetragen. Die "
+                         "Phase Initialisierung laeuft.")
+
+
 @bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/version")
 @permission_required("write")
 def rechtsgrundlagen_version(projekt_id):

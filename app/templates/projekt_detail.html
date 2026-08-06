@@ -53,6 +53,10 @@
             <div class="ergebnis-actions">
               <a href="{{ url_for('ui.interview_workspace', session_id=session.id) }}"
                  class="btn-link">{{ 'Bearbeiten' if current_user.can_write else 'Ansehen' }}</a>
+              {# Der Weg zur Freigabe der Phase - er beginnt beim Auftrag, weil
+                 die Checkliste auf ihm beruht. #}
+              <a href="{{ url_for('ui.freigabe', projekt_id=projekt.id) }}"
+                 class="btn-link">Freigabe der Phase</a>
             </div>
             {% endif %}
             {% set dok = freigabe_docs.get(erg.id) %}
