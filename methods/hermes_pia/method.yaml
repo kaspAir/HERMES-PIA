@@ -128,6 +128,30 @@ sections:
       - { abkuerzung: "AG",  bedeutung: "Auftraggeber" }
       - { abkuerzung: "PL",  bedeutung: "Projektleiter" }
 
+  - id: vorgaben_methoden
+    number: "0.5"
+    title: "Vorgaben, Methoden und Werkzeuge"
+    leitfrage: "Nach welchen Vorgaben und mit welchen Werkzeugen wird gearbeitet?"
+    type: table
+    required: false
+    columns:
+      - { id: titel,   label: "Titel" }
+      - { id: vorgabe, label: "Vorgabe / Methode / Werkzeug" }
+      - { id: version, label: "Version" }
+    # Zeilen, die HERMES verbindlich vorgibt. Sie stehen hier und nicht im
+    # Code: was die Methode vorschreibt, ist Konfiguration - der Code stellt
+    # nur sicher, dass sie vorhanden sind. Die Spalte 'version' bleibt leer,
+    # solange sie nicht erfragt ist (nichts erfinden).
+    pflichtzeilen:
+      - { titel: "Projektmanagementmethode", vorgabe: "HERMES" }
+    interview:
+      intent: "Verbindliche Vorgaben, Methoden und Werkzeuge der Organisation festhalten."
+      questions:
+        - "Welche Vorgaben Ihrer Organisation gelten fuer dieses Projekt (z.B. Architektur, Sicherheit, Beschaffung)?"
+        - "Mit welchen Werkzeugen wird gearbeitet (Dokumentation, Ablage, Zusammenarbeit)?"
+      completeness:
+        - "Die Projektmanagementmethode ist genannt"
+
   - id: ziele
     number: "2.1"
     title: "Ziele der Phase Initialisierung"

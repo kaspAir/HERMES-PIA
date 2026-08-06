@@ -538,8 +538,19 @@ class InterviewService:
         """
         sid = section.get("id")
         rows = section_answer.get("extracted")
+        # Bei einem TABELLEN-Abschnitt ist eine fehlende oder unbrauchbare
+        # Extraktion eine LEERE Tabelle – kein Grund, die deterministischen
+        # HERMES-Korrekturen zu überspringen. Genau daran fehlten in Kap. 3.1
+        # die Pflichtrollen: lieferte das Modell keine Liste, lief
+        # `_ensure_base_roles` nie, und Kap. 5 erbte den Mangel, weil es aus
+        # 3.1 abgeleitet wird. Was HERMES verbindlich vorgibt, darf nicht
+        # davon abhängen, ob ein Modell etwas extrahiert hat.
+        if not isinstance(rows, list) and section.get("type") == "table":
+            rows = []
+            section_answer["extracted"] = rows
         if not isinstance(rows, list):
             return
+        self._ensure_pflichtzeilen(section, rows)
         if sid in ("referenzierte_dokumente", "mitgeltende_unterlagen"):
             # Niemals Fundstellen/Nummern erfinden: SR-/kantonale Nummern kennt das LLM nicht
             # zuverlässig. Spalte 'Nummer/Link' deterministisch leeren – nur der Name bleibt.
@@ -688,6 +699,32 @@ class InterviewService:
         s_ext = emit(extern_items, "Summe externe Kosten")
         out.append({"phase": "Total Initialisierung", "betrag": str(s_int + s_ext)})
         return out
+
+    @staticmethod
+    def _ensure_pflichtzeilen(section, rows):
+        """Zeilen, die die Methode verbindlich vorgibt, sicherstellen.
+
+        Welche das sind, steht in `method.yaml` (`pflichtzeilen`) – der Code
+        weiss nichts über ihren Inhalt. Erkannt wird eine Zeile am Wert der
+        ERSTEN Spalte; ist sie schon da, bleibt sie unangetastet, denn was der
+        Projektleiter gesagt hat, schlägt die Vorgabe.
+        """
+        pflicht = section.get("pflichtzeilen") or []
+        if not pflicht:
+            return
+        spalten = section.get("columns") or []
+        if not spalten:
+            return
+        schluessel = spalten[0].get("id")
+
+        def vorhanden(wert):
+            return any(str(r.get(schluessel, "")).strip().lower() == wert.lower()
+                       for r in rows if isinstance(r, dict))
+
+        for zeile in pflicht:
+            wert = str(zeile.get(schluessel, "")).strip()
+            if wert and not vorhanden(wert):
+                rows.append(dict(zeile))
 
     @staticmethod
     def _ensure_base_roles(rows):
