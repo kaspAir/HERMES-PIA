@@ -23,11 +23,23 @@
     {% if structure.meilensteine %}
     <ol class="meilenstein-bar">
       {% for ms in structure.meilensteine %}
-      <li class="meilenstein {% if ms.ist_start %}meilenstein-start{% endif %}">
+      {% set erreicht = ms.status == 'erreicht' %}
+      <li class="meilenstein {% if ms.ist_start %}meilenstein-start{% endif %}
+                 {% if erreicht %}meilenstein-erreicht{% endif %}">
         <span class="meilenstein-name">{{ ms.name }}</span>
+        {# Ein Zustand gehoert als SATZ dagesagt, nicht als Farbe angedeutet:
+           ein Rand traegt keine Aussage, und wer ihn nicht sieht, sieht
+           nichts. Datum und Wort stehen deshalb im Text. #}
+        {% if erreicht %}
+        <span class="meilenstein-status">&#10003; Freigegeben{% if
+              entscheiddaten and entscheiddaten.get(ms.code) %} am
+              {{ entscheiddaten[ms.code] }}{% endif %}</span>
+        {% else %}
+        <span class="meilenstein-status meilenstein-status-offen">Noch nicht freigegeben</span>
+        {% endif %}
         <span class="meilenstein-datum">
-          {% if ms.datum %}{{ ms.datum }}{% if ms.ist_start %} · Start{% endif %}
-          {% else %}<span class="muted">offen</span>{% endif %}
+          {% if ms.datum %}{{ ms.datum }}{% if ms.ist_start %} · geplanter Start{% endif %}
+          {% else %}<span class="muted">Datum offen</span>{% endif %}
         </span>
         {% if ms.rolle %}<span class="meilenstein-rolle">{{ ms.rolle }}</span>{% endif %}
       </li>

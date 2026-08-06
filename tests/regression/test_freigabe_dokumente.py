@@ -147,3 +147,35 @@ def test_ohne_entscheide_bleibt_das_register_leer_aber_heil():
     zeilen = _zeilen(dk.entscheide_docx([]), "Projektentscheide Steuerung")
     assert len(zeilen) > 10
     assert not any("tt.mm.jjjj" in w for z in zeilen for w in z)
+
+
+# ---- Die Risikonummer steht nicht in den Daten ---------------------------- #
+
+def test_der_vorschlag_nennt_die_risikonummer():
+    """Gemessen: die Vorschläge hiessen «Risiko ?».
+
+    Die Nummer entsteht erst beim Erzeugen des Dokuments aus der Position in
+    der Tabelle – in den gespeicherten Zeilen steht sie nicht. Wer sie aus der
+    Zeile lesen will, bekommt nichts.
+    """
+    from app.domains.freigabe.pruefpunkte import projektspezifische_vorschlaege
+
+    wissen = {"risiken": {"extracted": [
+        {"beschreibung": "Erstes Risiko", "risikozahl": "4",
+         "massnahmen": "Erste Massnahme."},
+        {"beschreibung": "Zweites Risiko", "risikozahl": "9",
+         "massnahmen": "Zweite Massnahme."},
+    ]}}
+    vorschlaege = projektspezifische_vorschlaege(wissen)
+    assert "?" not in " ".join(v["pruefpunkt"] for v in vorschlaege)
+    # Nach Risikozahl sortiert (9 vor 4), aber mit der Nummer der TABELLE.
+    assert vorschlaege[0]["pruefpunkt"] == "Risiko 02"
+    assert vorschlaege[1]["pruefpunkt"] == "Risiko 01"
+
+
+def test_eine_vorhandene_nummer_wird_bevorzugt():
+    from app.domains.freigabe.pruefpunkte import projektspezifische_vorschlaege
+
+    wissen = {"risiken": {"extracted": [
+        {"nr": "07", "beschreibung": "Ein Risiko", "massnahmen": "Eine Massnahme."}]}}
+    assert projektspezifische_vorschlaege(wissen)[0]["pruefpunkt"] == "Risiko 07"

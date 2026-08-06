@@ -412,3 +412,52 @@ def test_das_bezogene_register_traegt_das_entscheidungsdatum(app):
     eins = [z for z in zeilen_txt if z and z[0] == "01"][0]
     assert eins[4] == "01.09.2026"
     assert eins[3] == "Auftraggeber"
+
+
+# ---- Ein Zustand gehört als Satz dagesagt --------------------------------- #
+
+def test_der_erreichte_meilenstein_steht_als_text_da(app):
+    """Rückmeldung: «Den grünen Rand sieht man kaum.» Farbe allein trägt
+    keine Aussage – und wer sie nicht sieht, sieht nichts."""
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    zeilen = svc.zeilen(svc.checkliste(p.id))
+    daten = {f"bewertung-{k}-{i}": pp.ERFUELLT
+             for k, liste in zeilen.items() for i, _ in enumerate(liste)}
+    c.post(f"/projekt/{p.id}/freigabe/speichern", data=daten)
+    c.post(f"/projekt/{p.id}/freigabe/geben")
+
+    vorher = c.get(f"/projekt/{p.id}").get_data(as_text=True)
+    assert "Noch nicht freigegeben" in vorher
+
+    c.post(f"/projekt/{p.id}/freigabe/meilenstein", data={"datum": "2026-09-01"})
+    nachher = c.get(f"/projekt/{p.id}").get_data(as_text=True)
+    assert "Freigegeben am" in nachher
+    assert "2026-09-01" in nachher
+    assert "meilenstein-erreicht" in nachher       # der Rand bleibt als zweites Signal
+
+
+def test_der_geplante_start_wird_nicht_mit_der_freigabe_verwechselt(app):
+    """Zwei verschiedene Daten – sie müssen sich unterscheiden lassen.
+
+    Gemessen im Bildschirmfoto: der Meilenstein zeigte «2026-09-01 · Start»,
+    freigegeben wurde aber am 06.08.2026. Ohne Beschriftung liest man das eine
+    als das andere.
+    """
+    from app.domains.projekt.models import Meilenstein
+    from app.shared.database import SessionLocal
+
+    c, p = _angemeldet(app)
+    db = SessionLocal()
+    stein = app.freigabe_service.meilenstein(p.id)
+    db.get(Meilenstein, stein.id).datum = "2026-09-01"
+    db.commit()
+
+    html = c.get(f"/projekt/{p.id}").get_data(as_text=True)
+    assert "geplanter Start" in html
+
+
+def test_ohne_datum_steht_das_auch_da(app):
+    c, p = _angemeldet(app)
+    assert "Datum offen" in c.get(f"/projekt/{p.id}").get_data(as_text=True)

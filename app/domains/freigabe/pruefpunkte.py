@@ -251,9 +251,15 @@ def projektspezifische_vorschlaege(wissen):
         except ValueError:
             return 0
 
-    risiken = sorted(_zeilen(wissen, "risiken"), key=zahl, reverse=True)
+    # Die Risikonummer steht NICHT in den Daten – sie entsteht erst beim
+    # Erzeugen des Dokuments aus der Position in der Tabelle. Wer sie aus der
+    # Zeile lesen will, bekommt nichts und schreibt «Risiko ?». Also wird hier
+    # genauso gezählt wie dort: nach der ursprünglichen Reihenfolge, VOR dem
+    # Sortieren nach Risikozahl.
+    mit_position = list(enumerate(_zeilen(wissen, "risiken"), start=1))
+    risiken = sorted(mit_position, key=lambda p: zahl(p[1]), reverse=True)
     raus = []
-    for zeile in risiken:
+    for position, zeile in risiken:
         massnahme = _feld(zeile, "massnahmen", "massnahme")
         if not massnahme:
             continue
@@ -262,7 +268,7 @@ def projektspezifische_vorschlaege(wissen):
         erster_satz = massnahme.split(". ")[0].rstrip(".")
         raus.append({
             "nr": f"P-{len(raus) + 1:02d}",
-            "pruefpunkt": f"Risiko {_feld(zeile, 'nr') or '?'}",
+            "pruefpunkt": f"Risiko {_feld(zeile, 'nr') or f'{position:02d}'}",
             "kriterium": f"Ist die vorgesehene Massnahme eingeleitet: "
                          f"«{erster_satz}»?",
             "bewertung": "", "erlaeuterung": "", "verantwortlich": "", "datum": "",

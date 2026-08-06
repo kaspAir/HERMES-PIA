@@ -464,7 +464,14 @@ def projekt_detail(projekt_id):
         "plan_msproject": f"{stamp}_Projektplan.xml",
         "plan_excel": f"{stamp}_Projektplan.xlsx",
     }
+    # Wann welcher Entscheid gefallen ist - damit ein erreichter Meilenstein
+    # nicht nur einen gruenen Rand traegt, sondern es auch dasteht.
+    entscheiddaten = {}
+    for e in current_app.freigabe_service.entscheide(projekt.id):
+        if e.nr == "01":
+            entscheiddaten["projektinitialisierungsfreigabe"] = e.entscheidungsdatum
     return render_template("projekt_detail.html", projekt=projekt,
+                           entscheiddaten=entscheiddaten,
                            structure=structure, sessions=sessions,
                            freigabe_docs=freigabe_docs, vorlage=vorlage,
                            methoden_vorlage=methoden_vorlage,

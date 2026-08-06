@@ -927,6 +927,19 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--radius); border-left: 4px solid var(--color-border);
 }
 .meilenstein-start { border-left-color: var(--color-primary); }
+/* Ein erreichter Meilenstein wird BENANNT, nicht nur eingefaerbt: Farbe
+   allein traegt keine Aussage und wird uebersehen. Der Rand bleibt als
+   zweites, schwaecheres Signal - er ersetzt den Satz nicht. */
+.meilenstein-erreicht {
+  border-left-color: var(--color-done);
+  border-left-width: 6px;
+  background: color-mix(in srgb, var(--color-done) 5%, #fff);
+}
+.meilenstein-status {
+  display: block; margin-top: 4px; font-size: .85rem;
+  font-weight: 600; color: var(--color-done);
+}
+.meilenstein-status-offen { color: var(--color-muted); font-weight: normal; }
 .meilenstein-name  { display: block; font-weight: 600; color: var(--color-text); }
 .meilenstein-datum { display: block; font-size: .85rem; color: var(--color-accent); margin-top: 2px; }
 .meilenstein-rolle { display: block; font-size: .8rem; color: var(--color-muted); margin-top: 2px; }
