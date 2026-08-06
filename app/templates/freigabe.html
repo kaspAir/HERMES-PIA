@@ -176,6 +176,21 @@
                         filename=dateinamen.entscheide) }}">
       &#9654; Liste Projektentscheide Steuerung (.docx)</a>
     {% endif %}
+    {% if not freigegeben and current_user.can_write %}
+    {# Der Rueckweg: in Word bearbeiten, hier wieder hereingeben. Uebernommen
+       werden Bewertung, Erlaeuterung, Verantwortlich und Datum - die Fragen
+       selbst bleiben, wie sie sind. #}
+    <p class="muted freigabe-rueckweg">Sie können die Checkliste in Word
+      ausfüllen und hier wieder hereingeben. Übernommen werden Bewertung,
+      Erläuterung, Verantwortlich und Datum – die Prüfpunkte selbst bleiben
+      unverändert.</p>
+    <label class="btn-link upload-label">
+      Bearbeitete Checkliste hochladen (.docx)
+      <input type="file" accept=".docx" class="upload-input"
+             data-url="{{ url_for('ui.freigabe_checkliste_upload', projekt_id=projekt.id) }}">
+    </label>
+    <div id="upload-status" class="muted upload-status"></div>
+    {% endif %}
   </section>
   {% endif %}
 
@@ -202,6 +217,49 @@
 
   {% endif %}
 </div>
+
+<script>
+// Transportweg wie ueberall: Base64-JSON, weil der Hosting-Proxy binaere
+// POST-Bodies verschluckt.
+(function () {
+  var statusEl = document.getElementById('upload-status');
+  function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+  document.querySelectorAll('.upload-input').forEach(function (input) {
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      setStatus('Lade «' + file.name + '» hoch …');
+      var fr = new FileReader();
+      fr.onerror = function () {
+        setStatus('Die Datei liess sich nicht lesen. Prüfen Sie, ob sie noch in '
+                + 'einem anderen Programm geöffnet ist, und wählen Sie sie erneut aus.');
+      };
+      fr.onload = function () {
+        fetch(input.dataset.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name,
+                                 data: String(fr.result).split(',')[1] || '' })
+        })
+        .then(function (r) { return r.text().then(function (t) {
+          var d = {}; try { d = JSON.parse(t); } catch (e) {}
+          return { ok: r.ok, d: d };
+        }); })
+        .then(function (res) {
+          if (res.ok) { location.reload(); }
+          else { setStatus((res.d.error || 'Die Datei wurde nicht angenommen.')
+                         + ' Wählen Sie sie erneut aus oder laden Sie die Seite neu.'); }
+        })
+        .catch(function () {
+          setStatus('Die Verbindung zum Server brach ab. Ihre Datei wurde nicht '
+                  + 'gespeichert – versuchen Sie es gleich noch einmal.');
+        });
+      };
+      fr.readAsDataURL(file);
+    });
+  });
+})();
+</script>
 
 {% if auto_download %}
 {# Der Entscheid ist gefallen - das Dokument ist sein Beleg. Es wird bezogen,

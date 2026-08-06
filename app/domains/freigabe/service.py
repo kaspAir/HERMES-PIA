@@ -105,7 +105,23 @@ class FreigabeService:
             sitzung = None
         wissen, herkunft = pia_quelle.projektwissen_quelle(
             session=sitzung, dokumente=dokumente, parser=self._parser)
-        return wissen, herkunft, dokumente
+        return wissen, herkunft, dokumente, sitzung
+
+    def dokument_kontext(self, projekt, methode=None, version="", status="in Arbeit",
+                         datum=""):
+        """(Kopfangaben, Abschnitte, Projektwissen) für die Word-Ausgabe.
+
+        Der Kopf jedes Dokuments und die Kapitel 0.2 bis 0.5 sind für alle
+        Ergebnisse eines Projekts dieselben – sie stammen aus derselben
+        Quelle wie die Bewertung selbst.
+        """
+        from app.domains.dokumentenkopf import kopf as kopfmodul
+
+        wissen, _, _, sitzung = self.projektwissen(projekt)
+        angaben = kopfmodul.metadaten(projekt=projekt, session=sitzung,
+                                      version=version, status=status, datum=datum)
+        abschnitte = (methode or {}).get("sections") or []
+        return angaben, abschnitte, wissen
 
     def erzeuge(self, projekt):
         """Checkliste anlegen oder neu bewerten.
@@ -121,7 +137,7 @@ class FreigabeService:
                 "bewertet. Ein Nachweis, der sich nachträglich ändert, ist "
                 "kein Nachweis.")
 
-        wissen, herkunft, dokumente = self.projektwissen(projekt)
+        wissen, herkunft, dokumente, _ = self.projektwissen(projekt)
         vorhanden = self.zeilen(checkliste)
         neu = {
             "generell": pruefpunkte.generelle_pruefpunkte(

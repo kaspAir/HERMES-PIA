@@ -714,12 +714,25 @@ def freigabe_checkliste_docx(projekt_id, filename):
     checkliste = svc.checkliste(projekt.id)
     if checkliste is None:
         abort(404)
+    # Der HERMES-Versionssprung: 0.x solange in Arbeit, 1.0 mit der Freigabe.
+    freigegeben = checkliste.status == "freigegeben"
+    stand = "freigegeben" if freigegeben else "in Arbeit"
+    freigabedatum = (checkliste.freigegeben_am.strftime("%d.%m.%Y")
+                     if checkliste.freigegeben_am else "")
+    angaben, abschnitte, wissen = svc.dokument_kontext(
+        projekt, methode=current_app.method_service.get("hermes_pia"),
+        version="1.0" if freigegeben else "0.1", status=stand,
+        datum=freigabedatum or f"{date.today():%d.%m.%Y}")
+    # Verantwortlich ist, wer fuer die Checkliste einsteht: die Projektleitung.
+    # Ihr Name steht im Projektinitialisierungsauftrag - er wird nicht erfragt
+    # und nicht geraten.
     kopf = {
-        "verantwortlich": checkliste.freigegeben_durch or "",
-        "datum": (checkliste.freigegeben_am.strftime("%d.%m.%Y")
-                  if checkliste.freigegeben_am else ""),
+        "verantwortlich": angaben.get("projektleiter", ""),
+        "datum": freigabedatum,
     }
-    puffer = dokumente.checkliste_docx(svc.zeilen(checkliste), kopf=kopf)
+    puffer = dokumente.checkliste_docx(svc.zeilen(checkliste), kopf=kopf,
+                                       angaben=angaben, abschnitte=abschnitte,
+                                       wissen=wissen)
     return send_file(puffer, mimetype=DOCX_MIME, as_attachment=True,
                      download_name=filename)
 
@@ -731,10 +744,50 @@ def freigabe_entscheide_docx(projekt_id, filename):
     from app.domains.freigabe import dokumente
 
     projekt = _load_projekt(projekt_id)
-    puffer = dokumente.entscheide_docx(
-        current_app.freigabe_service.entscheide(projekt.id))
+    svc = current_app.freigabe_service
+    angaben, abschnitte, wissen = svc.dokument_kontext(
+        projekt, methode=current_app.method_service.get("hermes_pia"),
+        version="0.1", status="in Arbeit", datum=f"{date.today():%d.%m.%Y}")
+    puffer = dokumente.entscheide_docx(svc.entscheide(projekt.id), angaben=angaben,
+                                       abschnitte=abschnitte, wissen=wissen)
     return send_file(puffer, mimetype=DOCX_MIME, as_attachment=True,
                      download_name=filename)
+
+
+@bp.post("/projekt/<int:projekt_id>/freigabe/checkliste/upload")
+@permission_required("write")
+def freigabe_checkliste_upload(projekt_id):
+    """Die in Word bearbeitete Checkliste zurueckuebernehmen (Base64-JSON).
+
+    Ein Ergebnis, das man nur herunterladen kann, ist eine Sackgasse:
+    gearbeitet wird in Word, und was dort entsteht, muss zurueckfliessen.
+    Uebernommen werden nur die vier Spalten, die ein Mensch ausfuellt.
+    """
+    from app.domains.freigabe import dokumente
+    from app.domains.freigabe.service import FreigabeFehler
+
+    _load_projekt(projekt_id)
+    svc = current_app.freigabe_service
+    checkliste = svc.checkliste(projekt_id)
+    if checkliste is None:
+        return jsonify({"error": "Fuer dieses Projekt gibt es noch keine "
+                                 "Checkliste."}), 404
+    filename, daten = _json_upload(".docx")
+    if filename is None:
+        return jsonify({"error": daten}), 400
+    try:
+        gelesen = dokumente.checkliste_aus_docx(daten)
+    except Exception as e:                      # noqa: BLE001
+        log.warning("Hochgeladene Checkliste nicht lesbar: %s", e)
+        return jsonify({"error": "Die Datei liess sich nicht als Checkliste "
+                                 "lesen. Stammt sie aus dem Herunterladen "
+                                 "dieser Seite?"}), 400
+    bestand, geaendert = dokumente.uebernimm(svc.zeilen(checkliste), gelesen)
+    try:
+        svc.speichere_zeilen(projekt_id, bestand)
+    except FreigabeFehler as e:
+        return jsonify({"error": str(e)}), 409
+    return jsonify({"ok": True, "geaendert": geaendert})
 
 
 @bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/version")

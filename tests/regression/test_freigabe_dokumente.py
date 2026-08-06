@@ -179,3 +179,139 @@ def test_eine_vorhandene_nummer_wird_bevorzugt():
     wissen = {"risiken": {"extracted": [
         {"nr": "07", "beschreibung": "Ein Risiko", "massnahmen": "Eine Massnahme."}]}}
     assert projektspezifische_vorschlaege(wissen)[0]["pruefpunkt"] == "Risiko 07"
+
+
+# ---- Der gemeinsame Dokumentenkopf ---------------------------------------- #
+#
+# «Diese haben ja (Dokumente) alle denselben Kopf. Dieser muss natürlich immer
+# ausgefüllt werden.» Genau deshalb liegt er in einem eigenen Modul: was bei
+# jedem Dokument passiert, wird sonst bei jedem Dokument neu falsch gemacht.
+
+_ANGABEN = {
+    "projektname": "BKI Test 8 / 001-25", "projektnummer": "001-25",
+    "datum": "06.08.2026", "version": "0.1", "status": "in Arbeit",
+    "klassifizierung": "Nicht klassifiziert", "autor": "Amélie Brèche",
+    "projektleiter": "Amélie Brèche", "auftraggeber": "Max Mustermann",
+    "verwaltungseinheit": "Testamt", "geschaeftsbereich": "Generalsekretariat",
+    "innenauftragsnummer": "IA-42",
+}
+
+_ABSCHNITTE = [
+    {"id": "referenzierte_dokumente", "title": "Referenzierte Dokumente",
+     "type": "table", "columns": [{"id": "nr", "label": "Nr."},
+                                  {"id": "name", "label": "Name"},
+                                  {"id": "link", "label": "Nummer / Link"}]},
+    {"id": "vorgaben_methoden", "title": "Vorgaben, Methoden und Werkzeuge",
+     "type": "table", "columns": [{"id": "titel", "label": "Titel"},
+                                  {"id": "vorgabe", "label": "Vorgabe / Methode / Werkzeug"},
+                                  {"id": "version", "label": "Version"}]},
+]
+
+_WISSEN = {
+    "referenzierte_dokumente": {"extracted": [{"name": "ZertES"}, {"name": "BöB"}]},
+    "vorgaben_methoden": {"extracted": [
+        {"titel": "Projektmanagementmethode", "vorgabe": "HERMES 2022",
+         "version": "2022"}]},
+}
+
+
+def _text(puffer):
+    from app.domains.generation.service import _p_text
+
+    doc = Document(puffer)
+    W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"
+    return "\n".join(_p_text(p) for p in doc.element.body.iter(W))
+
+
+def test_der_kopf_wird_ausgefuellt():
+    inhalt = _text(dk.checkliste_docx(_BEWERTET, angaben=_ANGABEN))
+    for wert in ("BKI Test 8 / 001-25", "06.08.2026", "Amélie Brèche",
+                 "Max Mustermann", "Testamt", "Generalsekretariat", "IA-42"):
+        assert wert in inhalt, wert
+
+
+def test_die_magenta_platzhalter_verschwinden():
+    """Rückmeldung: «Auch sollten in allen Ergebnissen die magenta Einträge
+    raus sein.» Regieanweisungen gehören in die Vorlage, nicht ins Dokument."""
+    inhalt = _text(dk.checkliste_docx(_BEWERTET, angaben=_ANGABEN))
+    assert "Projektname / Projektnummer" not in inhalt
+    assert "bei Bedarf anpassen" not in inhalt
+
+
+def test_die_gemeinsamen_kapitel_kommen_aus_dem_pia():
+    """Diese Daten sind bereits erhoben – sie ein zweites Mal zu erfragen
+    wäre eine Zumutung, sie wegzulassen eine Lücke."""
+    puffer = dk.checkliste_docx(_BEWERTET, angaben=_ANGABEN,
+                                abschnitte=_ABSCHNITTE, wissen=_WISSEN)
+    referenzen = _zeilen(puffer, "Referenzierte Dokumente")
+    assert [z[1] for z in referenzen[1:]] == ["ZertES", "BöB"]
+    vorgaben = _zeilen(puffer, "Vorgaben, Methoden und Werkzeuge")
+    assert vorgaben[1][:3] == ["Projektmanagementmethode", "HERMES 2022", "2022"]
+
+
+def test_ohne_projektwissen_bleibt_die_vorlage_stehen():
+    """Nichts erfinden: fehlt die Angabe, wird sie nicht ersetzt."""
+    puffer = dk.checkliste_docx(_BEWERTET, angaben=_ANGABEN)
+    assert _zeilen(puffer, "Definitionen und Abkürzungen")
+
+
+def test_der_entscheidungstraeger_traegt_den_namen():
+    """«Der Name des Auftraggebers ist ja auch bekannt.»"""
+    zeilen = _zeilen(dk.entscheide_docx([_Entscheid()], angaben=_ANGABEN),
+                     "Projektentscheide Steuerung")
+    eins = [z for z in zeilen if z and z[0] == "01"][0]
+    assert eins[3] == "Auftraggeber (Max Mustermann)"
+
+
+def test_ohne_namen_bleibt_die_rolle_allein_stehen():
+    zeilen = _zeilen(dk.entscheide_docx([_Entscheid()]), "Projektentscheide Steuerung")
+    eins = [z for z in zeilen if z and z[0] == "01"][0]
+    assert eins[3] == "Auftraggeber"
+
+
+# ---- Der Rückweg ---------------------------------------------------------- #
+
+def test_die_bearbeitete_checkliste_wird_zurueckgelesen():
+    puffer = dk.checkliste_docx(_BEWERTET, kopf={"verantwortlich": "PL",
+                                                 "datum": "06.08.2026"})
+    gelesen = dk.checkliste_aus_docx(puffer.read())
+    assert gelesen["generell"]["G-01"]["bewertung"] == "zu bestätigen"
+    assert gelesen["generell"]["G-02"]["bewertung"] == "erfüllt"
+    assert gelesen["generell"]["G-01"]["verantwortlich"] == "PL"
+
+
+def test_die_uebernahme_ersetzt_nur_die_menschlichen_spalten():
+    bestand = {"generell": [{"nr": "G-01", "kriterium": "Die Frage?",
+                             "bewertung": "", "erlaeuterung": ""}],
+               "organisation": [], "projekt": []}
+    gelesen = {"generell": {"G-01": {"bewertung": "erfüllt",
+                                     "erlaeuterung": "belegt durch X",
+                                     "verantwortlich": "PL", "datum": "06.08.2026"}}}
+    neu, geaendert = dk.uebernimm(bestand, gelesen)
+    zeile = neu["generell"][0]
+    assert zeile["bewertung"] == "erfüllt" and zeile["erlaeuterung"] == "belegt durch X"
+    assert zeile["kriterium"] == "Die Frage?"       # die Frage bleibt die Frage
+    assert geaendert == 4
+
+
+def test_eine_geleerte_zelle_loescht_nichts():
+    """Ein Ausdruck ohne Bewertung wäre sonst eine Löschung."""
+    bestand = {"generell": [{"nr": "G-01", "bewertung": "erfüllt"}],
+               "organisation": [], "projekt": []}
+    neu, geaendert = dk.uebernimm(bestand, {"generell": {"G-01": {"bewertung": ""}}})
+    assert neu["generell"][0]["bewertung"] == "erfüllt"
+    assert geaendert == 0
+
+
+def test_eine_im_word_entfernte_zeile_verschwindet_nicht_still():
+    bestand = {"generell": [{"nr": "G-01", "bewertung": "erfüllt"},
+                            {"nr": "G-02", "bewertung": "erfüllt"}],
+               "organisation": [], "projekt": []}
+    neu, _ = dk.uebernimm(bestand, {"generell": {"G-01": {"bewertung": "teilweise erfüllt"}}})
+    assert len(neu["generell"]) == 2
+    assert neu["generell"][1]["nr"] == "G-02"
+
+
+def test_ein_fremdes_dokument_wirft_nichts_um():
+    gelesen = dk.checkliste_aus_docx(dk.entscheide_docx([]).read())
+    assert gelesen == {} or not any(gelesen.values())

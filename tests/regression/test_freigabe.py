@@ -461,3 +461,87 @@ def test_der_geplante_start_wird_nicht_mit_der_freigabe_verwechselt(app):
 def test_ohne_datum_steht_das_auch_da(app):
     c, p = _angemeldet(app)
     assert "Datum offen" in c.get(f"/projekt/{p.id}").get_data(as_text=True)
+
+
+# ---- Der Rückweg über die Route ------------------------------------------- #
+
+def test_die_bearbeitete_checkliste_laesst_sich_hochladen(app):
+    """«Ich hätte es lieber, wenn diese auch bereits im Entwurfsmodus
+    heruntergeladen und bearbeitet wieder hochgeladen werden könnte.»"""
+    import base64
+
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+
+    # Herunterladen im ENTWURF – das ist der Punkt.
+    roh = c.get(f"/projekt/{p.id}/freigabe/checkliste/Entwurf.docx").get_data()
+    assert svc.checkliste(p.id).status == "entwurf"
+
+    # In Word bearbeiten – hier ersatzweise: alles auf «erfüllt» setzen und
+    # erneut erzeugen, so als käme die Datei aus Word zurück.
+    from app.domains.freigabe import dokumente
+    zeilen = svc.zeilen(svc.checkliste(p.id))
+    for z in svc.alle_zeilen(zeilen):
+        z["bewertung"] = pp.ERFUELLT
+        z["erlaeuterung"] = "in Word geprüft"
+    bearbeitet = dokumente.checkliste_docx(zeilen).read()
+
+    antwort = c.post(f"/projekt/{p.id}/freigabe/checkliste/upload",
+                     json={"filename": "Checkliste.docx",
+                           "data": base64.b64encode(bearbeitet).decode()})
+    assert antwort.status_code == 200, antwort.get_data(as_text=True)
+    assert antwort.get_json()["geaendert"] > 0
+
+    danach = svc.alle_zeilen(svc.zeilen(svc.checkliste(p.id)))
+    assert all(z["bewertung"] == pp.ERFUELLT for z in danach)
+    assert all("in Word geprüft" in z["erlaeuterung"] for z in danach)
+    assert roh                                    # der Download war ein Dokument
+
+
+def test_ein_unlesbares_dokument_wird_ehrlich_gemeldet(app):
+    """Zwei Stufen: der allgemeine Upload-Prüfer erkennt schon, dass es keine
+    Office-Datei ist – erst danach greift die Frage, ob es eine Checkliste
+    ist. Beide Meldungen nennen einen nächsten Schritt."""
+    import base64
+
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+
+    kaputt = c.post(f"/projekt/{p.id}/freigabe/checkliste/upload",
+                    json={"filename": "kaputt.docx",
+                          "data": base64.b64encode(b"kein Word").decode()})
+    assert kaputt.status_code == 400
+    assert "Office-Datei" in kaputt.get_json()["error"]
+
+    # Ein GUELTIGES Word-Dokument, das keine Checkliste ist: hier meldet der
+    # Rueckweg selbst, und er nennt die Herkunft als naechsten Schritt.
+    from app.domains.freigabe import dokumente
+    fremd = dokumente.entscheide_docx([]).read()
+    antwort = c.post(f"/projekt/{p.id}/freigabe/checkliste/upload",
+                     json={"filename": "fremd.docx",
+                           "data": base64.b64encode(fremd).decode()})
+    assert antwort.status_code == 200
+    assert antwort.get_json()["geaendert"] == 0     # nichts gefunden, nichts geaendert
+
+
+def test_nach_der_freigabe_nimmt_sie_nichts_mehr_an(app):
+    import base64
+
+    from app.domains.freigabe import dokumente
+
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    zeilen = svc.zeilen(svc.checkliste(p.id))
+    for z in svc.alle_zeilen(zeilen):
+        z["bewertung"] = pp.ERFUELLT
+    svc.speichere_zeilen(p.id, zeilen)
+    svc.gib_frei(p.id, "Frau Muster")
+
+    antwort = c.post(f"/projekt/{p.id}/freigabe/checkliste/upload",
+                     json={"filename": "C.docx",
+                           "data": base64.b64encode(
+                               dokumente.checkliste_docx(zeilen).read()).decode()})
+    assert antwort.status_code == 409
+    assert "nicht mehr ändern" in antwort.get_json()["error"]
