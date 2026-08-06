@@ -41,7 +41,7 @@ _ERZEUGER = GenerationService(None)
 
 def metadaten(projekt=None, session=None, version="", status="in Arbeit",
               datum="", autor="", klassifizierung="Nicht klassifiziert",
-              vorrang=None):
+              vorrang=None, erkenne_geschlecht=None):
     """Die Kopfangaben aus Projekt, Interview-Sitzung – und dem PIA.
 
     ``vorrang`` sind die Angaben aus der Fassung des
@@ -56,6 +56,21 @@ def metadaten(projekt=None, session=None, version="", status="in Arbeit",
     """
     vorrang = vorrang or {}
 
+    # Die Vorlage führt Doppelformen: «Projektleiter/in», «Autor/-in»,
+    # «Auftraggeber/in». Ist die Person bekannt, gehört die passende Form
+    # dorthin – wer namentlich dasteht, soll auch richtig angesprochen werden.
+    # Bleibt das Geschlecht unklar, bleibt die Doppelform der Vorlage stehen;
+    # geraten wird nicht.
+    _bekannt = {}
+
+    def geschlecht(name):
+        if not name or erkenne_geschlecht is None:
+            return "u"
+        # Je Name nur EINE Abfrage – sie kostet einen Modellaufruf.
+        if name not in _bekannt:
+            _bekannt[name] = erkenne_geschlecht(name) or "u"
+        return _bekannt[name]
+
     def von(quelle, *namen):
         for name in namen:
             wert = getattr(quelle, name, None) if quelle is not None else None
@@ -66,6 +81,9 @@ def metadaten(projekt=None, session=None, version="", status="in Arbeit",
     projektname = von(projekt, "name") or von(session, "project_name")
     projektnummer = von(projekt, "projektnummer") or von(session, "projektnummer")
     projektleiter = vorrang.get("projektleiter") or von(session, "created_by")
+    auftraggeber = (vorrang.get("auftraggeber") or von(projekt, "auftraggeber")
+                    or von(session, "auftraggeber"))
+    verfasser = autor or projektleiter
     return {
         # Der Titel führt beides – so heisst das Feld in der Vorlage. Steht er
         # schon zusammengesetzt im PIA, wird er nicht neu gebaut.
@@ -77,11 +95,16 @@ def metadaten(projekt=None, session=None, version="", status="in Arbeit",
         "version": version,
         "status": status,
         "klassifizierung": klassifizierung,
-        "autor": autor or projektleiter,
+        "autor": verfasser,
         "projektleiter": projektleiter,
-        "auftraggeber": (vorrang.get("auftraggeber")
-                         or von(projekt, "auftraggeber")
-                         or von(session, "auftraggeber")),
+        "auftraggeber": auftraggeber,
+        # Die Anrede folgt der Person, nicht der Rolle.
+        "projektleiter_geschlecht": geschlecht(projektleiter),
+        "auftraggeber_geschlecht": geschlecht(auftraggeber),
+        "autor_geschlecht": geschlecht(verfasser),
+        # Die Vorlage prüft ausserdem diese beiden Kurzformen.
+        "projektleiter_weiblich": geschlecht(projektleiter) == "w",
+        "auftraggeber_weiblich": geschlecht(auftraggeber) == "w",
         "verwaltungseinheit": (vorrang.get("verwaltungseinheit")
                                or von(projekt, "verwaltungseinheit")
                                or von(session, "verwaltungseinheit")),

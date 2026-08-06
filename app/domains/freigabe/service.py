@@ -107,6 +107,16 @@ class FreigabeService:
             session=sitzung, dokumente=dokumente, parser=self._parser)
         return wissen, herkunft, dokumente, sitzung, kopfangaben
 
+    def _geschlecht(self, name):
+        """Anrede aus dem Vornamen – derselbe Weg wie beim PIA.
+
+        Ohne Sprachmodell bleibt es bei «unbekannt», und die Vorlage behält
+        ihre Doppelform. Geraten wird nichts.
+        """
+        from app.domains.interview.extraction import detect_gender
+
+        return detect_gender(getattr(self.interview_service, "llm", None), name)
+
     def dokument_kontext(self, projekt, methode=None, version="", status="in Arbeit",
                          datum=""):
         """(Kopfangaben, Abschnitte, Projektwissen) für die Word-Ausgabe.
@@ -124,7 +134,8 @@ class FreigabeService:
         # alten Namen traegt, widerspricht seiner eigenen Grundlage.
         angaben = kopfmodul.metadaten(projekt=projekt, session=sitzung,
                                       version=version, status=status, datum=datum,
-                                      vorrang=aus_dokument)
+                                      vorrang=aus_dokument,
+                                      erkenne_geschlecht=self._geschlecht)
         abschnitte = (methode or {}).get("sections") or []
         return angaben, abschnitte, wissen
 

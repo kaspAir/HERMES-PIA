@@ -315,3 +315,61 @@ def test_eine_im_word_entfernte_zeile_verschwindet_nicht_still():
 def test_ein_fremdes_dokument_wirft_nichts_um():
     gelesen = dk.checkliste_aus_docx(dk.entscheide_docx([]).read())
     assert gelesen == {} or not any(gelesen.values())
+
+
+# ---- Die Anrede folgt der Person ------------------------------------------ #
+#
+# «Das System erkennt ja, ob es sich bei der Person um einen Mann oder eine
+# Frau handelt. Es sollte also Projektleiterin und Autorin bzw. Auftraggeber
+# schreiben. Im PIA funktioniert das jedenfalls...» – Es funktionierte dort,
+# weil die PIA-Ausgabe das Geschlecht ermittelt und mitgibt. Der gemeinsame
+# Kopf tat das nicht; die Vorlage behielt ihre Doppelformen.
+
+def _erkenner(name):
+    return "w" if name.startswith("Am") else "m"
+
+
+def _kopf_mit_anrede(**kwargs):
+    from app.domains.dokumentenkopf import kopf as kopfmodul
+
+    grund = {"vorrang": {"projektleiter": "Amélie Brèche",
+                         "auftraggeber": "Max Mustermann",
+                         "projektname": "BKI Test 8 / 001-25"},
+             "erkenne_geschlecht": _erkenner}
+    grund.update(kwargs)
+    return kopfmodul.metadaten(**grund)
+
+
+def test_die_doppelformen_werden_aufgeloest():
+    inhalt = _text(dk.checkliste_docx(_BEWERTET, angaben=_kopf_mit_anrede()))
+    assert "AutorinAmélie Brèche" in inhalt
+    assert "ProjektleiterinAmélie Brèche" in inhalt
+    assert "AuftraggeberMax Mustermann" in inhalt
+    assert "Projektleiter/in" not in inhalt
+    assert "Autor/-in" not in inhalt
+
+
+def test_ohne_erkennung_bleibt_die_doppelform_stehen():
+    """Geraten wird nicht: unklar heisst, die Vorlage behält ihre Form."""
+    inhalt = _text(dk.checkliste_docx(
+        _BEWERTET, angaben=_kopf_mit_anrede(erkenne_geschlecht=None)))
+    assert "Projektleiter/in" in inhalt
+
+
+def test_ein_name_kostet_nur_eine_abfrage():
+    """Jede Abfrage ist ein Modellaufruf – Autor und Projektleitung sind
+    dieselbe Person, also wird einmal gefragt, nicht zweimal."""
+    gefragt = []
+
+    def zaehlend(name):
+        gefragt.append(name)
+        return "w"
+
+    _kopf_mit_anrede(erkenne_geschlecht=zaehlend)
+    assert gefragt.count("Amélie Brèche") == 1
+
+
+def test_die_kurzformen_stehen_ebenfalls_bereit():
+    angaben = _kopf_mit_anrede()
+    assert angaben["projektleiter_weiblich"] is True
+    assert angaben["auftraggeber_weiblich"] is False
