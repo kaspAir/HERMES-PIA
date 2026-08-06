@@ -40,12 +40,22 @@ _ERZEUGER = GenerationService(None)
 
 
 def metadaten(projekt=None, session=None, version="", status="in Arbeit",
-              datum="", autor="", klassifizierung="Nicht klassifiziert"):
-    """Die Kopfangaben aus Projekt und Interview-Sitzung.
+              datum="", autor="", klassifizierung="Nicht klassifiziert",
+              vorrang=None):
+    """Die Kopfangaben aus Projekt, Interview-Sitzung – und dem PIA.
+
+    ``vorrang`` sind die Angaben aus der Fassung des
+    Projektinitialisierungsauftrags, auf der das Dokument beruht. Sie
+    **gewinnen**, denn sie folgen derselben Rangfolge wie der Inhalt: wer im
+    freigegebenen Word die Projektleitung ändert, hat sie geändert, und ein
+    abgeleitetes Dokument, das weiter den alten Namen trägt, widerspricht
+    seiner eigenen Grundlage.
 
     Fehlende Werte bleiben leer – dann lässt der Erzeuger das Feld der
     Vorlage unangetastet, statt es mit einer Erfindung zu füllen.
     """
+    vorrang = vorrang or {}
+
     def von(quelle, *namen):
         for name in namen:
             wert = getattr(quelle, name, None) if quelle is not None else None
@@ -55,11 +65,13 @@ def metadaten(projekt=None, session=None, version="", status="in Arbeit",
 
     projektname = von(projekt, "name") or von(session, "project_name")
     projektnummer = von(projekt, "projektnummer") or von(session, "projektnummer")
-    projektleiter = von(session, "created_by")
+    projektleiter = vorrang.get("projektleiter") or von(session, "created_by")
     return {
-        # Der Titel führt beides – so heisst das Feld in der Vorlage.
-        "projektname": (f"{projektname} / {projektnummer}"
-                        if projektname and projektnummer else projektname),
+        # Der Titel führt beides – so heisst das Feld in der Vorlage. Steht er
+        # schon zusammengesetzt im PIA, wird er nicht neu gebaut.
+        "projektname": (vorrang.get("projektname")
+                        or (f"{projektname} / {projektnummer}"
+                            if projektname and projektnummer else projektname)),
         "projektnummer": projektnummer,
         "datum": datum,
         "version": version,
@@ -67,10 +79,14 @@ def metadaten(projekt=None, session=None, version="", status="in Arbeit",
         "klassifizierung": klassifizierung,
         "autor": autor or projektleiter,
         "projektleiter": projektleiter,
-        "auftraggeber": von(projekt, "auftraggeber") or von(session, "auftraggeber"),
-        "verwaltungseinheit": (von(projekt, "verwaltungseinheit")
+        "auftraggeber": (vorrang.get("auftraggeber")
+                         or von(projekt, "auftraggeber")
+                         or von(session, "auftraggeber")),
+        "verwaltungseinheit": (vorrang.get("verwaltungseinheit")
+                               or von(projekt, "verwaltungseinheit")
                                or von(session, "verwaltungseinheit")),
-        "geschaeftsbereich": (von(projekt, "geschaeftsbereich")
+        "geschaeftsbereich": (vorrang.get("geschaeftsbereich")
+                              or von(projekt, "geschaeftsbereich")
                               or von(session, "geschaeftsbereich")),
         "innenauftragsnummer": (von(projekt, "innenauftragsnummer")
                                 or von(session, "innenauftragsnummer")),

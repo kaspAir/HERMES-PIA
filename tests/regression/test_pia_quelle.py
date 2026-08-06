@@ -169,3 +169,86 @@ def test_die_freigegebene_fassung_kann_hochgeladen_werden():
         encoding="utf-8")
     assert "Freigegebene Fassung hochladen" in v
     assert "art=freigegeben" in v
+
+
+# ---- Die NAMEN folgen derselben Rangfolge wie der Inhalt ------------------ #
+#
+# Rückfrage: «Die Namen müssen dann aber aus dem PIA übernommen werden, das ist
+# schon klar, oder?» – Ja, und zwar aus DER Fassung, auf der das abgeleitete
+# Dokument beruht. Die Kopfangaben stehen im PIA in der Metadatentabelle des
+# Deckblatts, also in keinem Abschnitt; `aus_dokument` lässt sie deshalb weg.
+# Sie wurden dadurch geparst und weggeworfen, und der Dokumentenkopf griff
+# ersatzweise auf die Interview-Sitzung zurück. Wer im freigegebenen Word die
+# Projektleitung ändert, hat sie geändert – ein abgeleitetes Dokument, das
+# weiter den alten Namen trägt, widerspricht seiner eigenen Grundlage.
+
+_MIT_KOPF = dict(_GEPARST, projektleiter="Frau Neu", auftraggeber="Herr Neu",
+                 verwaltungseinheit="Neues Amt", projektname="Projekt / 007")
+
+
+def test_die_kopfangaben_kommen_aus_dem_dokument():
+    _, kopf, herkunft = pia_quelle.quelle(
+        session=_Sitzung({"ausgangslage": {"extracted": {"text": "Arbeitsstand"}}}),
+        dokumente={"freigegeben": b"F"},
+        parser=lambda b: _MIT_KOPF)
+    assert herkunft == "freigegeben"
+    assert kopf["projektleiter"] == "Frau Neu"
+    assert kopf["auftraggeber"] == "Herr Neu"
+
+
+def test_ohne_dokument_gibt_es_keine_kopfangaben():
+    """Dann trägt die Sitzung – aber das entscheidet der Dokumentenkopf,
+    nicht dieses Modul. Hier wird nichts erfunden."""
+    _, kopf, herkunft = pia_quelle.quelle(
+        session=_Sitzung({"ausgangslage": {"extracted": {"text": "Arbeitsstand"}}}))
+    assert herkunft == "interview" and kopf == {}
+
+
+def test_leere_kopfangaben_fallen_weg():
+    kopf = pia_quelle.kopfangaben_aus_dokument(dict(_GEPARST, projektleiter=""))
+    assert "projektleiter" not in kopf
+
+
+def test_der_alte_aufruf_bleibt_gueltig():
+    """`projektwissen_quelle` hat zwei Rueckgabewerte – das bleibt so."""
+    assert pia_quelle.projektwissen_quelle() == ({}, "")
+
+
+def test_der_dokumentenkopf_bevorzugt_die_angaben_des_pia():
+    from app.domains.dokumentenkopf import kopf as kopfmodul
+
+    class _Sitzung2:
+        project_name = "Alter Name"
+        projektnummer = "001-25"
+        created_by = "Frau Alt"
+        auftraggeber = "Herr Alt"
+        verwaltungseinheit = "Altes Amt"
+        geschaeftsbereich = ""
+        innenauftragsnummer = ""
+
+    angaben = kopfmodul.metadaten(
+        session=_Sitzung2(),
+        vorrang={"projektleiter": "Frau Neu", "auftraggeber": "Herr Neu",
+                 "verwaltungseinheit": "Neues Amt", "projektname": "Projekt / 007"})
+    assert angaben["projektleiter"] == "Frau Neu"
+    assert angaben["auftraggeber"] == "Herr Neu"
+    assert angaben["verwaltungseinheit"] == "Neues Amt"
+    assert angaben["projektname"] == "Projekt / 007"
+    assert angaben["autor"] == "Frau Neu"        # Autor = erfassende Person
+
+
+def test_ohne_vorrang_traegt_die_sitzung():
+    from app.domains.dokumentenkopf import kopf as kopfmodul
+
+    class _Sitzung3:
+        project_name = "Projekt"
+        projektnummer = "001-25"
+        created_by = "Frau Alt"
+        auftraggeber = "Herr Alt"
+        verwaltungseinheit = ""
+        geschaeftsbereich = ""
+        innenauftragsnummer = ""
+
+    angaben = kopfmodul.metadaten(session=_Sitzung3())
+    assert angaben["projektleiter"] == "Frau Alt"
+    assert angaben["projektname"] == "Projekt / 001-25"

@@ -103,9 +103,9 @@ class FreigabeService:
                 break
         else:
             sitzung = None
-        wissen, herkunft = pia_quelle.projektwissen_quelle(
+        wissen, kopfangaben, herkunft = pia_quelle.quelle(
             session=sitzung, dokumente=dokumente, parser=self._parser)
-        return wissen, herkunft, dokumente, sitzung
+        return wissen, herkunft, dokumente, sitzung, kopfangaben
 
     def dokument_kontext(self, projekt, methode=None, version="", status="in Arbeit",
                          datum=""):
@@ -117,9 +117,14 @@ class FreigabeService:
         """
         from app.domains.dokumentenkopf import kopf as kopfmodul
 
-        wissen, _, _, sitzung = self.projektwissen(projekt)
+        wissen, _, _, sitzung, aus_dokument = self.projektwissen(projekt)
+        # Die Namen kommen aus DEM PIA, auf dem das Dokument beruht - nicht aus
+        # dem Arbeitsstand daneben. Wer im freigegebenen Word die Projektleitung
+        # aendert, hat sie geaendert; ein abgeleitetes Dokument, das weiter den
+        # alten Namen traegt, widerspricht seiner eigenen Grundlage.
         angaben = kopfmodul.metadaten(projekt=projekt, session=sitzung,
-                                      version=version, status=status, datum=datum)
+                                      version=version, status=status, datum=datum,
+                                      vorrang=aus_dokument)
         abschnitte = (methode or {}).get("sections") or []
         return angaben, abschnitte, wissen
 
@@ -137,7 +142,7 @@ class FreigabeService:
                 "bewertet. Ein Nachweis, der sich nachträglich ändert, ist "
                 "kein Nachweis.")
 
-        wissen, herkunft, dokumente, _ = self.projektwissen(projekt)
+        wissen, herkunft, dokumente, _, _ = self.projektwissen(projekt)
         vorhanden = self.zeilen(checkliste)
         neu = {
             "generell": pruefpunkte.generelle_pruefpunkte(

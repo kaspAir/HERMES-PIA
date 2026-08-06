@@ -86,6 +86,49 @@ HERKUNFT_TEXT = {
 }
 
 
+# Kopfangaben, die JEDES Dokument eines Projekts traegt. Sie stehen im PIA in
+# der Metadatentabelle des Deckblatts - nicht in einem Abschnitt, weshalb
+# `aus_dokument` sie bewusst weglaesst. Fuer den gemeinsamen Dokumentenkopf
+# werden sie trotzdem gebraucht, und zwar aus DERSELBEN Fassung wie der
+# Inhalt: wer im freigegebenen Word die Projektleitung aendert, hat sie
+# geaendert - jedes abgeleitete Dokument muss den neuen Namen tragen.
+KOPFANGABEN = ("projektname", "projektleiter", "auftraggeber",
+               "verwaltungseinheit", "geschaeftsbereich", "version")
+
+
+def kopfangaben_aus_dokument(parsed):
+    """Die Kopfangaben aus dem geparsten PIA - leere Werte fallen weg."""
+    raus = {}
+    for schluessel in KOPFANGABEN:
+        wert = (parsed or {}).get(schluessel)
+        if wert:
+            raus[schluessel] = str(wert).strip()
+    return raus
+
+
+def quelle(session=None, dokumente=None, parser=None):
+    """(Abschnitte, Kopfangaben, Herkunft) - das VERBINDLICHSTE gewinnt.
+
+    Wie `projektwissen_quelle`, liefert aber zusaetzlich die Kopfangaben aus
+    demselben Dokument. Inhalt und Namen duerfen nicht auseinanderlaufen.
+    """
+    dokumente = dokumente or {}
+    for art in DOKUMENTARTEN:
+        rohdaten = dokumente.get(art)
+        if not rohdaten or parser is None:
+            continue
+        try:
+            geparst = parser(rohdaten)
+            abschnitte = aus_dokument(geparst)
+        except Exception as e:      # noqa: BLE001
+            log.warning("Hochgeladener PIA (%s) nicht lesbar: %s", art, e)
+            continue
+        if abschnitte:
+            return abschnitte, kopfangaben_aus_dokument(geparst), art
+    abschnitte = aus_session(session) if session is not None else {}
+    return (abschnitte, {}, "interview") if abschnitte else ({}, {}, "")
+
+
 def projektwissen_quelle(session=None, dokumente=None, parser=None):
     """(Abschnitte, Herkunft) – das VERBINDLICHSTE Vorhandene gewinnt.
 
