@@ -364,7 +364,14 @@ class InterviewService:
         for section in self._interviewable_sections(method):
             sid = section.get("id")
             entry = answers.get(sid)
-            if not isinstance(entry, dict) or self._is_empty(entry.get("extracted")):
+            if not isinstance(entry, dict):
+                continue
+            # Ein LEERER Tabellenabschnitt wird NICHT uebersprungen: gerade dort
+            # muessen die verbindlichen HERMES-Zeilen nachgetragen werden
+            # (Pflichtrollen in Kap. 3.1, Pflichtzeilen in Kap. 0.5). Wer hier
+            # weitergeht, laesst das Dokument genau da unvollstaendig, wo die
+            # Methode am meisten vorschreibt.
+            if self._is_empty(entry.get("extracted")) and section.get("type") != "table":
                 continue
             # Termine: Datteln verwerfen und mit Dauer/Komplexität neu setzen –
             # sonst greift die genannte Phasendauer nicht auf bestehende Termine.
