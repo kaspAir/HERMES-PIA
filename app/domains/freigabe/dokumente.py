@@ -38,18 +38,30 @@ _PLATZHALTER = re.compile(r"^(tt\.mm\.jjjj|…|\.\.\.|#)$")
 W_TR = f"{{{W}}}tr"
 
 
+def _vergleichbar(text):
+    """Ueberschriften vergleichbar machen: klein, ohne Umlaute, ohne Doppelraum."""
+    t = (text or "").strip().lower()
+    for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        t = t.replace(a, b)
+    return re.sub(r"\s+", " ", t)
+
+
 def _tabelle_nach(doc, ueberschrift):
     """Die erste Tabelle unter einer Überschrift – oder None.
 
     Gesucht wird über den Text der Überschrift, nicht über eine Position:
     Vorlagen verschieben Kapitel, sie benennen sie selten um.
     """
-    gesucht = ueberschrift.strip().lower()
+    # Umlaut-tolerant vergleichen: die Methodenbeschreibung schreibt
+    # "Definitionen und Abkuerzungen", die Vorlage "Definitionen und
+    # Abkuerzungen" mit Umlaut. Ein exakter Vergleich fand das Kapitel nicht,
+    # und es blieb still ungefuellt.
+    gesucht = _vergleichbar(ueberschrift)
     treffer = False
     for el in doc.element.body:
         if _tag(el) == "p":
             if _p_style(el) in (STYLE_H1, STYLE_H2):
-                treffer = _p_text(el).strip().lower() == gesucht
+                treffer = _vergleichbar(_p_text(el)) == gesucht
         elif _tag(el) == "tbl" and treffer:
             return el
     return None

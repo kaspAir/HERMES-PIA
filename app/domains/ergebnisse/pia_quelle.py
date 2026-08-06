@@ -54,7 +54,10 @@ def aus_dokument(parsed):
     for schluessel in ("ausgangslage", "ziele", "rahmenbedingungen", "termine",
                        "personalaufwand", "sachmittel", "kosten", "risiken",
                        "projektorganisation", "kommunikation",
-                       "referenzierte_dokumente", "mitgeltende_unterlagen"):
+                       "referenzierte_dokumente", "mitgeltende_unterlagen",
+                       # Kapitel 0.4 und 0.5 - sie stehen in JEDEM Dokument
+                       # des Projekts und bleiben ueber die Phase stabil.
+                       "definitionen", "vorgaben_methoden"):
         wert = (parsed or {}).get(schluessel)
         if not wert:
             continue

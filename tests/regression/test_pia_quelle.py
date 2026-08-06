@@ -252,3 +252,72 @@ def test_ohne_vorrang_traegt_die_sitzung():
     angaben = kopfmodul.metadaten(session=_Sitzung3())
     assert angaben["projektleiter"] == "Frau Alt"
     assert angaben["projektname"] == "Projekt / 001-25"
+
+
+# ---- Die Kapitel 0.2 bis 0.5 aus dem hochgeladenen PIA -------------------- #
+#
+# Gemessen an der erzeugten Checkliste: 0.2 hatte sieben Zeilen mit Nummern
+# [01]–[07], aber alle Namen leer; 0.3 sieben leere Zeilen; 0.4 und 0.5
+# trugen noch die Musterzeilen der Vorlage. Drei verschiedene Ursachen:
+#
+# 1. Der Parser gab diese Tabellen als LISTEN von Zelltexten zurück – samt
+#    Kopfzeile. Die Erzeugung erwartet Wörterbücher und verwirft alles
+#    andere still: die Zeilen entstanden, die Werte nicht.
+# 2. «Definitionen» und «Vorgaben» wurden vom Parser ausdrücklich ignoriert.
+# 3. Die Überschrift heisst in der Methodenbeschreibung «Abkuerzungen», in
+#    der Vorlage «Abkürzungen» – der exakte Vergleich fand sie nicht.
+
+def test_die_vier_gemeinsamen_kapitel_werden_geparst():
+    from app.domains.praesentation.parser import _parse_spalten
+
+    zeilen = [["Nr.", "Name", "Nummer / Link"],
+              ["[01]", "ZertES", "SR 943.03"],
+              ["[02]", "DSG", ""]]
+    geparst = _parse_spalten(zeilen, (("nr", "nr"), ("name", "name"),
+                                      ("link", "nummer", "link")))
+    assert geparst == [{"nr": "[01]", "name": "ZertES", "link": "SR 943.03"},
+                       {"nr": "[02]", "name": "DSG", "link": ""}]
+
+
+def test_die_kopfzeile_wird_nicht_zur_datenzeile():
+    from app.domains.praesentation.parser import _parse_spalten
+
+    geparst = _parse_spalten([["Abkürzung", "Bedeutung"], ["PT", "Personentage"]],
+                             (("abkuerzung", "abk"), ("bedeutung", "bedeutung")))
+    assert len(geparst) == 1 and geparst[0]["abkuerzung"] == "PT"
+
+
+def test_leere_zeilen_fallen_weg():
+    from app.domains.praesentation.parser import _parse_spalten
+
+    geparst = _parse_spalten([["Name", "Link"], ["", ""], ["DSG", ""]],
+                             (("name", "name"), ("link", "link")))
+    assert len(geparst) == 1
+
+
+def test_ohne_passende_ueberschrift_wird_nach_position_zugeordnet():
+    """Eine Kundenvorlage darf ihre Spalten anders beschriften."""
+    from app.domains.praesentation.parser import _parse_spalten
+
+    geparst = _parse_spalten([["Kürzel", "Erklärung"], ["PT", "Personentage"]],
+                             (("abkuerzung", "abkuerzung"), ("bedeutung", "bedeutung")))
+    assert geparst[0] == {"abkuerzung": "PT", "bedeutung": "Personentage"}
+
+
+def test_definitionen_und_vorgaben_sind_abschnitte():
+    """Sie stehen in JEDEM Dokument des Projekts – sie dürfen nicht wegfallen."""
+    geparst = dict(_GEPARST,
+                   definitionen=[{"abkuerzung": "PT", "bedeutung": "Personentage"}],
+                   vorgaben_methoden=[{"titel": "Projektmanagementmethode",
+                                       "vorgabe": "HERMES 2022", "version": "2022"}])
+    abschnitte = pia_quelle.aus_dokument(geparst)
+    assert abschnitte["definitionen"]["extracted"][0]["abkuerzung"] == "PT"
+    assert abschnitte["vorgaben_methoden"]["extracted"][0]["version"] == "2022"
+
+
+def test_die_ueberschrift_wird_umlaut_tolerant_gesucht():
+    from app.domains.freigabe.dokumente import _vergleichbar
+
+    assert _vergleichbar("Definitionen und Abkürzungen") \
+        == _vergleichbar("Definitionen und Abkuerzungen")
+    assert _vergleichbar("Vorgaben,  Methoden") == "vorgaben, methoden"
