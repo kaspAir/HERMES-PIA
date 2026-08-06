@@ -334,3 +334,81 @@ def test_der_einstieg_steht_auf_der_projektseite(app):
     html = c.get(f"/projekt/{p.id}").get_data(as_text=True)
     assert f"/projekt/{p.id}/freigabe" in html
     assert "Freigabe der Phase" in html
+
+
+# ---- Die Word-Ausgabe über die Route -------------------------------------- #
+
+_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def test_die_checkliste_laesst_sich_herunterladen(app):
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    html = c.get(f"/projekt/{p.id}/freigabe").get_data(as_text=True)
+    assert "Checkliste Projektinitialisierungsfreigabe (.docx)" in html
+
+    antwort = c.get(f"/projekt/{p.id}/freigabe/checkliste/Test.docx")
+    assert antwort.status_code == 200
+    assert antwort.mimetype == _DOCX
+    assert len(antwort.get_data()) > 10_000        # ein echtes Dokument
+
+
+def test_ohne_checkliste_gibt_es_nichts_herunterzuladen(app):
+    c, p = _angemeldet(app)
+    assert c.get(f"/projekt/{p.id}/freigabe/checkliste/Test.docx").status_code == 404
+
+
+def test_der_dateiname_traegt_datum_und_projektname(app):
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    html = c.get(f"/projekt/{p.id}/freigabe").get_data(as_text=True)
+    assert "_Checkliste_Projektinitialisierungsfreigabe.docx" in html
+
+
+def test_nach_dem_meilenstein_wird_die_liste_sofort_bezogen(app):
+    """«Sobald der Meilenstein erreicht ist, soll die Liste automatisch
+    befüllt und heruntergeladen werden» – mit dem Datum des Entscheids."""
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    zeilen = svc.zeilen(svc.checkliste(p.id))
+    daten = {f"bewertung-{k}-{i}": pp.ERFUELLT
+             for k, liste in zeilen.items() for i, _ in enumerate(liste)}
+    c.post(f"/projekt/{p.id}/freigabe/speichern", data=daten)
+    c.post(f"/projekt/{p.id}/freigabe/geben")
+
+    html = c.post(f"/projekt/{p.id}/freigabe/meilenstein",
+                  data={"datum": "2026-09-01"}).get_data(as_text=True)
+    assert "wird jetzt heruntergeladen" in html
+    assert "/freigabe/entscheide/" in html
+    assert "window.location.href" in html          # der Bezug startet von selbst
+
+    antwort = c.get(f"/projekt/{p.id}/freigabe/entscheide/Liste.docx")
+    assert antwort.status_code == 200 and antwort.mimetype == _DOCX
+
+
+def test_das_bezogene_register_traegt_das_entscheidungsdatum(app):
+    import io as _io
+
+    from docx import Document
+
+    from app.domains.freigabe import dokumente as dk
+    from app.domains.generation.service import _row_cells, _tc_text
+
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    svc = app.freigabe_service
+    zeilen = svc.zeilen(svc.checkliste(p.id))
+    daten = {f"bewertung-{k}-{i}": pp.ERFUELLT
+             for k, liste in zeilen.items() for i, _ in enumerate(liste)}
+    c.post(f"/projekt/{p.id}/freigabe/speichern", data=daten)
+    c.post(f"/projekt/{p.id}/freigabe/geben")
+    c.post(f"/projekt/{p.id}/freigabe/meilenstein", data={"datum": "2026-09-01"})
+
+    roh = c.get(f"/projekt/{p.id}/freigabe/entscheide/L.docx").get_data()
+    tbl = dk._tabelle_nach(Document(_io.BytesIO(roh)), "Projektentscheide Steuerung")
+    zeilen_txt = [[_tc_text(z) for z in _row_cells(r)]
+                  for r in tbl if r.tag == dk.W_TR]
+    eins = [z for z in zeilen_txt if z and z[0] == "01"][0]
+    assert eins[4] == "01.09.2026"
+    assert eins[3] == "Auftraggeber"

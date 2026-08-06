@@ -574,7 +574,7 @@ def rechtsgrundlagen_kette_schritt(projekt_id):
 # Dienst, nicht hier. Diese Routen zeigen an, nehmen entgegen und melden
 # zurueck, warum ein Schritt nicht geht - entscheiden tun sie nichts.
 
-def _freigabe_seite(projekt, fehler=None, hinweis=None):
+def _freigabe_seite(projekt, fehler=None, hinweis=None, auto_download=None):
     svc = current_app.freigabe_service
     checkliste = svc.checkliste(projekt.id)
     alle = svc.zeilen(checkliste)
@@ -588,6 +588,8 @@ def _freigabe_seite(projekt, fehler=None, hinweis=None):
         meilenstein=svc.meilenstein(projekt.id),
         entscheide=svc.entscheide(projekt.id),
         heute=date.today().isoformat(),
+        dateinamen=_freigabe_dateinamen(projekt),
+        auto_download=auto_download,
         fehler=fehler, hinweis=hinweis)
 
 
@@ -664,10 +666,68 @@ def freigabe_meilenstein(projekt_id):
             entscheidungsdatum=(request.form.get("datum") or "").strip() or None)
     except FreigabeFehler as e:
         return _freigabe_seite(projekt, fehler=str(e))
+    # Die Liste wird sofort bezogen - der Entscheid ist gefallen, das
+    # Dokument ist der Beleg dafuer. Wer ihn erst suchen muss, legt ihn nicht ab.
     return _freigabe_seite(
-        projekt, hinweis="Der Meilenstein ist erreicht, der Entscheid ist in der "
-                         "Liste Projektentscheide Steuerung nachgetragen. Die "
-                         "Phase Initialisierung laeuft.")
+        projekt,
+        hinweis="Der Meilenstein ist erreicht, der Entscheid ist in der Liste "
+                "Projektentscheide Steuerung nachgetragen. Die Phase "
+                "Initialisierung laeuft. Die Liste wird jetzt heruntergeladen.",
+        auto_download=url_for(
+            "ui.freigabe_entscheide_docx", projekt_id=projekt.id,
+            filename=_freigabe_dateinamen(projekt)["entscheide"]))
+
+
+DOCX_MIME = ("application/vnd.openxmlformats-officedocument"
+             ".wordprocessingml.document")
+
+
+def _freigabe_dateinamen(projekt):
+    """Dateinamen mit Datum und Projektname - wie bei den uebrigen Downloads.
+
+    Der Name steht IN DER URL: der Hosting-Proxy verschluckt den
+    Content-Disposition-Header, der Browser benennt die Datei sonst nach dem
+    letzten URL-Segment.
+    """
+    stamp = f"{date.today():%Y%m%d}_{_safe_filename(projekt.name or 'Projekt')}"
+    return {
+        "checkliste": f"{stamp}_Checkliste_Projektinitialisierungsfreigabe.docx",
+        "entscheide": f"{stamp}_Liste_Projektentscheide_Steuerung.docx",
+    }
+
+
+@bp.get("/projekt/<int:projekt_id>/freigabe/checkliste/<path:filename>")
+@permission_required("read")
+def freigabe_checkliste_docx(projekt_id, filename):
+    """Die ausgefuellte Checkliste nach der HERMES-Vorlage."""
+    from app.domains.freigabe import dokumente
+
+    projekt = _load_projekt(projekt_id)
+    svc = current_app.freigabe_service
+    checkliste = svc.checkliste(projekt.id)
+    if checkliste is None:
+        abort(404)
+    kopf = {
+        "verantwortlich": checkliste.freigegeben_durch or "",
+        "datum": (checkliste.freigegeben_am.strftime("%d.%m.%Y")
+                  if checkliste.freigegeben_am else ""),
+    }
+    puffer = dokumente.checkliste_docx(svc.zeilen(checkliste), kopf=kopf)
+    return send_file(puffer, mimetype=DOCX_MIME, as_attachment=True,
+                     download_name=filename)
+
+
+@bp.get("/projekt/<int:projekt_id>/freigabe/entscheide/<path:filename>")
+@permission_required("read")
+def freigabe_entscheide_docx(projekt_id, filename):
+    """Das Register der Projektentscheide Steuerung."""
+    from app.domains.freigabe import dokumente
+
+    projekt = _load_projekt(projekt_id)
+    puffer = dokumente.entscheide_docx(
+        current_app.freigabe_service.entscheide(projekt.id))
+    return send_file(puffer, mimetype=DOCX_MIME, as_attachment=True,
+                     download_name=filename)
 
 
 @bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/version")

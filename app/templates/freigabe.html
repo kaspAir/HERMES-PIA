@@ -161,6 +161,24 @@
     {% endif %}
   </section>
 
+  {% if checkliste %}
+  <section class="freigabe-kapitel">
+    <h2>Als Word-Dokument</h2>
+    <p class="muted">Nach der HERMES-Vorlage – mit dem Stand, der oben steht.</p>
+    <a class="btn-link"
+       href="{{ url_for('ui.freigabe_checkliste_docx', projekt_id=projekt.id,
+                        filename=dateinamen.checkliste) }}">
+      &#9654; Checkliste Projektinitialisierungsfreigabe (.docx)</a>
+    {% if entscheide %}
+    <br>
+    <a class="btn-link"
+       href="{{ url_for('ui.freigabe_entscheide_docx', projekt_id=projekt.id,
+                        filename=dateinamen.entscheide) }}">
+      &#9654; Liste Projektentscheide Steuerung (.docx)</a>
+    {% endif %}
+  </section>
+  {% endif %}
+
   {% if entscheide %}
   <section class="freigabe-kapitel">
     <h2>Liste Projektentscheide Steuerung</h2>
@@ -184,4 +202,14 @@
 
   {% endif %}
 </div>
+
+{% if auto_download %}
+{# Der Entscheid ist gefallen - das Dokument ist sein Beleg. Es wird bezogen,
+   ohne die Seite zu verlassen (Anhang, keine Navigation). #}
+<script>
+  window.addEventListener('load', function () {
+    window.location.href = {{ auto_download | tojson }};
+  });
+</script>
+{% endif %}
 {% endblock %}
