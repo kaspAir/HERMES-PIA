@@ -69,6 +69,10 @@
                  die Checkliste auf ihm beruht. #}
               <a href="{{ url_for('ui.freigabe', projekt_id=projekt.id) }}"
                  class="btn-link">Freigabe der Phase</a>
+              {# Die Angaben, die JEDES Dokument im Kopf traegt - einmal
+                 gepflegt statt je Dokument neu zusammengerechnet. #}
+              <a href="{{ url_for('ui.kopfdaten', projekt_id=projekt.id) }}"
+                 class="btn-link">Kopfdaten</a>
             </div>
             {% endif %}
             {% set dok = freigabe_docs.get(erg.id) %}

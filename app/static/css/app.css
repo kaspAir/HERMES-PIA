@@ -1200,3 +1200,19 @@ tr.widersprochen td:last-child { opacity: 1; text-decoration: none; }
   background: #eefaf1; border-left: 3px solid var(--color-done); padding: 12px 16px;
   border-radius: var(--radius); font-size: 14px; line-height: 1.55; max-width: 620px;
 }
+
+/* ---- Kopfdaten ---- */
+.kopfdaten-raster {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px 24px; max-width: 820px; margin-bottom: 18px;
+}
+.kopfdaten-raster input[type="text"] {
+  padding: 9px 12px; border: 1px solid var(--color-border);
+  border-radius: var(--radius); font-size: 14px;
+  background: var(--color-bg); color: var(--color-text);
+}
+.kopfdaten-raster input[readonly] { color: var(--color-muted); }
+.kopfdaten-hinweis { font-size: 13px; line-height: 1.55; max-width: 62ch; margin: 0 0 16px; }
+/* Der Abgleich traegt den Amber-Ton der offenen Pflicht: er verlangt eine
+   Entscheidung, meldet aber keinen Fehler. */
+.kopfdaten-abgleich { border-left-color: var(--color-required); }

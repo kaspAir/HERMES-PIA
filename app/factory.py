@@ -16,6 +16,7 @@ import app.domains.projekt.models     # noqa: F401 – Projektstruktur-Tabellen 
 import app.domains.ergebnisse.models   # noqa: F401 – Ergebnis-Entwuerfe-Tabelle registrieren
 import app.domains.qualitaet.models    # noqa: F401 – Pruefprotokoll-Tabelle registrieren
 import app.domains.freigabe.models      # noqa: F401 – Checkliste/Entscheid registrieren
+import app.domains.dokumentenkopf.models  # noqa: F401 – Kopfdaten registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
 from app.domains.praesentation.service import PraesentationService
@@ -186,11 +187,19 @@ def create_app(config_class=None):
         projekt_service=app.projekt_service,
     )
     app.generation_service = GenerationService(app.method_service)
+    # Kopfdaten: die zwoelf Angaben, die JEDES Dokument im Kopf traegt.
+    # Die Anrede wird einmal geschaetzt und danach gepflegt - nicht bei jedem
+    # Herunterladen neu erfragt.
+    from app.domains.dokumentenkopf.service import KopfdatenService
+    from app.domains.interview.extraction import detect_gender
+    app.kopfdaten_service = KopfdatenService(
+        erkenne_geschlecht=lambda name: detect_gender(llm_client, name))
     # Projektinitialisierungsfreigabe: Checkliste, Tor, Projektentscheid.
     from app.domains.freigabe.service import FreigabeService
     from app.domains.praesentation.parser import parse_pia
     app.freigabe_service = FreigabeService(
-        app.projekt_service, app.interview_service, parser=parse_pia)
+        app.projekt_service, app.interview_service, parser=parse_pia,
+        kopfdaten_service=app.kopfdaten_service)
     # Abgeleitete Initialisierungs-Ergebnisse (eigene Module, PIA unberührt).
     from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
     # Live-Rechtsquellen-Recherche (lexfind: Bund + 26 Kantone). Abschaltbar, weil

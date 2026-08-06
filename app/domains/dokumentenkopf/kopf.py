@@ -44,17 +44,28 @@ def metadaten(projekt=None, session=None, version="", status="in Arbeit",
               vorrang=None, erkenne_geschlecht=None):
     """Die Kopfangaben aus Projekt, Interview-Sitzung – und dem PIA.
 
-    ``vorrang`` sind die Angaben aus der Fassung des
-    Projektinitialisierungsauftrags, auf der das Dokument beruht. Sie
-    **gewinnen**, denn sie folgen derselben Rangfolge wie der Inhalt: wer im
-    freigegebenen Word die Projektleitung ändert, hat sie geändert, und ein
-    abgeleitetes Dokument, das weiter den alten Namen trägt, widerspricht
-    seiner eigenen Grundlage.
+    ``vorrang`` sind die HINTERLEGTEN Kopfdaten des Projekts. Sie gewinnen,
+    denn sie sind die einzigen, die ein Mensch bestätigt hat – eine
+    Namensschreibweise oder eine Anrede ist nichts, was eine Freigabe
+    beschliesst. Weicht ein hochgeladenes Dokument ab, führt das zum
+    Abgleich mit Rückfrage, nicht zum stillen Überschreiben.
+
+    (Eine frühere Fassung liess die Angaben aus dem Dokument gewinnen. Das
+    war richtig, solange es keine gepflegte Ablage gab: irgendeine Quelle
+    musste führen, und die geprüfte Fassung war die bessere. Mit einem
+    bestätigten Datensatz ist der bestätigte Wert der bessere.)
 
     Fehlende Werte bleiben leer – dann lässt der Erzeuger das Feld der
     Vorlage unangetastet, statt es mit einer Erfindung zu füllen.
     """
     vorrang = vorrang or {}
+    # Ist die Anrede hinterlegt, wird sie NICHT neu geschätzt: ein gepflegter
+    # Wert schlägt eine Vermutung, und jede Schätzung kostet einen
+    # Modellaufruf mit dem Namen als Eingabe.
+    _hinterlegt = {
+        "projektleiter": vorrang.get("projektleiter_anrede"),
+        "auftraggeber": vorrang.get("auftraggeber_anrede"),
+    }
 
     # Die Vorlage führt Doppelformen: «Projektleiter/in», «Autor/-in»,
     # «Auftraggeber/in». Ist die Person bekannt, gehört die passende Form
@@ -63,7 +74,10 @@ def metadaten(projekt=None, session=None, version="", status="in Arbeit",
     # geraten wird nicht.
     _bekannt = {}
 
-    def geschlecht(name):
+    def geschlecht(name, rolle=None):
+        gepflegt = _hinterlegt.get(rolle)
+        if gepflegt in ("w", "m", "u"):
+            return gepflegt
         if not name or erkenne_geschlecht is None:
             return "u"
         # Je Name nur EINE Abfrage – sie kostet einen Modellaufruf.
@@ -94,17 +108,19 @@ def metadaten(projekt=None, session=None, version="", status="in Arbeit",
         "datum": datum,
         "version": version,
         "status": status,
-        "klassifizierung": klassifizierung,
+        "klassifizierung": vorrang.get("klassifizierung") or klassifizierung,
         "autor": verfasser,
         "projektleiter": projektleiter,
         "auftraggeber": auftraggeber,
         # Die Anrede folgt der Person, nicht der Rolle.
-        "projektleiter_geschlecht": geschlecht(projektleiter),
-        "auftraggeber_geschlecht": geschlecht(auftraggeber),
-        "autor_geschlecht": geschlecht(verfasser),
+        "projektleiter_geschlecht": geschlecht(projektleiter, "projektleiter"),
+        "auftraggeber_geschlecht": geschlecht(auftraggeber, "auftraggeber"),
+        # Der Autor ist die erfassende Person – in aller Regel die Projektleitung.
+        "autor_geschlecht": geschlecht(
+            verfasser, "projektleiter" if verfasser == projektleiter else None),
         # Die Vorlage prüft ausserdem diese beiden Kurzformen.
-        "projektleiter_weiblich": geschlecht(projektleiter) == "w",
-        "auftraggeber_weiblich": geschlecht(auftraggeber) == "w",
+        "projektleiter_weiblich": geschlecht(projektleiter, "projektleiter") == "w",
+        "auftraggeber_weiblich": geschlecht(auftraggeber, "auftraggeber") == "w",
         "verwaltungseinheit": (vorrang.get("verwaltungseinheit")
                                or von(projekt, "verwaltungseinheit")
                                or von(session, "verwaltungseinheit")),

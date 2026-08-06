@@ -40,10 +40,12 @@ class FreigabeFehler(Exception):
 
 
 class FreigabeService:
-    def __init__(self, projekt_service, interview_service, parser=None):
+    def __init__(self, projekt_service, interview_service, parser=None,
+                 kopfdaten_service=None):
         self.projekt_service = projekt_service
         self.interview_service = interview_service
         self._parser = parser
+        self.kopfdaten = kopfdaten_service
 
     # ---- Lesen ---------------------------------------------------------- #
 
@@ -128,13 +130,17 @@ class FreigabeService:
         from app.domains.dokumentenkopf import kopf as kopfmodul
 
         wissen, _, _, sitzung, aus_dokument = self.projektwissen(projekt)
-        # Die Namen kommen aus DEM PIA, auf dem das Dokument beruht - nicht aus
-        # dem Arbeitsstand daneben. Wer im freigegebenen Word die Projektleitung
-        # aendert, hat sie geaendert; ein abgeleitetes Dokument, das weiter den
-        # alten Namen traegt, widerspricht seiner eigenen Grundlage.
+        # Die HINTERLEGTEN Kopfdaten fuehren - sie sind die einzigen, die ein
+        # Mensch bestaetigt hat. Weicht das hochgeladene Dokument ab, zeigt das
+        # der Abgleich; still ueberschrieben wird nichts.
+        hinterlegt = {}
+        if self.kopfdaten is not None:
+            eintrag = self.kopfdaten.stelle_bereit(
+                projekt, session=sitzung, aus_dokument=aus_dokument)
+            hinterlegt = self.kopfdaten.als_wörterbuch(eintrag)
         angaben = kopfmodul.metadaten(projekt=projekt, session=sitzung,
                                       version=version, status=status, datum=datum,
-                                      vorrang=aus_dokument,
+                                      vorrang=hinterlegt or aus_dokument,
                                       erkenne_geschlecht=self._geschlecht)
         abschnitte = (methode or {}).get("sections") or []
         return angaben, abschnitte, wissen

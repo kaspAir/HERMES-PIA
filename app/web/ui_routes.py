@@ -790,6 +790,79 @@ def freigabe_checkliste_upload(projekt_id):
     return jsonify({"ok": True, "geaendert": geaendert})
 
 
+# ---- Kopfdaten -------------------------------------------------------- #
+#
+# Die zwoelf Angaben, die jedes Dokument des Projekts im Kopf traegt. Sie
+# liegen einmal, bestaetigt und aenderbar; weicht ein hochgeladener Auftrag
+# ab, wird gefragt statt still ueberschrieben.
+
+def _kopfdaten_bereitstellen(projekt):
+    """(Eintrag, Angaben aus dem hochgeladenen Auftrag) - legt an, falls noetig."""
+    svc = current_app.kopfdaten_service
+    _, _, _, sitzung, aus_dokument = current_app.freigabe_service.projektwissen(projekt)
+    return svc.stelle_bereit(projekt, session=sitzung,
+                             aus_dokument=aus_dokument), aus_dokument
+
+
+def _kopfdaten_seite(projekt, hinweis=None):
+    from app.domains.dokumentenkopf.models import ANREDEN, FELDER
+    from app.domains.dokumentenkopf.service import BESCHRIFTUNG
+
+    svc = current_app.kopfdaten_service
+    eintrag, aus_dokument = _kopfdaten_bereitstellen(projekt)
+    return render_template(
+        "kopfdaten.html", projekt=projekt, kopfdaten=eintrag,
+        felder=FELDER, beschriftung=BESCHRIFTUNG, anreden=ANREDEN,
+        abweichungen=svc.abweichungen(projekt.id, aus_dokument),
+        hinweis=hinweis)
+
+
+@bp.get("/projekt/<int:projekt_id>/kopfdaten")
+@permission_required("read")
+def kopfdaten(projekt_id):
+    return _kopfdaten_seite(_load_projekt(projekt_id))
+
+
+@bp.post("/projekt/<int:projekt_id>/kopfdaten")
+@permission_required("write")
+def kopfdaten_speichern(projekt_id):
+    from app.domains.dokumentenkopf.models import FELDER
+
+    projekt = _load_projekt(projekt_id)
+    user = current_user()
+    # Erst sicherstellen, DANN speichern: wer das Formular ohne vorherigen
+    # Besuch abschickt, haette sonst ins Leere gespeichert.
+    _kopfdaten_bereitstellen(projekt)
+    felder = {f: request.form.get(f, "") for f in FELDER}
+    for f in ("projektleiter_anrede", "auftraggeber_anrede"):
+        felder[f] = request.form.get(f, "")
+    current_app.kopfdaten_service.speichere(
+        projekt.id, felder,
+        durch=getattr(user, "name", None) or getattr(user, "email", ""))
+    return _kopfdaten_seite(projekt, hinweis="Die Kopfdaten sind gesichert. Sie "
+                                             "gelten ab sofort fuer jedes Dokument "
+                                             "dieses Projekts.")
+
+
+@bp.post("/projekt/<int:projekt_id>/kopfdaten/uebernehmen")
+@permission_required("write")
+def kopfdaten_uebernehmen(projekt_id):
+    """Ausgewaehlte Werte aus dem hochgeladenen Auftrag uebernehmen."""
+    projekt = _load_projekt(projekt_id)
+    user = current_user()
+    _, aus_dokument = _kopfdaten_bereitstellen(projekt)
+    gewaehlt = request.form.getlist("feld")
+    if not gewaehlt:
+        return _kopfdaten_seite(projekt, hinweis="Es war nichts ausgewaehlt - "
+                                                 "es wurde nichts geaendert.")
+    current_app.kopfdaten_service.uebernimm(
+        projekt.id, aus_dokument, gewaehlt,
+        durch=getattr(user, "name", None) or getattr(user, "email", ""))
+    return _kopfdaten_seite(
+        projekt, hinweis=f"{len(gewaehlt)} Angabe(n) aus dem hochgeladenen "
+                         "Auftrag uebernommen.")
+
+
 @bp.get("/projekt/<int:projekt_id>/rechtsgrundlagen/version")
 @permission_required("write")
 def rechtsgrundlagen_version(projekt_id):
