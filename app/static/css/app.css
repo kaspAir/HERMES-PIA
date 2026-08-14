@@ -1179,7 +1179,18 @@ tr.widersprochen td:last-child { opacity: 1; text-decoration: none; }
    freigabe.html); diese Mindesthoehe gilt, bevor das Skript greift. */
 .freigabe-erlaeuterung .vb-textarea {
   min-height: 5.4em; line-height: 1.45; resize: vertical; overflow: hidden;
+  width: 100%;
 }
+/* Feste Spaltenanteile für die Prüfpunkte. Ohne sie verteilt der Browser nach
+   Textlänge: das Kriterium bekam die halbe Tabelle, die Erläuterung wurde zur
+   Schlucht, und jede Zeile wuchs auf zehn Umbrüche. Die Frage darf breit sein,
+   die Antwort muss es. */
+.pruefpunkte { table-layout: fixed; width: 100%; }
+.pruefpunkte th:nth-child(1), .pruefpunkte td:nth-child(1) { width: 6%; }
+.pruefpunkte th:nth-child(2), .pruefpunkte td:nth-child(2) { width: 38%; }
+.pruefpunkte th:nth-child(3), .pruefpunkte td:nth-child(3) { width: 18%; }
+.pruefpunkte th:nth-child(4), .pruefpunkte td:nth-child(4) { width: 38%; }
+.pruefpunkte .mic-select { width: 100%; max-width: 190px; }
 .freigabe-herkunftsvermerk {
   display: block; margin-top: 4px; font-size: 12px; color: var(--color-muted);
   font-style: italic;
