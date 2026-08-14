@@ -711,3 +711,41 @@ def test_eine_unbekannte_art_wird_abgewiesen(app):
                      json={"filename": "X.docx",
                            "data": base64.b64encode(b"PK\x03\x04").decode()})
     assert antwort.status_code == 400
+
+
+# ---- Lesbarkeit ----------------------------------------------------------- #
+#
+# Beim Erstellen des Benutzerhandbuchs an den Bildschirmfotos gemessen: die
+# Erläuterung war nach zwei Zeilen abgeschnitten («Es wurde keine Fassung des
+# Projektinitialisie…»), und der Inhalt nutzte bei den breiten Tabellen nur
+# die halbe Fläche. Beides fällt im Bild stärker auf als im Betrieb – aber es
+# ist derselbe Bildschirm.
+
+def test_die_erlaeuterung_wird_nicht_abgeschnitten(app):
+    """Die Begründung ist das Wertvollste an der Zeile."""
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    html = c.get(f"/projekt/{p.id}/freigabe").get_data(as_text=True)
+    assert 'rows="2"' not in html.split("erlaeuterung-")[1][:200]
+    assert "mitwachsend" in html
+    assert "scrollHeight" in html          # das Feld wächst wirklich mit
+
+
+def test_tabellenseiten_bekommen_mehr_breite(app):
+    c, p = _angemeldet(app)
+    c.post(f"/projekt/{p.id}/freigabe/erzeugen")
+    for pfad in (f"/projekt/{p.id}/freigabe", f"/projekt/{p.id}",
+                 f"/projekt/{p.id}/kopfdaten"):
+        html = c.get(pfad).get_data(as_text=True)
+        assert '<main class="breit">' in html, pfad
+
+
+def test_der_fliesstext_bleibt_schmal(app):
+    """«Breit» heisst nicht randlos – Fliesstext bleibt lesbar."""
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+
+    css = Path(BASE_DIR, "app", "static", "css", "app.css").read_text(encoding="utf-8")
+    assert "main.breit { max-width: 1240px; }" in css
+    assert "main { padding: 32px 28px; max-width: 900px; }" in css

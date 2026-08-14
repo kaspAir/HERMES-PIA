@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HERMES PIA</title>
+  <link rel="icon" type="image/svg+xml"
+        href="http://localhost:5000/static/img/hermes-pia-logo.svg">
+  <link rel="apple-touch-icon"
+        href="http://localhost:5000/static/img/hermes-pia-logo.svg">
+  <link rel="stylesheet" href="http://localhost:5000/static/css/app.css">
+</head>
+<body>
+  <div class="brand-bar">
+    
+    <img src="http://localhost:5000/static/img/hermes-pia-logo.svg"
+         alt="HERMES PIA" class="brand-logo brand-logo--mark">
+    
+    
+    <div class="user-menu">
+      
+        <a href="/" class="user-link">Projekte</a>
+        <a href="/pmo" class="user-link">PMO</a>
+        
+      
+      <a href="/passwort" class="user-link">Passwort</a>
+      <span class="user-org" title="Angemeldet für diese Organisationseinheit">Musteramt</span>
+      <span class="user-email">m.keller@muster.ch</span>
+      <form method="post" action="/logout" class="inline-form">
+        <button type="submit" class="user-link user-logout">Abmelden</button>
+      </form>
+    </div>
+    
+  </div>
+  
+  <header><strong>HERMES PIA</strong> &mdash; vom Gespräch zum strukturierten Ergebnis</header>
+  <main class="">
+
+
+<section class="naechster-schritt" aria-labelledby="ns-titel">
+  <p class="ns-gruss">Guten Morgen.</p>
+  
+  <h2 id="ns-titel" class="ns-titel">«Ablösung Fachanwendung Baubewilligungen» fachlich prüfen lassen</h2>
+  <p class="ns-wo">Prüfung aus Auftraggeber-Sicht · ca. 5 Minuten</p>
+  <p class="ns-warum">Die Angaben sind vollständig – die Prüfung ist der nächste Schritt.</p>
+  <a class="btn-primary ns-los" href="/interview/1/fachpruefung">Weiter</a>
+  
+  <details class="ns-weitere">
+    <summary>1 weitere
+      offene Aufgabe</summary>
+    <ul class="ns-liste">
+      
+      <li><a href="/projekt/1/rechtsgrundlagen">Rechtsgrundlagen für «Ablösung Fachanwendung Baubewilligungen» klären</a>
+        <span class="muted">— Rechtsgrundlagenanalyse · ca. 10 Minuten</span></li>
+      
+    </ul>
+  </details>
+  
+  
+  
+</section>
+
+
+<div class="index-hero">
+  <h1>Projektinitialisierungsauftrag
+    <small>(HERMES 2022)</small>
+  </h1>
+  <p class="hero-desc">Der Projektinitialisierungsauftrag bildet die verbindliche Grundlage fuer die Freigabe der Phase Initialisierung. Er ist die Vereinbarung zwischen Auftraggeber und Projektleiter fuer die Phase Initialisierung.
+</p>
+
+  
+  <form method="post" action="/interview/start" class="start-form-card">
+    <h2 class="start-form-title">Neues Projekt</h2>
+    <p class="start-form-hint">Legt das Projekt mit der Phase Initialisierung an und startet
+      direkt den Projektinitialisierungsauftrag (Modul Projektsteuerung).</p>
+    
+    <div class="form-row form-row-wide">
+      <label for="project_name">Projektname <span class="required">*</span></label>
+      <input type="text" id="project_name" name="project_name"
+             placeholder="z.B. Digitalisierung Baubewilligungen"
+             value=""
+             required autofocus>
+    </div>
+    <div class="form-row">
+      <label for="projektleiter">Projektleiter/in <span class="required">*</span></label>
+      <input type="text" id="projektleiter" name="projektleiter"
+             placeholder="Name der Projektleiterin / des Projektleiters"
+             value="" required>
+    </div>
+    <div class="form-row">
+      <label for="auftraggeber">Auftraggeber/in</label>
+      <input type="text" id="auftraggeber" name="auftraggeber"
+             placeholder="Name oder Funktion"
+             value="">
+    </div>
+    <div class="form-row">
+      <label for="verwaltungseinheit">Verwaltungseinheit</label>
+      <input type="text" id="verwaltungseinheit" name="verwaltungseinheit"
+             placeholder="z.B. Amt für Digitalisierung"
+             value="">
+    </div>
+    <div class="form-row">
+      <label for="geschaeftsbereich">Geschäftsbereich</label>
+      <input type="text" id="geschaeftsbereich" name="geschaeftsbereich"
+             placeholder="optional"
+             value="">
+    </div>
+    <div class="form-row">
+      <label for="projektnummer">Projektnummer</label>
+      <input type="text" id="projektnummer" name="projektnummer"
+             placeholder="z.B. P-2024-042 (optional)"
+             value="">
+    </div>
+    <div class="form-row">
+      <label for="innenauftragsnummer">Innenauftragsnummer</label>
+      <input type="text" id="innenauftragsnummer" name="innenauftragsnummer"
+             placeholder="optional"
+             value="">
+    </div>
+    <div class="form-row">
+      <label for="start_datum">Start Initialisierungsphase</label>
+      <input type="date" id="start_datum" name="start_datum"
+             value="">
+    </div>
+    <div class="form-row-action">
+      <button type="submit" class="btn-primary btn-large">
+        Projekt anlegen &#8594;
+      </button>
+    </div>
+  </form>
+  
+</div>
+
+
+<div class="sessions-section">
+  <h2>Projekte</h2>
+  <table class="sessions-table">
+    <thead>
+      <tr>
+        <th>Projekt</th>
+        <th>Projektnummer</th>
+        <th>Status</th>
+        <th>Erstellt</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      
+      <tr>
+        <td><a href="/projekt/1"
+               class="projekt-link">Ablösung Fachanwendung Baubewilligungen</a></td>
+        <td>2026-014</td>
+        <td>in Arbeit</td>
+        <td>14.08.2026 08:03</td>
+        <td class="session-actions">
+          <a href="/projekt/1" class="btn-link">Öffnen</a>
+          
+          <form method="post"
+                action="/projekt/1/delete"
+                onsubmit="return confirm('Projekt «Ablösung Fachanwendung Baubewilligungen» samt allen Ergebnissen wirklich löschen? Das kann nicht rückgängig gemacht werden.');"
+                class="inline-form">
+            <button type="submit" class="btn-link btn-delete" title="Projekt löschen">Löschen</button>
+          </form>
+          
+        </td>
+      </tr>
+      
+    </tbody>
+  </table>
+</div>
+
+
+</main>
+  <div class="app-version-badge" title="feat(freigabe): Checkliste bekommt die Aenderungskontrolle und Fassungen + V0.35.1">
+    HERMES PIA V0.35.1 &middot; 0c48af1 &middot; 2026-08-06 19:28
+  </div>
+</body>
+</html>

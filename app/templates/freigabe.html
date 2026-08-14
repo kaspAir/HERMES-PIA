@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Projektinitialisierungsfreigabe – {{ projekt.name }}{% endblock %}
 
+{% block main_class %}breit{% endblock %}
 {% block content %}
 <div class="projekt-page">
 
@@ -93,7 +94,7 @@
                 {{ z.erlaeuterung }}
               {% else %}
               <textarea name="erlaeuterung-{{ kapitel }}-{{ loop.index0 }}"
-                        rows="2" class="vb-textarea">{{ z.erlaeuterung }}</textarea>
+                        rows="4" class="vb-textarea mitwachsend">{{ z.erlaeuterung }}</textarea>
               {% endif %}
             </td>
           </tr>
@@ -291,6 +292,23 @@
 
   {% endif %}
 </div>
+
+<script>
+// Erlaeuterungsfelder wachsen mit ihrem Inhalt. Gemessen im Handbuch: die
+// Begruendung von HERMES PIA ist regelmaessig laenger als zwei Zeilen, und
+// gerade sie ist das Wertvollste an der Zeile - abgeschnitten nuetzt sie
+// niemandem. Ohne Skript bleibt die Mindesthoehe aus dem Stylesheet.
+(function () {
+  function anpassen(feld) {
+    feld.style.height = 'auto';
+    feld.style.height = (feld.scrollHeight + 2) + 'px';
+  }
+  document.querySelectorAll('textarea.mitwachsend').forEach(function (feld) {
+    anpassen(feld);
+    feld.addEventListener('input', function () { anpassen(feld); });
+  });
+})();
+</script>
 
 <script>
 // Transportweg wie ueberall: Base64-JSON, weil der Hosting-Proxy binaere
