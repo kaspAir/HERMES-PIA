@@ -33,3 +33,8 @@ tests/e2e/fixtures/*.flac
 
 # Mandanten-spezifische Skills: pro Kunde, vertraulich, Konfiguration statt Code
 skills/mandant-*/
+
+# Schnappschuesse fuer das Benutzerhandbuch (Bildmaterial, Demodaten).
+# Sie entstehen beim Erzeugen der Anleitung und gehoeren NICHT ins Produkt:
+# einmal sind sie versehentlich bis auf test und integration mitgereist.
+app/static/anleitung/
