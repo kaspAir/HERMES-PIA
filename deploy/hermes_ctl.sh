@@ -85,9 +85,17 @@ hp_launch() {
     # WICHTIG: 8>&- 9>&- schliesst etwaige Lock-FDs fuer den Daemon. Ein per
     # nohup gestarteter Gunicorn wuerde ein geerbtes flock-FD sonst DAUERHAFT
     # halten und den naechsten Deploy/Watchdog blockieren.
+    # NIEMALS eine Kommentarzeile INNERHALB dieses Befehls: die Zeilen sind mit
+    # \ fortgesetzt, ein # kommentiert deshalb den GANZEN Rest aus - inklusive
+    # --timeout, der Logdateien und des abschliessenden &. Genau das ist am
+    # 26.07.2026 passiert: gunicorn lief im Vordergrund (der Deploy-SSH kam nie
+    # zurueck, Jenkins hing bis zum Timeout) und mit gunicorns STANDARD-Timeout
+    # von 30 s - was in der Anwendung wie eine geheimnisvolle 30-s-Grenze aussah.
+    # --timeout 300: ein Pruefschritt mit grosszuegigem Token-Budget darf laenger
+    # dauern, ohne dass der Worker abgeschossen wird.
     nohup gunicorn run:app \
       --bind "127.0.0.1:$HP_PORT" --workers "$HP_WORKERS" \
-      --timeout 120 --graceful-timeout 30 \
+      --timeout 300 --graceful-timeout 30 \
       --max-requests 800 --max-requests-jitter 200 \
       --access-logfile "$HP_DIR/logs/access.log" \
       --error-logfile "$HP_DIR/logs/error.log" --capture-output \

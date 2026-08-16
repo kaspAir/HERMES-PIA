@@ -5,6 +5,7 @@ Beurteilung (Tab 4) ist ein VORSCHLAG – die/der ISDS-Verantwortliche entscheid
 """
 import json
 import re
+from app.domains.llm.errors import PseudoFehler
 
 
 def _parse_json(raw):
@@ -50,6 +51,8 @@ def deckblatt_und_gruppen(wissen, llm):
     )
     try:
         raw = llm.complete(_SYS_INFO, [{"role": "user", "content": user}], max_tokens=2000)
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:  # noqa: BLE001
         return {}
     return _parse_json(raw) or {}
@@ -73,6 +76,8 @@ def auswirkungen(wissen, gruppen_namen, llm):
     )
     try:
         raw = llm.complete(_SYS_INFO, [{"role": "user", "content": user}], max_tokens=2500)
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:  # noqa: BLE001
         return {}
     data = _parse_json(raw) or {}
@@ -103,6 +108,8 @@ def anforderungen(wissen, fragen, llm):
     )
     try:
         raw = llm.complete(_SYS_INFO, [{"role": "user", "content": user}], max_tokens=1500)
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:  # noqa: BLE001
         return {}
     return _parse_json(raw) or {}
@@ -132,6 +139,8 @@ def erhebung(wissen, szenarien, llm):
     )
     try:
         raw = llm.complete(system, [{"role": "user", "content": user}], max_tokens=2500)
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:  # noqa: BLE001
         return {}
     data = _parse_json(raw) or {}

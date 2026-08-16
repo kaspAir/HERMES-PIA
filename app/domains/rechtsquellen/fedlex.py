@@ -1,10 +1,19 @@
 """Fedlex-Connector: verknüpft Suchbegriffe mit Bundeserlassen (SR).
 
 Arbeitet OFFLINE gegen einen mitgelieferten SR-Index (data/fedlex_sr_de.json.gz,
-einmalig aus dem offiziellen Fedlex-SPARQL geholt – siehe scripts/refresh_fedlex_index.py).
-So funktioniert das Grounding auf JEDEM Host, ohne Live-Netzwerk – der Managed-Host
-erreicht den Fedlex-Dienst nicht. Liefert echte SR-Nummer + offizieller Titel +
-Fedlex-Permalink. Nichts wird geraten: kein Treffer -> keine Fundstelle.
+aus dem offiziellen Fedlex-SPARQL geholt – siehe scripts/refresh_fedlex_index.py).
+So funktioniert das Grounding auf JEDEM Host, auch ohne Netzwerk. Liefert echte
+SR-Nummer + offizieller Titel + Fedlex-Permalink. Nichts wird geraten: kein
+Treffer -> keine Fundstelle.
+
+RICHTIGSTELLUNG (gemessen 2026-07-25): Der frühere Live-SPARQL-Client wurde mit
+der Begründung «der Host erreicht Fedlex nicht» durch diesen Index ersetzt. Das
+war eine FEHLDIAGNOSE. Fedlex ist erreichbar (HTTP 200 in ~1 s); die Abfrage war
+kaputt: sie verkettete die Suchbegriffe zu einer nackten Regex-Alternation
+("a|b"), und die liefert auf diesem Endpunkt NULL Zeilen – geklammert
+("(a)|(b)") dagegen Treffer. Aus «0 Treffer» wurde fälschlich «nicht
+erreichbar» geschlossen. Der Index bleibt trotzdem sinnvoll: er kostet kein
+Netz und dient als Rückfall, wenn die Live-Recherche (lexfind) ausfällt.
 """
 import gzip
 import json
@@ -41,13 +50,35 @@ class FedlexClient:
     def __init__(self, index=None):
         # index optional (Tests); sonst wird der mitgelieferte Offline-Index geladen.
         self._index = index
+        self._sr_index = None
 
     def _get_index(self):
         if self._index is None:
             self._index = _load_offline_index()
         return self._index
 
-    def suche_mehrere(self, begriffe, treffer_je_begriff=1):
+    def url_fuer_sr(self, sr):
+        """Die amtliche Adresse zu einer SR-Nummer – oder None.
+
+        Gebraucht fuer die Artikelpruefung: die Kartierung schreibt die
+        Fundstelle als Fliesstext («SR 312.0, insb. Art. 307»), und ohne
+        Adresse ist der Erlasstext nicht abrufbar. Gemessen blieb deshalb
+        jede solche Angabe «nicht pruefbar», obwohl die Nummer dasteht.
+        """
+        sr = str(sr or "").strip()
+        if not sr:
+            return None
+        if self._sr_index is None:
+            self._sr_index = {}
+            # Der Index ist eine LISTE von Erlassen, kein Woerterbuch.
+            for e in (self._get_index() or []):
+                if isinstance(e, dict) and e.get("sr") and e.get("url"):
+                    self._sr_index.setdefault(str(e["sr"]), e["url"])
+        return self._sr_index.get(sr)
+
+    def suche_mehrere(self, begriffe, treffer_je_begriff=1, **_):
+        # **_ schluckt ebene/kanton: der Offline-Index kennt nur Bundesrecht,
+        # bleibt aber gegen dieselbe Schnittstelle austauschbar wie lexfind.
         """{begriff: [{sr, titel, url}]} – je Begriff die Treffer mit der KÜRZESTEN
         SR-Nummer (i.d.R. der Haupterlass). Wortgrenzen, damit 'DSG' nicht in
         'GerichtsstanDSGesetz' matcht. Leeres Dict bei leerer Eingabe/ohne Index."""

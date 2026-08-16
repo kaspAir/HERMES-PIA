@@ -46,6 +46,10 @@ class Phase(Base):
     code = Column(String(40), nullable=False)        # z.B. "initialisierung"
     name = Column(String(120), nullable=False)
     reihenfolge = Column(Integer, default=0)
+    # Die Phase laeuft erst, wenn ihr Entscheid-Meilenstein erreicht ist. Bis
+    # dahin ist sie geplant - der Projektinitialisierungsauftrag eroeffnet sie,
+    # er beschreibt sie nicht bloss.
+    status = Column(String(30), default="geplant")   # geplant | laufend | abgeschlossen
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

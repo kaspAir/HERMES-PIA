@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Pseudonymisierung – Fehler{% endblock %}
+{% block content %}
+<h1>
+  {% if art == 'rueckersetzung' %}Antwort zurückgehalten
+  {% elif art == 'nicht_erreichbar' %}Pseudonymisierung nicht erreichbar
+  {% elif art == 'anbieter' %}Der Anbieter hat den Aufruf abgelehnt
+  {% elif art == 'antwort' %}Antwort nicht auswertbar
+  {% elif art == 'entscheid' %}Entscheid unvollständig
+  {% else %}Pseudonymisierung nicht einsatzbereit{% endif %}
+</h1>
+
+{% if art == 'rueckersetzung' %}
+<p class="hinweis">
+  Der Dienst konnte die Platzhalter in der Antwort nicht zweifelsfrei zurücksetzen
+  und hat sie deshalb <strong>nicht ausgeliefert</strong>. Das ist eine
+  Schutzabschaltung, kein Netzwerkfehler: es wurde <strong>kein Text übernommen</strong>.
+  Bitte melden Sie den Vorfall – ein blosses Wiederholen ist hier nicht der richtige Weg.
+</p>
+{% elif art == 'nicht_erreichbar' %}
+<p class="hinweis">
+  Es wurde <strong>nichts</strong> an ein Sprachmodell gesendet. HERMES PIA weicht
+  bewusst nicht auf einen Weg am Dienst vorbei aus – lieber keine Auswertung als
+  eine ungeschützte. Bitte den Dienst starten und den Schritt wiederholen.
+</p>
+{% elif art == 'anbieter' %}
+{# Die Aussage ueber den Schutz haengt am Modus. Im Direktmodus zu behaupten, der
+   Text sei geschuetzt gewesen, waere schlicht falsch - und zwar an der Stelle,
+   an der Vertrauen am meisten zaehlt. #}
+{% if pseudo_aus %}
+<p class="hinweis">
+  Das Sprachmodell hat den Aufruf zurückgewiesen – der hinterlegte Schlüssel wird
+  nicht akzeptiert. <strong>Es ist kein Fehler Ihrer Eingabe</strong>, und Ihre
+  Eingabe ist nicht verloren. Prüfen Sie <code>ANTHROPIC_API_KEY</code>.
+</p>
+<p class="hinweis">
+  Hinweis: Die Pseudonymisierung ist derzeit <strong>abgeschaltet</strong>
+  (Entwicklungsmodus). Ihr Text wäre also ungeschützt gegangen, wenn der Schlüssel
+  gestimmt hätte.
+</p>
+{% else %}
+<p class="hinweis">
+  Die Pseudonymisierung hat sauber gearbeitet – Ihr Text war bereits geschützt, als
+  das Sprachmodell den Aufruf zurückwies. <strong>Es ist kein Datenschutzvorfall und
+  kein Fehler Ihrer Eingabe.</strong> In aller Regel ist im Pseudonymisierungsdienst
+  kein gültiger Anbieterschlüssel hinterlegt. Ihre Eingabe ist nicht verloren –
+  gehen Sie zurück und senden Sie sie erneut, sobald der Schlüssel stimmt.
+</p>
+{% endif %}
+{% if anbieter_meldung %}<p class="fehler">Meldung des Anbieters: {{ anbieter_meldung }}</p>{% endif %}
+{% elif art == 'antwort' %}
+<p class="hinweis">
+  Der Aufruf ging durch, aber aus der Antwort liess sich kein Text lesen. HERMES PIA
+  übernimmt in diesem Fall bewusst <strong>nicht</strong> Ihr Diktat unverändert –
+  sonst stünde der Rohtext im Dokument und niemand könnte erkennen, dass gar nichts
+  formuliert wurde. Der technische Befund steht unten und im Fehlerprotokoll.
+</p>
+{% elif art == 'entscheid' %}
+<p class="hinweis">
+  Solange eine Fundstelle unentschieden bleibt, bleibt der Aufruf blockiert.
+  Ein «trotzdem senden» gibt es bewusst nicht.
+</p>
+{% else %}
+<p class="hinweis">
+  Der Pseudonymisierungsdienst nimmt Aufrufe dieser Anwendung nicht an. Das ist ein
+  Konfigurationsfehler (Mandant, registrierte Anwendung oder hinterlegter
+  Anbieterschlüssel) und keine Nutzereingabe.
+</p>
+{% endif %}
+
+<p class="fehler">{{ meldung }}</p>
+<p><a href="{{ url_for('ui.index') }}">Zurück zur Übersicht</a></p>
+{% endblock %}

@@ -135,6 +135,12 @@ _SYNONYME = {
     "abkuerzungen und glossar": "definitionen",
     "glossar": "definitionen",
     "abkuerzungsverzeichnis": "definitionen",
+    # Vorgaben / Methoden / Werkzeuge (Kap. 0.5 der HERMES-Vorlage)
+    "vorgaben, methoden und werkzeuge": "vorgaben_methoden",
+    "vorgaben methoden und werkzeuge": "vorgaben_methoden",
+    "vorgaben und methoden": "vorgaben_methoden",
+    "methoden und werkzeuge": "vorgaben_methoden",
+    "vorgaben": "vorgaben_methoden",
 }
 
 

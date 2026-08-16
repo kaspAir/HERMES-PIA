@@ -169,9 +169,37 @@ header strong { color: #e2e8f0; }
 }
 .btn-link:hover { text-decoration: underline; }
 
+/* ---- Nächster Schritt ----
+   Genau EIN Vorschlag, hervorgehoben; alles Weitere tritt zurück. Die Karte
+   trägt keinen eigenen Farbton: sie wirkt durch Ruhe und Position, nicht
+   durch Signalfarbe. Ein Aufruf, der schreit, wird übersehen wie zehn. */
+.naechster-schritt {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 32px;
+  max-width: 620px;
+}
+.ns-gruss { margin: 0 0 4px; color: var(--color-muted); font-size: 14px; }
+.ns-titel { margin: 0 0 6px; font-size: 19px; line-height: 1.35; }
+.ns-wo { margin: 0 0 10px; color: var(--color-muted); font-size: 13px; }
+.ns-warum { margin: 0 0 16px; font-size: 14px; line-height: 1.55; max-width: 60ch; }
+.ns-los { display: inline-block; }
+.ns-weitere { margin-top: 18px; font-size: 14px; }
+.ns-weitere summary { cursor: pointer; color: var(--color-muted); }
+.ns-liste { margin: 10px 0 0; padding-left: 18px; line-height: 1.9; }
+.ns-ruhig { margin: 14px 0 0; font-size: 13px; }
+
 /* ---- Index ---- */
 main { padding: 32px 28px; max-width: 900px; }
 main.wide { max-width: 100%; padding: 0; }
+/* Seiten, die vor allem Tabellen zeigen: 900px zwingt Spalten in den Umbruch,
+   waehrend rechts die halbe Flaeche leer bleibt. Nicht 100% - Fliesstext
+   bleibt sonst unlesbar breit; die einzelnen Textbloecke haben ohnehin ihr
+   eigenes Mass. */
+main.breit { max-width: 1240px; }
 
 .index-hero { margin-bottom: 40px; }
 .index-hero h1 { margin: 0 0 8px; font-size: 22px; }
@@ -494,7 +522,15 @@ h1 small { color: var(--color-muted); font-weight: normal; font-size: .75em; }
   font-weight: bold;
   flex-shrink: 0;
 }
-.section-header h2 { margin: 0; font-size: 20px; }
+.section-header h2 { margin: 0; font-size: 20px; line-height: 1.35; }
+/* Herkunftsvermerk: der Fachbegriff bleibt sichtbar, tritt aber zurück.
+   Der negative Abstand holt ihn an die Frage heran, ohne den Abstand der
+   Kopfzeile zu ändern – die gilt auch dort, wo es keine Leitfrage gibt. */
+.section-herkunft {
+  margin: -14px 0 20px 46px;      /* auf Höhe des Titels, an der Nummer vorbei */
+  color: var(--color-muted);
+  font-size: 13px;
+}
 
 .question-list { margin-bottom: 16px; }
 .question-item {
@@ -896,6 +932,19 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--radius); border-left: 4px solid var(--color-border);
 }
 .meilenstein-start { border-left-color: var(--color-primary); }
+/* Ein erreichter Meilenstein wird BENANNT, nicht nur eingefaerbt: Farbe
+   allein traegt keine Aussage und wird uebersehen. Der Rand bleibt als
+   zweites, schwaecheres Signal - er ersetzt den Satz nicht. */
+.meilenstein-erreicht {
+  border-left-color: var(--color-done);
+  border-left-width: 6px;
+  background: color-mix(in srgb, var(--color-done) 5%, #fff);
+}
+.meilenstein-status {
+  display: block; margin-top: 4px; font-size: .85rem;
+  font-weight: 600; color: var(--color-done);
+}
+.meilenstein-status-offen { color: var(--color-muted); font-weight: normal; }
 .meilenstein-name  { display: block; font-weight: 600; color: var(--color-text); }
 .meilenstein-datum { display: block; font-size: .85rem; color: var(--color-accent); margin-top: 2px; }
 .meilenstein-rolle { display: block; font-size: .8rem; color: var(--color-muted); margin-top: 2px; }
@@ -1009,3 +1058,183 @@ input:focus, select:focus, textarea:focus {
   width: 44px; height: 26px; padding: 0; border: 1px solid var(--color-border);
   border-radius: 4px; background: none; cursor: pointer;
 }
+
+/* ===== Warnbanner ===== */
+/* Für Zustände, in denen HERMES PIA weiterarbeitet, aber schlechtere Ergebnisse
+   liefert – etwa ohne Pseudonymisierungsdienst. Bewusst NICHT wegklickbar:
+   still degradieren und dabei still bleiben war die eigentliche Gefahr. */
+.warnbanner {
+  background: #fff7ed;
+  border: 1px solid var(--color-required);
+  border-left: 4px solid var(--color-required);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  margin-bottom: 1rem;
+  color: var(--color-text);
+  line-height: 1.5;
+}
+.warnbanner strong { display: block; margin-bottom: .2rem; }
+.warnbanner code {
+  font-family: var(--font-mono);
+  font-size: .9em;
+  background: rgba(0, 0, 0, .05);
+  padding: .05rem .3rem;
+  border-radius: 4px;
+}
+
+/* ===== Qualitätsprüfung (Invarianten) ===== */
+/* Waehrend der Erstellung nur ein Hinweis – zusammengeklappt, damit er nicht
+   drängt. Verbindlich wird die Pruefung erst vor der Ausgabe. */
+.qualitaet-hinweis {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-followup);
+  border-radius: var(--radius);
+  padding: .6rem .9rem;
+  margin-bottom: 1rem;
+}
+.qualitaet-hinweis summary { cursor: pointer; font-weight: 600; }
+.qualitaet-hinweis ul { margin: .6rem 0 0; padding-left: 1.2rem; }
+.qualitaet-hinweis li { margin: .25rem 0; line-height: 1.45; }
+.qualitaet-hinweis code,
+.befundliste code {
+  font-family: var(--font-mono); font-size: .85em;
+  color: var(--color-muted);
+}
+.befundliste { width: 100%; border-collapse: collapse; margin: .5rem 0 1.5rem; }
+.befundliste th, .befundliste td {
+  border-bottom: 1px solid var(--color-border);
+  padding: .45rem .6rem; text-align: left; vertical-align: top;
+}
+.befundliste th { background: var(--color-bg); font-weight: 600; }
+
+/* ===== Fachliche Prüfung (Auftraggeber-Sicht, Stufe 4) ===== */
+/* Bewusst anders als die Invarianten-Anzeige: der Nutzer muss Regelbefund und
+   fachliches Urteil unterscheiden können (Briefing 5.1). */
+.empfehlung {
+  border: 1px solid var(--color-border);
+  border-left: 5px solid var(--color-accent);
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem; margin: 1rem 0 1.5rem;
+  background: var(--color-surface);
+}
+.empfehlung-label {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--color-muted);
+}
+.empfehlung-wert { font-size: 1.35rem; font-weight: 700; margin: .2rem 0 .5rem; }
+.empfehlung-freigebbar        { border-left-color: var(--color-done); }
+.empfehlung-mit-vorbehalt     { border-left-color: var(--color-required); }
+.empfehlung-nicht-freigebbar  { border-left-color: #c0392b; }
+.widerspruch-form { display: flex; gap: .3rem; align-items: center; }
+.widerspruch-form input[type=text] { font-size: .85rem; padding: .2rem .4rem; }
+tr.widersprochen td { opacity: .55; text-decoration: line-through; }
+tr.widersprochen td:last-child { opacity: 1; text-decoration: none; }
+
+/* ===== Kapitelweiser Prüflauf ===== */
+.lauf {
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  padding: 1rem 1.2rem; margin: 1rem 0; background: var(--color-surface);
+}
+.lauf-kopf { display: flex; justify-content: space-between; align-items: baseline;
+             margin-bottom: .6rem; }
+.lauf-schritte { list-style: none; margin: .8rem 0 0; padding: 0; }
+.lauf-schritte li { padding: .15rem 0; color: var(--color-muted); }
+.lauf-schritte li.aktiv { color: var(--color-text); font-weight: 600; }
+.lauf-schritte li.erledigt { color: var(--color-done); }
+.lauf-schritte li.erledigt .lauf-punkt::before { content: "\2713"; }
+.lauf-schritte li.erledigt .lauf-punkt { font-size: 0; }
+.lauf-schritte li.erledigt .lauf-punkt::before { font-size: 1rem; }
+.lauf-schritte li.gescheitert { color: #c0392b; }
+.lauf-punkt { display: inline-block; width: 1.2rem; }
+
+/* Fachliche Pruefung: gezaehlte Werte und priorisierte Befunde.
+   Die Zahlen kommen aus dem Code (protokoll.zaehlung), nicht aus dem
+   Modelltext - eine erzaehlte Zahl war schon falsch. */
+.zaehlung { margin: .4rem 0 .2rem; font-size: .95rem; letter-spacing: .01em; }
+.gewicht-muss { color: #b02020; margin-top: 1.4rem; }
+.gewicht-vorbehalt { color: #9a6b00; margin-top: 1.4rem; }
+.hinweis-block { margin-top: 1.4rem; }
+.hinweis-block > summary { cursor: pointer; font-weight: 600; padding: .35rem 0; }
+
+/* ---- Projektinitialisierungsfreigabe ----
+   Die Bewertung ist die einzige Farbe auf der Seite: sie soll beim
+   Ueberfliegen zeigen, wo etwas offen ist. Alles andere bleibt ruhig. */
+.freigabe-herkunft { margin-left: 0; }
+.freigabe-kapitel { margin: 32px 0; }
+.freigabe-kapitel h2 { font-size: 17px; margin: 0 0 12px; }
+.freigabe-tabelle { width: 100%; border-collapse: collapse; font-size: 14px; }
+.freigabe-tabelle th {
+  text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--color-border);
+  color: var(--color-muted); font-weight: 600; font-size: 13px;
+}
+.freigabe-tabelle td {
+  padding: 10px; border-bottom: 1px solid var(--color-border);
+  vertical-align: top; line-height: 1.5;
+}
+.freigabe-nr { font-family: var(--font-mono); white-space: nowrap; color: var(--color-muted); }
+.freigabe-erlaeuterung { color: var(--color-muted); }
+/* Die Begruendung ist das Wertvollste an der Zeile - sie darf nicht in einem
+   Zwei-Zeilen-Fenster verschwinden. Das Feld waechst mit dem Inhalt (siehe
+   freigabe.html); diese Mindesthoehe gilt, bevor das Skript greift. */
+.freigabe-erlaeuterung .vb-textarea {
+  min-height: 5.4em; line-height: 1.45; resize: vertical; overflow: hidden;
+  width: 100%;
+}
+/* Feste Spaltenanteile für die Prüfpunkte. Ohne sie verteilt der Browser nach
+   Textlänge: das Kriterium bekam die halbe Tabelle, die Erläuterung wurde zur
+   Schlucht, und jede Zeile wuchs auf zehn Umbrüche. Die Frage darf breit sein,
+   die Antwort muss es. */
+.pruefpunkte { table-layout: fixed; width: 100%; }
+.pruefpunkte th:nth-child(1), .pruefpunkte td:nth-child(1) { width: 6%; }
+.pruefpunkte th:nth-child(2), .pruefpunkte td:nth-child(2) { width: 38%; }
+.pruefpunkte th:nth-child(3), .pruefpunkte td:nth-child(3) { width: 18%; }
+.pruefpunkte th:nth-child(4), .pruefpunkte td:nth-child(4) { width: 38%; }
+.pruefpunkte .mic-select { width: 100%; max-width: 190px; }
+.freigabe-herkunftsvermerk {
+  display: block; margin-top: 4px; font-size: 12px; color: var(--color-muted);
+  font-style: italic;
+}
+/* Linker Balken je Bewertung - Farbe UND Position, damit die Unterscheidung
+   nicht allein am Farbsehen haengt. */
+.freigabe-tabelle tr[class^="bewertung-"] td:first-child { border-left: 3px solid transparent; }
+.bewertung-erfuellt td:first-child { border-left-color: var(--color-done) !important; }
+.bewertung-teilweise-erfuellt td:first-child { border-left-color: var(--color-required) !important; }
+.bewertung-nicht-erfuellt td:first-child { border-left-color: #c0392b !important; }
+.bewertung-zu-bestaetigen td:first-child { border-left-color: var(--color-accent) !important; }
+.bewertung-offen td:first-child { border-left-color: var(--color-border) !important; }
+
+.freigabe-aktionen { display: flex; align-items: center; gap: 18px; margin: 24px 0; }
+.freigabe-tor {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary); border-radius: var(--radius);
+  padding: 20px 24px; margin: 32px 0; max-width: 620px;
+}
+.freigabe-tor h2 { margin: 0 0 10px; font-size: 17px; }
+.freigabe-tor p { font-size: 14px; line-height: 1.55; margin: 0 0 14px; }
+.freigabe-erledigt { color: var(--color-done); font-weight: 600; }
+.freigabe-datum { width: 170px; display: block; margin: 6px 0 14px; }
+.freigabe-fehler {
+  background: #fdf1ef; border-left: 3px solid #c0392b; padding: 12px 16px;
+  border-radius: var(--radius); font-size: 14px; line-height: 1.55; max-width: 620px;
+}
+.freigabe-hinweis {
+  background: #eefaf1; border-left: 3px solid var(--color-done); padding: 12px 16px;
+  border-radius: var(--radius); font-size: 14px; line-height: 1.55; max-width: 620px;
+}
+
+/* ---- Kopfdaten ---- */
+.kopfdaten-raster {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px 24px; max-width: 820px; margin-bottom: 18px;
+}
+.kopfdaten-raster input[type="text"] {
+  padding: 9px 12px; border: 1px solid var(--color-border);
+  border-radius: var(--radius); font-size: 14px;
+  background: var(--color-bg); color: var(--color-text);
+}
+.kopfdaten-raster input[readonly] { color: var(--color-muted); }
+.kopfdaten-hinweis { font-size: 13px; line-height: 1.55; max-width: 62ch; margin: 0 0 16px; }
+/* Der Abgleich traegt den Amber-Ton der offenen Pflicht: er verlangt eine
+   Entscheidung, meldet aber keinen Fehler. */
+.kopfdaten-abgleich { border-left-color: var(--color-required); }

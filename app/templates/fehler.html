@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Unerwarteter Fehler{% endblock %}
+{% block content %}
+<h1>Da ist etwas schiefgelaufen</h1>
+
+<p class="hinweis">
+  Der Aufruf <code>{{ pfad }}</code> ist mit einem unerwarteten Fehler abgebrochen.
+  Ihre bisherigen Eingaben sind gespeichert – es ist nichts verloren.
+</p>
+
+<p class="fehler"><strong>{{ klasse }}</strong>{% if meldung %}: {{ meldung }}{% endif %}</p>
+
+<p class="fussnote">
+  Der vollständige Verlauf steht im Fehlerprotokoll des Servers
+  (<code>logs/error.log</code>). Diese Angabe genügt in aller Regel, um die
+  Ursache zu finden.
+</p>
+
+<p><a href="{{ url_for('ui.index') }}">Zurück zur Übersicht</a></p>
+{% endblock %}

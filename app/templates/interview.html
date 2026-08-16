@@ -3,6 +3,53 @@
 {% block main_class %}wide{% endblock %}
 
 {% block content %}
+{% if pseudo_aus %}
+{# Entwicklungsmodus: die Pseudonymisierungsschicht ist abgeschaltet. Muss
+   sichtbar bleiben – sonst landen irgendwann echte Personendaten ungeschuetzt
+   beim Anbieter, ohne dass es jemand merkt. #}
+<div class="warnbanner" role="alert">
+  <strong>Pseudonymisierung ist abgeschaltet (Entwicklungsmodus).</strong>
+  Die Texte gehen <em>ungeschützt</em> an den Sprachmodell-Anbieter – Namen und
+  Fallbezüge inklusive. Nur mit Testdaten verwenden. Zum Einschalten
+  <code>PSEUDO_UMGEHEN</code> entfernen und <code>PSEUDO_BASIS_URL</code> setzen.
+</div>
+{% endif %}
+{% if not llm_available %}
+{# Ohne Dienst wird nichts formuliert und nichts extrahiert. Frueher lief das
+   still weiter - der Rohtext landete im Dokument und niemand konnte erkennen,
+   warum. Diese Warnung darf nicht wegklickbar sein. #}
+<div class="warnbanner" role="alert">
+  <strong>Achtung: Die Texte werden derzeit nicht aufbereitet.</strong>
+  Der Pseudonymisierungsdienst ist nicht konfiguriert, deshalb geht nichts an ein
+  Sprachmodell. Ihr Diktat wird <em>unverändert</em> übernommen – ohne
+  Umformulierung, ohne Vorschläge und ohne Komplexitätseinschätzung.
+  Prüfen Sie <code>PSEUDO_BASIS_URL</code>; der Zustand steht auch unter
+  <a href="{{ url_for('ui.health') }}">/health</a>.
+</div>
+{% endif %}
+{% if qualitaet and (qualitaet.muss or qualitaet.vorbehalte) %}
+{# Laufende Invarianten-Pruefung: waehrend der Erstellung nur ein HINWEIS.
+   Verbindlich wird sie erst vor der Ausgabe (Briefing Abschnitt 4.1). #}
+<details class="qualitaet-hinweis">
+  <summary>
+    Qualitätsprüfung: {{ qualitaet.muss|length }} zu beheben,
+    {{ qualitaet.vorbehalte|length }} Vorbehalt(e)
+    {%- if qualitaet.hinweise %}, {{ qualitaet.hinweise|length }} Hinweis(e){% endif %}
+  </summary>
+  <ul>
+    {% for b in qualitaet.muss %}
+    <li><strong>{{ b.fundstelle }}</strong> {{ b.meldung }} <code>{{ b.regel }}</code></li>
+    {% endfor %}
+    {% for b in qualitaet.vorbehalte %}
+    <li>{{ b.fundstelle }} {{ b.meldung }} <code>{{ b.regel }}</code></li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+<p class="fussnote" style="margin:.3rem 0 1rem">
+  <a href="{{ url_for('ui.interview_fachpruefung_zeigen', session_id=session.id) }}">
+    Fachliche Prüfung aus Auftraggeber-Sicht &#8594;</a>
+</p>
 {% if projekt %}
 <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">
   &#8592; Projekt: {{ projekt.name }}</a>
@@ -57,10 +104,20 @@
 
     {% if state.phase == "question" %}
       {# ---- Normale Frage ---- #}
+      {# Die Leitfrage ist die Überschrift, der HERMES-Begriff der
+         Herkunftsvermerk darunter. Aus der Benutzerführungs-Richtlinie,
+         Abschnitt 07: gefragt wird in Alltagssprache, der Fachbegriff bleibt
+         sichtbar – wer ihn braucht, findet ihn; wer ihn nicht kennt, wird
+         nicht von ihm aufgehalten. #}
       <div class="section-header">
         <span class="section-num-badge">{{ state.section.number }}</span>
-        <h2>{{ state.section.title }}</h2>
+        <h2>{{ state.section.leitfrage or state.section.title }}</h2>
       </div>
+      {% if state.section.leitfrage %}
+      <p class="section-herkunft">
+        Im Dokument: Kapitel {{ state.section.number }} «{{ state.section.title }}»
+      </p>
+      {% endif %}
 
       {% if state.section.interview %}
         <div class="question-list">
@@ -265,8 +322,14 @@
       </div>
     {% else %}
       <div class="preview-empty">
-        <p>Noch keine Abschnitte erfasst.</p>
-        <p>Die Vorschau aktualisiert sich nach jeder Antwort.</p>
+        {# Leerer Zustand nach der Richtlinie: Zweck, Umfang, Dauer, Einstieg –
+           statt der blossen Feststellung, dass nichts da ist. #}
+        <p><strong>Hier entsteht Ihr Dokument – Abschnitt für Abschnitt.</strong></p>
+        <p>Sobald Sie die erste Frage beantwortet haben, steht der Text an
+          dieser Stelle und wächst mit jeder weiteren Antwort. Sie können ihn
+          jederzeit lesen, korrigieren und herunterladen – auch unfertig.</p>
+        <p>Beantworten Sie links die erste Frage. Ein Satz genügt für den
+          Anfang; nachschärfen können Sie später.</p>
       </div>
     {% endif %}
   </aside>
@@ -306,7 +369,8 @@
   function initMicRecorder() {
     var endpoint = btn.dataset.endpoint;
     var SEG_MS = 12000;                       // Segmentlänge: echtzeitnah, kleine Bodies
-    var stream = null, recorder = null, timer = null, running = false;
+    var NACHLAUF_MS = 1500;                   // Stille nach dem Stopp (siehe stopRecording)
+    var stream = null, recorder = null, timer = null, nachlauf = null, running = false;
 
     if (micSel) {
       micSel.style.display = '';
@@ -409,6 +473,9 @@
     }
 
     function startRecording() {
+      // Laeuft noch ein Nachlauf vom letzten Stopp, jetzt sauber abschliessen –
+      // sonst wuerde dessen Timer gleich den frisch geoeffneten Stream schliessen.
+      if (nachlauf) hardStop();
       var id = savedMicId();
       var constraints = { audio: id ? { deviceId: { exact: id } } : true };
       navigator.mediaDevices.getUserMedia(constraints).catch(function () {
@@ -433,9 +500,12 @@
       // Warteschlange fertig transkribiert – kein Textverlust.
       running = false;
       if (timer) clearTimeout(timer);
-      if (recorder && recorder.state !== 'inactive') recorder.stop();
-      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-      stream = null;
+      // NACHLAUF: Wer auf "Stopp" klickt, tut das direkt nach dem letzten Wort.
+      // Die Spracherkennung braucht danach aber noch etwas Stille, sonst wird
+      // das Wortende abgeschnitten. Diese Stille nimmt die Anwendung selbst auf –
+      // niemand soll bewusst nachschweigen muessen.
+      if (nachlauf) clearTimeout(nachlauf);
+      nachlauf = setTimeout(hardStop, NACHLAUF_MS);
       setUiRecording(false);
       if (sending || sendQueue.length) {
         setStatus('Aufnahme gestoppt – die Transkription wird abgeschlossen …');
@@ -444,10 +514,23 @@
       }
     }
 
+    function hardStop() {
+      // Recorder und Mikrofon wirklich schliessen. Das laufende Segment landet
+      // ueber recorder.onstop noch in der Warteschlange – kein Textverlust.
+      if (nachlauf) { clearTimeout(nachlauf); nachlauf = null; }
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+
     function stopAll() {
-      // Hart stoppen (z.B. Mikrofon weggefallen): Backlog verwerfen.
+      // Hart stoppen (z.B. Mikrofon weggefallen): Backlog verwerfen. Ein Nachlauf
+      // brächte hier nichts, das Mikrofon liefert ohnehin nichts mehr.
       sendQueue = [];
-      stopRecording();
+      running = false;
+      if (timer) clearTimeout(timer);
+      hardStop();
+      setUiRecording(false);
       setStatus('');
     }
 
@@ -466,7 +549,7 @@
           stopRecording();
           setStatus('Aufnahme gestoppt – bitte kurz warten, bis der Text im Feld steht, '
                     + 'und dann erneut auf «Weiter» klicken.');
-        } else if (sending || sendQueue.length) {
+        } else if (nachlauf || sending || sendQueue.length) {
           e.preventDefault();
           setStatus('Die Transkription läuft noch – bitte gleich erneut auf «Weiter» klicken.');
         }

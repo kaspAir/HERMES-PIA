@@ -4,7 +4,11 @@ Verantwortung: Das LLM formuliert und extrahiert.
 Es entscheidet NICHT, ob eine Luecke vorliegt - das ist Sache des gap_check.
 """
 import json
+import logging
 import re
+from app.domains.llm.errors import PseudoFehler
+
+log = logging.getLogger("hermes.extraktion")
 
 # Verbindliche HERMES-2022-Vorgaben, die in jeden generierenden Prompt einfliessen.
 # Stand: offizielles HERMES-2022-Referenzhandbuch (Phase Initialisierung).
@@ -29,7 +33,7 @@ HERMES_RULES = (
     "Die in der Phase Initialisierung erst erarbeiteten Ergebnisse (Stakeholderliste, "
     "Studie, Rechtsgrundlagen-/Schutzbedarfs-/Beschaffungsanalyse, Projektmanagementplan, "
     "Durchfuehrungsauftrag, Prototyp) gehoeren NIEMALS in diese beiden Abschnitte.\n"
-    "- KOSTEN/BUDGET betreffen im PIA AUSSCHLIESSLICH die Phase Initialisierung. "
+    "- Kosten und Budget betreffen im PIA AUSSCHLIESSLICH die Phase Initialisierung. "
     "Budgetiere NIEMALS die Phasen Konzept, Realisierung, Einfuehrung, Abschluss oder "
     "Umsetzung. Ob das Projekt klassisch (mit diesen Phasen) oder agil (nur Initialisierung, "
     "Umsetzung, Abschluss) gefuehrt wird, entscheidet sich erst im Meilenstein 'Weiteres "
@@ -60,7 +64,11 @@ HERMES_RULES = (
     "diese werden erst in spaeteren Phasen relevant.\n"
     "- ERFINDE NIEMALS Fundstellen: keine SR-Nummern, keine kantonalen Erlass-Nummern (z.B. "
     "'NG ...', 'BGS ...'), keine Aktenzeichen, keine Links. Wenn die exakte Nummer/Fundstelle "
-    "nicht zweifelsfrei bekannt ist, lass das Feld 'Nummer/Link' LEER und nenne NUR den Namen des "
+    # 'LEER' stand hier frueher als Betonung. «Leer» ist ein Schweizer Nachname –
+    # die Pseudonymisierungsschicht meldete es als Fundstelle, und der Nutzer
+    # musste ueber ein Wort entscheiden, das er nie diktiert hat. Betonungen in
+    # Grossbuchstaben nur noch fuer Wörter, die keine Namen sein koennen.
+    "nicht zweifelsfrei bekannt ist, lass das Feld 'Nummer/Link' leer und nenne NUR den Namen des "
     "Erlasses. Eine falsche oder geratene Fundstelle ist schlimmer als gar keine.\n"
     "- Formuliere KEINE feste Maximaldauer der Phase Initialisierung (z.B. 'innerhalb von X "
     "Monaten/Wochen abzuschliessen', 'Dauer maximal ...') als Rahmenbedingung, Ziel oder Vorgabe. "
@@ -124,6 +132,8 @@ def estimate_risk_assessment(llm_client, beschreibung):
         if d.get("massnahmen"):
             out["massnahmen"] = str(d["massnahmen"]).strip()
         return fix_hermes_terms(out)
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return {}
 
@@ -175,6 +185,8 @@ def assess_complexity(llm_client, ausgangslage_text, dimensions=None):
     try:
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=1536)
         data = _parse_json(raw)
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return []
 
@@ -269,6 +281,8 @@ def analyze_results_options(llm_client, ausgangslage_text):
                 "frage": str(p["frage"]).strip(),
             }
         return out
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return {}
 
@@ -323,6 +337,8 @@ def nachweis_begruendungen(llm_client, items, context):
             if val:
                 out[it["abschnitt"]] = str(val).strip()
         return out
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return {}
 
@@ -375,6 +391,8 @@ def suggest_missing_items(llm_client, section, context, existing_rows, vocabular
             if row:
                 out.append(fix_hermes_terms(row))
         return out[:4]
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return []
 
@@ -445,6 +463,8 @@ def detect_project_type(llm_client, available_types, ausgangslage_text):
         # Kein stilles Raten: bei unbekannter Antwort lieber KEIN Typ (None) als der
         # zufaellig erste Listeneintrag - die Erkennung wird spaeter nachgeholt.
         return pt if pt in known else None
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return None
 
@@ -466,6 +486,8 @@ def detect_gender(llm_client, name):
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=64)
         g = (_parse_json(raw) or {}).get("geschlecht", "u")
         return g if g in ("w", "m", "u") else "u"
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return "u"
 
@@ -496,7 +518,16 @@ def _extract_free_text(llm_client, section_title, raw_text):
         # bei zu kleinem Limit wird das JSON abgeschnitten und der Code faellt
         # still auf den Rohtext zurueck (keine Umformulierung).
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=2048)
-        return _parse_json(raw) or {"text": raw_text}
+        gelesen = _parse_json(raw)
+        if gelesen:
+            return gelesen
+        # Legitimer Rueckfall (das Modell hat kein JSON geliefert), aber er
+        # setzt das ROHE Diktat ins Dokument. Ohne Protokolleintrag sieht der
+        # Projektleiter nur "nicht umformuliert" und sucht den Fehler bei sich.
+        log.warning("Freitext nicht als JSON lesbar, Rohtext uebernommen. Abschnitt=%s, Antwort=%.200r", section_title, raw)
+        return {"text": raw_text}
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return {"text": raw_text}
 
@@ -542,6 +573,8 @@ def _extract_table(llm_client, section_title, columns, raw_text, vocabularies=No
                 if isinstance(v, list):
                     return v
         return []
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return []
 
@@ -583,6 +616,8 @@ def generate_followups(llm_client, section, raw_text):
         result = _parse_json(raw) or {}
         items = result.get("followups", [])
         return [fix_hermes_terms(f) for f in items if isinstance(f, dict) and f.get("frage")]
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return []
 
@@ -650,6 +685,8 @@ def _suggest_table(llm_client, section, context, vocabularies=None):
                 if isinstance(v, list):
                     return [r for r in v if isinstance(r, dict)]
         return []
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return []
 
@@ -673,6 +710,8 @@ def _suggest_free_text(llm_client, section, context):
         result = _parse_json(raw) or {}
         text = (result.get("text") or "").strip()
         return {"text": text} if text else None
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:
         return None
 

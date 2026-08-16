@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ projekt.name }} – Projekt{% endblock %}
 
+{% block main_class %}breit{% endblock %}
 {% block content %}
 <div class="projekt-page">
 
@@ -23,11 +24,23 @@
     {% if structure.meilensteine %}
     <ol class="meilenstein-bar">
       {% for ms in structure.meilensteine %}
-      <li class="meilenstein {% if ms.ist_start %}meilenstein-start{% endif %}">
+      {% set erreicht = ms.status == 'erreicht' %}
+      <li class="meilenstein {% if ms.ist_start %}meilenstein-start{% endif %}
+                 {% if erreicht %}meilenstein-erreicht{% endif %}">
         <span class="meilenstein-name">{{ ms.name }}</span>
+        {# Ein Zustand gehoert als SATZ dagesagt, nicht als Farbe angedeutet:
+           ein Rand traegt keine Aussage, und wer ihn nicht sieht, sieht
+           nichts. Datum und Wort stehen deshalb im Text. #}
+        {% if erreicht %}
+        <span class="meilenstein-status">&#10003; Freigegeben{% if
+              entscheiddaten and entscheiddaten.get(ms.code) %} am
+              {{ entscheiddaten[ms.code] }}{% endif %}</span>
+        {% else %}
+        <span class="meilenstein-status meilenstein-status-offen">Noch nicht freigegeben</span>
+        {% endif %}
         <span class="meilenstein-datum">
-          {% if ms.datum %}{{ ms.datum }}{% if ms.ist_start %} · Start{% endif %}
-          {% else %}<span class="muted">offen</span>{% endif %}
+          {% if ms.datum %}{{ ms.datum }}{% if ms.ist_start %} · geplanter Start{% endif %}
+          {% else %}<span class="muted">Datum offen</span>{% endif %}
         </span>
         {% if ms.rolle %}<span class="meilenstein-rolle">{{ ms.rolle }}</span>{% endif %}
       </li>
@@ -53,6 +66,14 @@
             <div class="ergebnis-actions">
               <a href="{{ url_for('ui.interview_workspace', session_id=session.id) }}"
                  class="btn-link">{{ 'Bearbeiten' if current_user.can_write else 'Ansehen' }}</a>
+              {# Der Weg zur Freigabe der Phase - er beginnt beim Auftrag, weil
+                 die Checkliste auf ihm beruht. #}
+              <a href="{{ url_for('ui.freigabe', projekt_id=projekt.id) }}"
+                 class="btn-link">Freigabe der Phase</a>
+              {# Die Angaben, die JEDES Dokument im Kopf traegt - einmal
+                 gepflegt statt je Dokument neu zusammengerechnet. #}
+              <a href="{{ url_for('ui.kopfdaten', projekt_id=projekt.id) }}"
+                 class="btn-link">Kopfdaten</a>
             </div>
             {% endif %}
             {% set dok = freigabe_docs.get(erg.id) %}
@@ -90,13 +111,23 @@
                 <input type="file" accept=".docx" class="upload-input"
                        data-url="{{ url_for('ui.ergebnis_dokument_upload', projekt_id=projekt.id, ergebnis_id=erg.id) }}">
               </label>
+              {# Die FREIGEGEBENE Fassung ist die verbindlichste Quelle fuer
+                 alle abgeleiteten Ergebnisse - sie schlaegt die
+                 freigabebereite und den Arbeitsstand im Interview. #}
+              <label class="btn-link upload-label">
+                Freigegebene Fassung hochladen (.docx)
+                <input type="file" accept=".docx" class="upload-input"
+                       data-url="{{ url_for('ui.ergebnis_dokument_upload', projekt_id=projekt.id, ergebnis_id=erg.id) }}?art=freigegeben">
+              </label>
               {% endif %}
             </div>
           </li>
           {% endfor %}
         </ul>
         {% elif block.modul.code != 'projektgrundlagen' %}
-        <p class="modul-empty muted">Noch keine Ergebnisse erfasst.</p>
+        <p class="modul-empty muted">In diesem Modul ist für dieses Projekt
+          noch nichts angelegt. Ergebnisse entstehen hier, sobald die
+          zugehörige Aufgabe beginnt – Sie müssen dafür nichts vorbereiten.</p>
         {% endif %}
         {% if block.modul.code == 'projektgrundlagen' %}
         <ul class="ergebnis-list">
@@ -221,7 +252,7 @@
     if (!file) return;
     setStatus('Lade «' + file.name + '» hoch …');
     var fr = new FileReader();
-    fr.onerror = function () { setStatus('Datei konnte nicht gelesen werden.'); };
+    fr.onerror = function () { setStatus('Die Datei liess sich nicht lesen. Prüfen Sie, ob sie noch in einem anderen Programm geöffnet ist, und wählen Sie sie danach erneut aus.'); };
     fr.onload = function () {
       var b64 = String(fr.result).split(',')[1] || '';
       fetch(url, {
@@ -235,9 +266,9 @@
       })
       .then(function (res) {
         if (res.ok) { location.reload(); }
-        else { setStatus('Fehler: ' + (res.d.error || 'Upload fehlgeschlagen.')); }
+        else { setStatus((res.d.error || 'Die Datei wurde nicht angenommen.') + ' Wählen Sie die Datei erneut aus oder laden Sie die Seite neu.'); }
       })
-      .catch(function () { setStatus('Netzwerkfehler beim Upload.'); });
+      .catch(function () { setStatus('Die Verbindung zum Server brach ab. Ihre Datei wurde nicht gespeichert – versuchen Sie es gleich noch einmal.'); });
     };
     fr.readAsDataURL(file);
   }

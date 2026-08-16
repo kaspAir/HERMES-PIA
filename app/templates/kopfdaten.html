@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Kopfdaten – {{ projekt.name }}{% endblock %}
+
+{% block main_class %}breit{% endblock %}
+{% block content %}
+<div class="projekt-page">
+
+  <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}"
+     class="breadcrumb-back">&#8592; {{ projekt.name }}</a>
+
+  <div class="projekt-head">
+    <h1>Wer und was steht im Kopf jedes Dokuments?</h1>
+    <p class="section-herkunft freigabe-herkunft">
+      Diese Angaben erscheinen im Projektinitialisierungsauftrag, in der
+      Rechtsgrundlagenanalyse, in der Checkliste – in jedem Ergebnis dieses
+      Projekts.
+      {%- if kopfdaten.aktualisiert_durch %} Zuletzt geändert durch
+      {{ kopfdaten.aktualisiert_durch }}
+      {%- if kopfdaten.aktualisiert_am %} am
+      {{ kopfdaten.aktualisiert_am.strftime('%d.%m.%Y') }}{% endif %}.{% endif %}
+    </p>
+  </div>
+
+  {% if hinweis %}<p class="freigabe-hinweis">{{ hinweis }}</p>{% endif %}
+
+  {# ---- Der Abgleich ----
+     Weicht ein hochgeladener Auftrag ab, wird gefragt. Nicht still
+     überschrieben – und genauso wichtig: nicht still übergangen. #}
+  {% if abweichungen %}
+  <section class="freigabe-tor kopfdaten-abgleich">
+    <h2>Der hochgeladene Auftrag sagt etwas anderes</h2>
+    <p>
+      {{ abweichungen | length }}
+      {{ 'Angabe weicht' if abweichungen | length == 1 else 'Angaben weichen' }}
+      von dem ab, was hier hinterlegt ist. Hinterlegt gilt – bis Sie etwas
+      anderes bestimmen.
+    </p>
+    <form method="post"
+          action="{{ url_for('ui.kopfdaten_uebernehmen', projekt_id=projekt.id) }}">
+      <table class="freigabe-tabelle">
+        <thead>
+          <tr><th></th><th>Angabe</th><th>Hinterlegt</th><th>Im Auftrag</th></tr>
+        </thead>
+        <tbody>
+          {% for a in abweichungen %}
+          <tr>
+            <td><input type="checkbox" name="feld" value="{{ a.feld }}"
+                       id="ab-{{ a.feld }}"></td>
+            <td><label for="ab-{{ a.feld }}">{{ a.beschriftung }}</label></td>
+            <td>{{ a.hinterlegt or '–' }}</td>
+            <td><strong>{{ a.im_dokument }}</strong></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if current_user.can_write %}
+      <p class="muted kopfdaten-hinweis">Ändert sich ein Name, wird die Anrede
+        neu bestimmt – sie gehörte zum alten Namen.</p>
+      <button type="submit" class="btn-primary">Ausgewählte übernehmen</button>
+      {% endif %}
+    </form>
+  </section>
+  {% endif %}
+
+  {# ---- Die Kopfdaten selbst ---- #}
+  <form method="post" action="{{ url_for('ui.kopfdaten', projekt_id=projekt.id) }}">
+    <section class="freigabe-kapitel">
+      <h2>Angaben</h2>
+      <div class="kopfdaten-raster">
+        {% for feld in felder %}
+        <div class="form-row">
+          <label for="{{ feld }}">{{ beschriftung[feld] }}</label>
+          <input type="text" id="{{ feld }}" name="{{ feld }}"
+                 value="{{ kopfdaten[feld] or '' }}"
+                 {% if not current_user.can_write %}readonly{% endif %}>
+        </div>
+        {% if feld in ('projektleiter', 'auftraggeber') %}
+        <div class="form-row">
+          <label for="{{ feld }}_anrede">{{ beschriftung[feld ~ '_anrede'] }}</label>
+          <select id="{{ feld }}_anrede" name="{{ feld }}_anrede" class="mic-select"
+                  {% if not current_user.can_write %}disabled{% endif %}>
+            {% for wert, text in anreden.items() %}
+            <option value="{{ wert }}"
+                    {% if kopfdaten[feld ~ '_anrede'] == wert %}selected{% endif %}>
+              {{ text }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      <p class="muted kopfdaten-hinweis">
+        Die Anrede wird beim Anlegen aus dem Vornamen geschätzt und danach
+        nicht mehr angetastet. Bei Namen wie «Andrea», «Kim» oder «Dominique»
+        rät jede Schätzung – hier stellen Sie sie richtig. «Unbekannt» ist ein
+        gültiger Wert: dann bleibt im Dokument die Doppelform stehen.
+      </p>
+      {% if current_user.can_write %}
+      <button type="submit" class="btn-primary">Kopfdaten sichern</button>
+      {% endif %}
+    </section>
+  </form>
+</div>
+{% endblock %}
