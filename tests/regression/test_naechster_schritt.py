@@ -262,3 +262,42 @@ def test_das_interview_zeigt_die_frage_und_nennt_die_herkunft(app):
     assert "Warum machen wir das überhaupt?" in html      # die Frage führt
     assert "Ausgangslage" in html                          # der Begriff bleibt
     assert "Im Dokument: Kapitel" in html
+
+
+# ---- Die Startseite zählt, was das Gespräch wirklich führt ---------------- #
+#
+# Am Bildschirmfoto fürs Handbuch gemessen: die Karte meldete «13 von 13
+# Abschnitten sind noch offen», obwohl die Ausgangslage erfasst war — und
+# schätzte 195 Minuten. Die Route führte eine ZWEITE Liste der befragbaren
+# Abschnitte und kannte den Typ `free_text` nicht: 13 statt 14, und der
+# einzige Fliesstext-Abschnitt galt als nicht beantwortbar.
+
+def test_die_zaehlung_kennt_alle_befragbaren_abschnitte(app):
+    methode = app.method_service.get("hermes_pia")
+    befragbar = app.interview_service.befragbare_abschnitte(methode)
+    typen = {s["type"] for s in befragbar}
+    assert typen == {"free_text", "table"}
+    assert len(befragbar) == sum(1 for s in methode["sections"]
+                                 if s.get("type") in ("free_text", "table"))
+
+
+def test_ein_beantworteter_fliesstext_zaehlt_als_erledigt(app):
+    """Die Ausgangslage ist der einzige Fliesstext – und wurde übersehen."""
+    c, projekt = _client_mit_projekt(app)
+    erg = app.projekt_service.ergebnisse(projekt.id)[0]
+    sitzung = app.interview_service.session_for_ergebnis(erg.id)
+
+    import json
+
+    from app.domains.interview.models import InterviewSession
+    from app.shared.database import SessionLocal
+    db = SessionLocal()
+    db.get(InterviewSession, sitzung.id).answers_json = json.dumps(
+        {"ausgangslage": {"extracted": {"text": "Ein Anlass."}}})
+    db.commit()
+
+    html = c.get("/").get_data(as_text=True)
+    gesamt = len(app.interview_service.befragbare_abschnitte(
+        app.method_service.get("hermes_pia")))
+    assert f"{gesamt - 1} von {gesamt} Abschnitten sind noch offen." in html
+    assert "Etappe 2 von %d" % gesamt in html

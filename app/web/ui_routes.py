@@ -177,8 +177,10 @@ def _zustand_je_projekt(projekte, method):
     from app.domains.qualitaet.models import PiaPruefung
     from app.shared.database import SessionLocal
 
-    abschnitte = [s for s in (method or {}).get("sections", [])
-                  if s.get("type") in ("interview", "table")]
+    # Welche Abschnitte das Gespraech fuehrt, weiss der Interview-Dienst - nicht
+    # diese Route. Eine zweite Liste hier hatte den Typ `free_text` nicht
+    # gekannt und deshalb falsch gezaehlt.
+    abschnitte = current_app.interview_service.befragbare_abschnitte(method or {})
     db = SessionLocal()
     svc = current_app.projekt_service
     raus = []
