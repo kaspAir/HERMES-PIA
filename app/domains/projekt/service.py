@@ -199,8 +199,12 @@ class ProjektService:
             uploaded_by=uploaded_by,
         )
         db.add(dok)
+        # Der Status folgt der Art des Dokuments. «freigegeben» ist der
+        # Endzustand: was hochgeladen wird, IST die geltende Fassung.
         if art == "freigabe":
             ergebnis.status = "zur Freigabe"
+        elif art == "freigegeben":
+            ergebnis.status = "freigegeben"
         db.commit()
         db.refresh(dok)
         return dok

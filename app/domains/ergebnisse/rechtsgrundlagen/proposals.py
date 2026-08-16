@@ -7,6 +7,8 @@ Entwurf leer (nur das PIA-Seeding greift) – nie wird geraten.
 """
 import json
 import re
+from app.domains.llm.errors import PseudoFehler
+from app.domains.skills import compose_system
 
 
 def _parse_json(raw):
@@ -54,7 +56,7 @@ SYSTEM = (
 )
 
 
-def analysiere(wissen, llm, grounding=None, bestehende_namen=None):
+def analysiere(wissen, llm, grounding=None, bestehende_namen=None, skill_bundle=None):
     """Ziele-getriebene Analyse. Gibt Dict zurück (leer ohne LLM):
     {bestehende:[{rechtsgrundlage,beschreibung}], bevorstehende:[{...,auswirkung}],
      luecken:[{luecke,beschreibung}], vorschlaege:[{luecke,vorschlag}],
@@ -87,10 +89,15 @@ def analysiere(wissen, llm, grounding=None, bestehende_namen=None):
         '"vorschlaege":[{"luecke":"","vorschlag":""}],'
         '"compliance":[{"compliance":"","beschreibung":""}],'
         '"konsequenzen":"","empfehlung":""}\n'
+        # KEIN Fachgebiet als Beispiel: hier stand «z.B. im Justiz-/Strafregister-
+        # umfeld StReG/StReV, StGB, StPO». Das lenkt jedes Projekt in dieses eine
+        # Sachgebiet - ein Schulhausbau bekaeme einen Anstoss Richtung Strafrecht.
+        # Die Anweisung muss die METHODE beschreiben, nie den Inhalt.
         "- 'bestehende': ERMITTLE SELBST die einschlägigen bestehenden Rechtsgrundlagen "
         "für die geplanten Tätigkeiten – AUCH solche, die oben nicht aufgeführt sind, "
-        "sofern du sie sicher kennst (einschlägige Bundesgesetze/-verordnungen des "
-        "Fachbereichs, z.B. im Justiz-/Strafregisterumfeld StReG/StReV, StGB, StPO). "
+        "sofern du sie sicher kennst. Gehe dabei vom Sachgebiet des VORLIEGENDEN "
+        "Vorhabens aus und ziehe zu jedem einschlägigen Gesetz auch die "
+        "Ausführungsverordnung bei. "
         "Nenne je Eintrag den Gesetzesnamen MIT gebräuchlicher Abkürzung in Klammern und "
         "eine kurze Beschreibung, welche Tätigkeit die Grundlage abdeckt. KEINE erfundene "
         "SR-Nummer/Datierung – die Fundstelle wird separat verifiziert.\n"
@@ -104,8 +111,12 @@ def analysiere(wissen, llm, grounding=None, bestehende_namen=None):
         "- 'bevorstehende': nur wenn eine Rechtsänderung tatsächlich absehbar ist, sonst [].\n"
         "- 'empfehlung': konkret und in dieser Analyse umgesetzt. Fasse dich kurz."
     )
+    # Skill (falls geladen) steuert das Vorgehen; SYSTEM behält das Ausgabeformat.
+    system = compose_system(SYSTEM, skill_bundle) if skill_bundle else SYSTEM
     try:
-        raw = llm.complete(SYSTEM, [{"role": "user", "content": user}], max_tokens=3500)
+        raw = llm.complete(system, [{"role": "user", "content": user}], max_tokens=3500)
+    except PseudoFehler:
+        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
     except Exception:  # noqa: BLE001 – LLM-Ausfall: lieber leerer Entwurf als Fehler
         return {}
     return _parse_json(raw) or {}

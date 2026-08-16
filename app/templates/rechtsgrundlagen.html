@@ -32,11 +32,136 @@
           {% endfor %}
         </select>
       </div>
-      <button type="submit" class="btn-primary" style="margin-top:12px">
-        {{ 'Entwurf neu erzeugen' if entwurf else 'Entwurf erzeugen' }}
-      </button>
+      {# BEIDE Knoepfe gehoeren in DIESES Formular. Der Knopf fuer die
+         vollstaendige Analyse stand vorher in einem eigenen und schickte den
+         GESPEICHERTEN Kanton mit - wer St. Gallen auswaehlte und direkt die
+         Analyse startete, schickte leer, und das Dokument meldete «Kanton
+         nicht spezifiziert». Mit formaction geht die aktuelle Auswahl mit. #}
+      <div style="margin-top:12px">
+        <button type="submit" class="btn-primary">
+          {{ 'Entwurf neu erzeugen' if entwurf else 'Entwurf erzeugen' }}
+        </button>
+        <button type="submit" class="btn-primary"
+                formaction="{{ url_for('ui.rechtsgrundlagen_kette', projekt_id=projekt.id) }}">
+          Vollständige Analyse durchführen
+        </button>
+      </div>
+      <p class="fussnote">
+        Die vollständige Analyse prüft je Tätigkeit des Vorhabens die Grundlage,
+        die Lücke, die Zulässigkeit und – wo nötig – die Handlungsoptionen. Sie
+        verwendet die oben gewählte Ebene und den gewählten Kanton.
+      </p>
     </form>
   </section>
+
+  {% if kette_laeuft %}
+  <section class="vorlage-block">
+    <div class="lauf" id="kette"
+         data-endpoint="{{ url_for('ui.rechtsgrundlagen_kette_schritt', projekt_id=projekt.id) }}"
+         data-gesamt="{{ schrittnamen | length }}"
+         data-start="{{ entwurf.lauf_schritt or 0 }}">
+      <div class="lauf-kopf">
+        <strong id="kette-titel">Analyse läuft …</strong>
+        <span id="kette-zaehler" class="fussnote"></span>
+      </div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="kette-balken" style="width:0"></div></div>
+      <ol class="lauf-schritte">
+        {% for name in schrittnamen %}
+        <li id="kschritt-{{ loop.index0 }}"><span class="lauf-punkt">&bull;</span> {{ name }}</li>
+        {% endfor %}
+      </ol>
+      <p class="fussnote" id="kette-dauer"></p>
+      <p class="fehler" id="kette-fehler" style="display:none"></p>
+      <p id="kette-neu" style="display:none">
+        <button type="button" class="btn-primary" id="kette-wiederholen">Schritt wiederholen</button>
+        <span class="fussnote">Die bereits erledigten Schritte bleiben erhalten.</span>
+      </p>
+    </div>
+    <script>
+    (function () {
+      var box = document.getElementById('kette');
+      var gesamt = parseInt(box.dataset.gesamt, 10);
+      var balken = document.getElementById('kette-balken');
+      var zaehler = document.getElementById('kette-zaehler');
+      var titel = document.getElementById('kette-titel');
+      var dauer = document.getElementById('kette-dauer');
+      var fehler = document.getElementById('kette-fehler');
+      var index = parseInt(box.dataset.start, 10) || 0;
+      var seit = null;
+      // Eine Schicht kann mehrere Aufrufe brauchen (einen je Taetigkeit).
+      // Ohne diese Anzeige saehe ein langer Lauf aus wie ein Haenger.
+      var teilText = '';
+
+      function markiere(i, zustand) {
+        var li = document.getElementById('kschritt-' + i);
+        if (li) { li.className = zustand; }
+      }
+      function tick() {
+        if (!seit) return;
+        dauer.textContent = 'l\u00e4uft seit ' + Math.round((Date.now() - seit) / 1000) + ' s';
+      }
+      function scheitern(text) {
+        markiere(index, 'gescheitert');
+        fehler.textContent = text;
+        fehler.style.display = '';
+        document.getElementById('kette-neu').style.display = '';
+        seit = null; dauer.textContent = '';
+      }
+      function schritt() {
+        if (index >= gesamt) { location.reload(); return; }
+        markiere(index, 'aktiv');
+        titel.textContent = 'Analyse l\u00e4uft: ' + (document.getElementById('kschritt-' + index)
+                            || {textContent: ''}).textContent.trim();
+        zaehler.textContent = 'Schritt ' + (index + 1) + ' von ' + gesamt + teilText;
+        balken.style.width = Math.round(index / gesamt * 100) + '%';
+        seit = Date.now(); tick();
+        // Kein FormData: multipart laesst der Hosting-Proxy nicht durch.
+        fetch(box.dataset.endpoint, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'},
+          body: ''
+        })
+          .then(function (r) {
+            return r.text().then(function (t) {
+              var d = null;
+              try { d = JSON.parse(t); } catch (e) { d = null; }
+              return {ok: r.ok, status: r.status, d: d, text: t};
+            });
+          })
+          .then(function (a) {
+            if (!a.ok || !a.d) {
+              return scheitern(a.d
+                ? (a.d.fehler || 'Der Schritt ist fehlgeschlagen.')
+                : ('Der Server meldete einen Fehler (Code ' + a.status + '): '
+                   + a.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)));
+            }
+            teilText = (a.d.teile > 1 && a.d.teil > 0)
+              ? ' · Tätigkeit ' + (a.d.teil + 1) + ' von ' + a.d.teile : '';
+            if (a.d.schritt > index) { markiere(index, 'erledigt'); }
+            index = a.d.schritt;
+            var anteil = (a.d.teile > 1 && a.d.teil > 0) ? a.d.teil / a.d.teile : 0;
+            balken.style.width = Math.round((index + anteil) / gesamt * 100) + '%';
+            if (a.d.fertig) { location.reload(); return; }
+            schritt();
+          })
+          .catch(function (e) {
+            scheitern('Die Verbindung zum Server ist abgebrochen ('
+                      + (e && e.message ? e.message : 'unbekannt') + ').');
+          });
+      }
+      document.getElementById('kette-wiederholen').addEventListener('click', function () {
+        fehler.style.display = 'none';
+        document.getElementById('kette-neu').style.display = 'none';
+        schritt();
+      });
+      for (var i = 0; i < index; i++) { markiere(i, 'erledigt'); }
+      setInterval(tick, 1000);
+      schritt();
+    })();
+    </script>
+  </section>
+  {% endif %}
 
   <section class="vorlage-block">
     <h3 class="vorlage-title">Im PIA genannte Rechtsgrundlagen (Ausgangspunkt)</h3>
@@ -58,8 +183,13 @@
         <p class="muted vorlage-status">&#9888; Keine Fedlex-Fundstelle verknüpft. Falls Ebene «Bund» gewählt ist, erreicht der Server den Fedlex-Dienst nicht — bitte melden.</p>
       {% endif %}
     {% endif %}
-    <a href="{{ url_for('ui.rechtsgrundlagen_download', projekt_id=projekt.id, filename=download_name) }}"
+    {# Der Weg ueber den Versionsstand ist derselbe wie beim PIA: wer
+       herunterlaedt, bestaetigt eine Version und traegt sie ins
+       Aenderungsprotokoll ein. #}
+    <a href="{{ url_for('ui.rechtsgrundlagen_version', projekt_id=projekt.id) }}"
        class="btn-primary btn-large">&#8595; Rechtsgrundlagenanalyse herunterladen (.docx)</a>
+    <a href="{{ url_for('ui.rechtsgrundlagen_download', projekt_id=projekt.id, filename=download_name) }}"
+       class="btn-link">ohne Versionseintrag herunterladen</a>
   </section>
   {% endif %}
 

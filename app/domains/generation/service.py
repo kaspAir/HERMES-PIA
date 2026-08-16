@@ -865,9 +865,13 @@ def _set_p_text(p_el, text):
     (z.B. die Komplexitätseinschätzung der Ausgangslage) als Block erscheinen.
     """
     text = _fix_hermes_terms(text or '')
-    for r in list(p_el):
-        if r.tag == f'{{{W}}}r':
-            p_el.remove(r)
+    # Auch HYPERLINKS entfernen, nicht nur Textlaeufe. Die HERMES-Vorlage haelt
+    # in Kapitel 0.5 einen Link "HERMES" in der Zelle; wer nur <w:r> loescht,
+    # laesst ihn stehen und schreibt den neuen Text dahinter - in JEDER
+    # geklonten Zeile stand dann "HERMES" vor dem eigentlichen Inhalt.
+    for kind in list(p_el):
+        if kind.tag in (f'{{{W}}}r', f'{{{W}}}hyperlink'):
+            p_el.remove(kind)
     r = etree.SubElement(p_el, f'{{{W}}}r')
     for idx, line in enumerate(text.split('\n')):
         if idx > 0:

@@ -82,11 +82,20 @@
     try { return localStorage.getItem('hp-mic-id') || ''; } catch (e) { return ''; }
   }
 
+  // Stille, die nach dem Stopp noch mitaufgenommen wird: Wer auf "Stopp" klickt,
+  // tut das direkt nach dem letzten Wort – ohne diesen Nachlauf schneidet die
+  // Spracherkennung das Wortende ab. Niemand soll bewusst nachschweigen muessen.
+  var NACHLAUF_MS = 1500;
+
   function stop() {
     if (!active) return;
     var a = active;
+    active = null;                       // Knopf ist sofort wieder frei
     a.btn.classList.remove('recording');
-    if (a.recorder && a.recorder.state !== 'inactive') a.recorder.stop();
+    setStatus('Aufnahme wird abgeschlossen …');
+    setTimeout(function () {
+      if (a.recorder && a.recorder.state !== 'inactive') a.recorder.stop();
+    }, NACHLAUF_MS);
   }
 
   function start(btn, input) {
@@ -105,7 +114,7 @@
         recorder.onstop = function () {
           stream.getTracks().forEach(function (t) { t.stop(); });
           var blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-          active = null;
+          if (active && active.recorder === recorder) active = null;
           if (!blob.size) { setStatus(''); return; }
           setStatus('Wird transkribiert …');
           var fr = new FileReader();

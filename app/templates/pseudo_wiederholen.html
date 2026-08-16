@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Wird erneut verarbeitet …{% endblock %}
+{% block content %}
+<h1>Entscheide übernommen</h1>
+<p class="hinweis">Ihre Eingabe wird jetzt unverändert erneut verarbeitet …</p>
+
+{# Feld für Feld identisch zum ersten Versuch – nichts gekürzt, nichts bereinigt. #}
+<form id="wiederholen" method="post" action="{{ ziel }}">
+  {% for name, wert in felder %}
+  <input type="hidden" name="{{ name }}" value="{{ wert }}">
+  {% endfor %}
+  <noscript><button type="submit" class="primary">Weiter</button></noscript>
+</form>
+<script>document.getElementById('wiederholen').submit();</script>
+{% endblock %}

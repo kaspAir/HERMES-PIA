@@ -1,5 +1,68 @@
 {% extends "base.html" %}
+
+{# Wohin ein Vorschlag führt. Die Zuordnung steht hier und nicht im
+   Rechenmodul: welche Aufgabe offen ist, ist eine fachliche Frage – auf
+   welcher Seite man sie erledigt, eine der Oberfläche. #}
+{% macro ziel(s) -%}
+  {%- if s.art == 'interview' and s.session_id -%}
+    {{ url_for('ui.interview_workspace', session_id=s.session_id) }}
+  {%- elif s.art in ('pruefung', 'befunde') and s.session_id -%}
+    {{ url_for('ui.interview_fachpruefung_zeigen', session_id=s.session_id) }}
+  {%- elif s.art == 'rechtsgrundlagen' -%}
+    {{ url_for('ui.rechtsgrundlagen', projekt_id=s.projekt_id) }}
+  {%- else -%}
+    {{ url_for('ui.projekt_detail', projekt_id=s.projekt_id) }}
+  {%- endif -%}
+{%- endmacro %}
+
 {% block content %}
+
+{% if current_user and not current_user.is_super_admin %}
+<section class="naechster-schritt" aria-labelledby="ns-titel">
+  <p class="ns-gruss">{{ begruessung }}{% if current_user.name %}, {{ current_user.name }}{% endif %}.</p>
+  {% if vorschlag %}
+  <h2 id="ns-titel" class="ns-titel">{{ vorschlag.titel }}</h2>
+  <p class="ns-wo">{{ vorschlag.wo }} · ca. {{ vorschlag.minuten }} Minuten</p>
+  <p class="ns-warum">{{ vorschlag.warum }}</p>
+  <a class="btn-primary ns-los" href="{{ ziel(vorschlag) }}">Weiter</a>
+  {% if weitere %}
+  <details class="ns-weitere">
+    <summary>{{ weitere|length }} weitere{{ '' if weitere|length == 1 else '' }}
+      offene Aufgabe{{ '' if weitere|length == 1 else 'n' }}</summary>
+    <ul class="ns-liste">
+      {% for s in weitere %}
+      <li><a href="{{ ziel(s) }}">{{ s.titel }}</a>
+        <span class="muted">— {{ s.wo }} · ca. {{ s.minuten }} Minuten</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% if ruhige %}
+  <p class="muted ns-ruhig">{{ ruhige }} weitere{{ '' if ruhige == 1 else '' }}
+    Projekt{{ '' if ruhige == 1 else 'e' }} – aktuell ohne offene Aufgabe für dich.</p>
+  {% endif %}
+  {% elif projekte %}
+  <h2 id="ns-titel" class="ns-titel">Aktuell wartet nichts auf dich.</h2>
+  <p class="ns-warum">
+    {{ projekte|length }} Projekt{{ '' if projekte|length == 1 else 'e' }} –
+    alle vollständig erfasst, geprüft und rechtlich abgeklärt.
+  </p>
+  {% else %}
+  <h2 id="ns-titel" class="ns-titel">Noch kein Projekt begonnen.</h2>
+  <p class="ns-warum">
+    Ein Projektinitialisierungsauftrag beschreibt in acht Abschnitten, worum es
+    geht, was er kosten soll und wer entscheidet. Er entsteht im Gespräch –
+    Sie erzählen, HERMES PIA schreibt mit. Rechnen Sie mit gut einer Stunde
+    für den ersten Durchgang; unterbrechen und später weitermachen ist
+    jederzeit möglich.
+  </p>
+  {% if current_user.can_write %}
+  <p class="ns-warum">Der Einstieg steht gleich darunter: Projektname,
+    Projektleitung, los.</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
 
 <div class="index-hero">
   <h1>{{ method.method.name }}

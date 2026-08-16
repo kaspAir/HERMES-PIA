@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ablösung Fachanwendung Baubewilligungen – Projekt</title>
+  <link rel="icon" type="image/svg+xml"
+        href="http://localhost:5000/static/img/hermes-pia-logo.svg">
+  <link rel="apple-touch-icon"
+        href="http://localhost:5000/static/img/hermes-pia-logo.svg">
+  <link rel="stylesheet" href="http://localhost:5000/static/css/app.css">
+</head>
+<body>
+  <div class="brand-bar">
+    
+    <img src="http://localhost:5000/static/img/hermes-pia-logo.svg"
+         alt="HERMES PIA" class="brand-logo brand-logo--mark">
+    
+    
+    <div class="user-menu">
+      
+        <a href="/" class="user-link">Projekte</a>
+        <a href="/pmo" class="user-link">PMO</a>
+        
+      
+      <a href="/passwort" class="user-link">Passwort</a>
+      <span class="user-org" title="Angemeldet für diese Organisationseinheit">Musteramt</span>
+      <span class="user-email">m.keller@muster.ch</span>
+      <form method="post" action="/logout" class="inline-form">
+        <button type="submit" class="user-link user-logout">Abmelden</button>
+      </form>
+    </div>
+    
+  </div>
+  
+  <header><strong>HERMES PIA</strong> &mdash; vom Gespräch zum strukturierten Ergebnis</header>
+  <main class="breit">
+<div class="projekt-page">
+
+  <a href="/" class="breadcrumb-back">&#8592; Projekte</a>
+
+  <div class="projekt-head">
+    <h1>Ablösung Fachanwendung Baubewilligungen</h1>
+    <dl class="projekt-meta-grid">
+      <dt>Projektnummer</dt><dd>2026-014</dd>
+      <dt>Auftraggeber/in</dt><dd>Thomas Bergmann</dd>
+      <dt>Verwaltungseinheit</dt><dd>Amt für Raumentwicklung</dd>
+      <dt>Geschäftsbereich</dt><dd>Generalsekretariat</dd>
+    </dl>
+  </div>
+
+  
+  <section class="phase-block">
+    <h2 class="phase-title">Phase Initialisierung</h2>
+
+    
+    <ol class="meilenstein-bar">
+      
+      
+      <li class="meilenstein meilenstein-start
+                 ">
+        <span class="meilenstein-name">Projektinitialisierungsfreigabe</span>
+        
+        
+        <span class="meilenstein-status meilenstein-status-offen">Noch nicht freigegeben</span>
+        
+        <span class="meilenstein-datum">
+          <span class="muted">Datum offen</span>
+        </span>
+        <span class="meilenstein-rolle">Auftraggeber</span>
+      </li>
+      
+      
+      <li class="meilenstein 
+                 ">
+        <span class="meilenstein-name">Weiteres Vorgehen</span>
+        
+        
+        <span class="meilenstein-status meilenstein-status-offen">Noch nicht freigegeben</span>
+        
+        <span class="meilenstein-datum">
+          <span class="muted">Datum offen</span>
+        </span>
+        <span class="meilenstein-rolle">Projektleiter</span>
+      </li>
+      
+      
+      <li class="meilenstein 
+                 ">
+        <span class="meilenstein-name">Durchführungsfreigabe</span>
+        
+        
+        <span class="meilenstein-status meilenstein-status-offen">Noch nicht freigegeben</span>
+        
+        <span class="meilenstein-datum">
+          <span class="muted">Datum offen</span>
+        </span>
+        <span class="meilenstein-rolle">Auftraggeber</span>
+      </li>
+      
+    </ol>
+    
+
+    <div class="modul-grid">
+      
+      <div class="modul-card">
+        <h3 class="modul-title">Projektsteuerung</h3>
+        
+        <ul class="ergebnis-list">
+          
+          <li class="ergebnis-item">
+            <div class="ergebnis-head">
+              <span class="ergebnis-titel">Projektinitialisierungsauftrag</span>
+              <span class="badge badge-rolle">Auftraggeber</span>
+            </div>
+            <div class="ergebnis-aufgabe muted">Entscheid Projektinitialisierungsfreigabe treffen</div>
+            
+            
+            <div class="ergebnis-actions">
+              <a href="/interview/1"
+                 class="btn-link">Bearbeiten</a>
+              
+              <a href="/projekt/1/freigabe"
+                 class="btn-link">Freigabe der Phase</a>
+              
+              <a href="/projekt/1/kopfdaten"
+                 class="btn-link">Kopfdaten</a>
+            </div>
+            
+            
+            <div class="ergebnis-freigabe">
+              
+              
+              <label class="btn-link upload-label">
+                Freigabeversion hochladen (.docx)
+                <input type="file" accept=".docx" class="upload-input"
+                       data-url="/projekt/1/ergebnis/1/dokument">
+              </label>
+              
+              <label class="btn-link upload-label">
+                Freigegebene Fassung hochladen (.docx)
+                <input type="file" accept=".docx" class="upload-input"
+                       data-url="/projekt/1/ergebnis/1/dokument?art=freigegeben">
+              </label>
+              
+            </div>
+          </li>
+          
+        </ul>
+        
+        
+      </div>
+      
+      <div class="modul-card">
+        <h3 class="modul-title">Projektführung</h3>
+        
+        <p class="modul-empty muted">In diesem Modul ist für dieses Projekt
+          noch nichts angelegt. Ergebnisse entstehen hier, sobald die
+          zugehörige Aufgabe beginnt – Sie müssen dafür nichts vorbereiten.</p>
+        
+        
+      </div>
+      
+      <div class="modul-card">
+        <h3 class="modul-title">Projektgrundlagen</h3>
+        
+        
+        <ul class="ergebnis-list">
+          <li class="ergebnis-item">
+            <div class="ergebnis-head">
+              <span class="ergebnis-titel">Rechtsgrundlagenanalyse</span>
+              <span class="badge badge-rolle">Projektleiter</span>
+            </div>
+            <div class="ergebnis-aufgabe muted">Aus dem PIA abgeleitet (Draft-first).</div>
+            <div class="ergebnis-actions">
+              <a href="/projekt/1/rechtsgrundlagen"
+                 class="btn-link">Bearbeiten</a>
+            </div>
+          </li>
+          <li class="ergebnis-item">
+            <div class="ergebnis-head">
+              <span class="ergebnis-titel">Schutzbedarfsanalyse</span>
+              <span class="badge badge-rolle">ISDS-Verantwortliche/r</span>
+            </div>
+            <div class="ergebnis-aufgabe muted">BACS-Template (ISV), aus dem PIA vorbefüllt.</div>
+            <div class="ergebnis-actions">
+              <a href="/projekt/1/schutzbedarf"
+                 class="btn-link">Bearbeiten</a>
+            </div>
+          </li>
+        </ul>
+        
+      </div>
+      
+    </div>
+  </section>
+  
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Präsentationsvorlage</h3>
+    <p class="muted vorlage-status">
+      
+        Keine Vorlage vorhanden – Präsentationen verwenden ein neutrales Standardlayout.
+        Die organisationsweite Vorlage wird im <a href="/pmo" class="btn-link">PMO-Bereich</a> gepflegt.
+      
+      Auch eine leere Präsentation kann als Vorlage dienen (Folienmaster/Design werden übernommen).
+    </p>
+    
+    <div class="vorlage-actions">
+      <label class="btn-link upload-label">Eigene Vorlage für dieses Projekt hochladen (.pptx)
+        <input type="file" accept=".pptx" class="upload-input"
+               data-url="/projekt/1/vorlage">
+      </label>
+    </div>
+    
+  </section>
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Word-Vorlage (Interviewstruktur)</h3>
+    <p class="muted vorlage-status">
+      
+        Keine Wortvorlage – das Interview folgt der HERMES-Standardstruktur.
+        Organisationsweite Vorlagen pflegt der <a href="/pmo" class="btn-link">PMO-Bereich</a>.
+      
+      HERMES PIA liest die Kapitel aus der Vorlage und strukturiert das Interview danach.
+    </p>
+    
+    
+    <label class="dropzone" data-scope="projekt">
+      <input type="file" accept=".docx,.dotx" class="upload-input" hidden
+             data-url="/projekt/1/methoden-vorlage">
+      <span class="dropzone-text">Word-Vorlage hierher ziehen oder klicken (.docx/.dotx)</span>
+    </label>
+    
+    
+  </section>
+
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Kostensätze (projektspezifisch)</h3>
+    <p class="muted vorlage-status">Übersteuert die PMO-Vorgabe für dieses Projekt.
+      Leer lassen = PMO-Standard gilt.</p>
+    
+    
+
+<form method="post" action="/projekt/1/kostensatz" class="kostensatz-form branding-zeile">
+  <label class="chk">Intern
+    <input type="number" name="satz_intern" min="0" step="1"
+           value=""
+           placeholder="z.B. 1200" style="width:8em">
+  </label>
+  <label class="chk">Extern
+    <input type="number" name="satz_extern" min="0" step="1"
+           value=""
+           placeholder="z.B. 1800" style="width:8em">
+  </label>
+  <label class="chk">Einheit
+    <select name="einheit" style="width:9em">
+      <option value="tag" selected>CHF / Tag</option>
+      <option value="stunde" >CHF / Stunde</option>
+    </select>
+  </label>
+  <label class="chk">Stunden/Tag
+    <input type="number" name="stunden_pro_tag" min="1" max="24" step="1"
+           value="8" style="width:5em">
+  </label>
+  <button type="submit" class="btn-link">Speichern</button>
+</form>
+
+  </section>
+
+  <div id="upload-status" class="muted upload-status"></div>
+
+</div>
+
+<script>
+// Datei-Uploads als Base64-in-JSON (Text-Body): derselbe proxy-erprobte
+// Transportweg wie beim Diktat – binaere POST-Bodies scheiterten am Hosting-Proxy.
+(function () {
+  var statusEl = document.getElementById('upload-status');
+  function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+
+  function upload(url, file, scope) {
+    if (!file) return;
+    setStatus('Lade «' + file.name + '» hoch …');
+    var fr = new FileReader();
+    fr.onerror = function () { setStatus('Die Datei liess sich nicht lesen. Prüfen Sie, ob sie noch in einem anderen Programm geöffnet ist, und wählen Sie sie danach erneut aus.'); };
+    fr.onload = function () {
+      var b64 = String(fr.result).split(',')[1] || '';
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data: b64, scope: scope || 'projekt' })
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; })
+                .then(function (d) { return { ok: r.ok, d: d }; });
+      })
+      .then(function (res) {
+        if (res.ok) { location.reload(); }
+        else { setStatus((res.d.error || 'Die Datei wurde nicht angenommen.') + ' Wählen Sie die Datei erneut aus oder laden Sie die Seite neu.'); }
+      })
+      .catch(function () { setStatus('Die Verbindung zum Server brach ab. Ihre Datei wurde nicht gespeichert – versuchen Sie es gleich noch einmal.'); });
+    };
+    fr.readAsDataURL(file);
+  }
+
+  // Klick-/Auswahl-Upload (Dateidialog)
+  document.querySelectorAll('.upload-input').forEach(function (input) {
+    input.addEventListener('change', function () {
+      upload(input.dataset.url, input.files && input.files[0], input.dataset.scope);
+      input.value = '';
+    });
+  });
+
+  // Drag-&-Drop-Upload
+  document.querySelectorAll('.dropzone').forEach(function (zone) {
+    var input = zone.querySelector('.upload-input');
+    var url = input ? input.dataset.url : zone.dataset.url;
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.add('dropzone--over');
+      });
+    });
+    ['dragleave', 'dragend', 'drop'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.remove('dropzone--over');
+      });
+    });
+    zone.addEventListener('drop', function (e) {
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      upload(url, file, zone.dataset.scope);
+    });
+  });
+}());
+</script>
+</main>
+  <div class="app-version-badge" title="fix(ui): Erlaeuterung wird nicht abgeschnitten, Tabellenseiten bekommen Breite + V0.35.2">
+    HERMES PIA V0.35.2 &middot; df0e552 &middot; 2026-08-14 10:26
+  </div>
+</body>
+</html>

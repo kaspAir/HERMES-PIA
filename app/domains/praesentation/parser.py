@@ -44,10 +44,14 @@ _SECTION_PREFIXES = [
     ("risiken", "risiken"),
     ("einleitung", None),
     ("ziel und zweck", None),
-    ("referenzierte dokumente", None),
-    ("mitgeltende unterlagen", None),
-    ("definitionen", None),
-    ("vorgaben", None),
+    # Frueher ignoriert. Die Rechtsgrundlagenanalyse speist ihre ersten
+    # Kapitel daraus - wer nur den PIA hochlaedt, haette sie sonst leer.
+    ("referenzierte dokumente", "referenzierte_dokumente"),
+    ("mitgeltende unterlagen", "mitgeltende_unterlagen"),
+    # Frueher ignoriert. Jedes HERMES-Dokument des Projekts fuehrt diese
+    # Kapitel gleich; wer nur den PIA hochlaedt, haette sie sonst leer.
+    ("definitionen", "definitionen"),
+    ("vorgaben", "vorgaben_methoden"),
     ("ressourcenbedarf", None),          # Zwischentitel; die Untertitel folgen
     ("dokument-protokoll", "_ende"),
     ("aenderungskontrolle", "_ende"),
@@ -168,6 +172,27 @@ def parse_pia(docx_bytes):
         "kosten": _parse_kosten(sections_table.get("kosten")),
         "risiken": _parse_risiken(sections_table.get("risiken")),
         "enddatum": "\n".join(sections_text.get("termine", [])),
+        # Ab hier für die ABGELEITETEN Ergebnisse, nicht für die Präsentation.
+        # Die Rahmenbedingungen trugen im gemessenen Fall das Entscheidende –
+        # sie wurden gelesen, aber nicht zurückgegeben.
+        "rahmenbedingungen": (sections_table.get("rahmenbedingungen")
+                              or sections_text.get("rahmenbedingungen") or []),
+        "referenzierte_dokumente": _parse_spalten(
+            sections_table.get("referenzierte_dokumente"),
+            (("nr", "nr"), ("name", "name"), ("link", "nummer", "link"))),
+        "definitionen": _parse_spalten(
+            sections_table.get("definitionen"),
+            (("abkuerzung", "abkuerzung", "abk"), ("bedeutung", "bedeutung"))),
+        "vorgaben_methoden": _parse_spalten(
+            sections_table.get("vorgaben_methoden"),
+            (("titel", "titel"), ("vorgabe", "vorgabe", "methode", "werkzeug"),
+             ("version", "version"))),
+        "mitgeltende_unterlagen": _parse_spalten(
+            sections_table.get("mitgeltende_unterlagen"),
+            (("name", "name"), ("link", "nummer", "link"))),
+        "projektorganisation": sections_table.get("projektorganisation") or [],
+        "kommunikation": sections_table.get("kommunikation") or [],
+        "sachmittel": sections_table.get("sachmittel") or [],
     }
     return result
 
@@ -229,6 +254,35 @@ def _parse_termine(rows):
         if ergebnis:
             out.append({"ergebnis": ergebnis, "termin": _get(i_termin),
                         "abnahme": _get(i_abnahme)})
+    return out
+
+
+def _parse_spalten(rows, spalten):
+    """Rohe Tabellenzeilen als Woerterbuecher – Kopfzeile raus, Spalten benannt.
+
+    Die Vorlagen liefern hier LISTEN von Zelltexten, inklusive Kopfzeile. Wer
+    sie unveraendert weiterreicht, bekommt spaeter leere Tabellen: die
+    Erzeugung erwartet Woerterbuecher und verwirft alles andere still.
+
+    ``spalten``: ((spalten_id, suchwort, ...), ...) – das Suchwort wird im
+    Kopftext gesucht, damit abweichende Beschriftungen nicht zum Verlust
+    fuehren. Findet sich keine Spalte, wird nach POSITION zugeordnet.
+    """
+    if not rows or len(rows) < 2:
+        return []
+    header = rows[0]
+    positionen = {}
+    for pos, eintrag in enumerate(spalten):
+        spalten_id, suchworte = eintrag[0], eintrag[1:]
+        i = _header_index(header, *suchworte) if suchworte else None
+        positionen[spalten_id] = pos if i is None else i
+    out = []
+    for cells in rows[1:]:
+        zeile = {}
+        for spalten_id, i in positionen.items():
+            zeile[spalten_id] = cells[i].strip() if i < len(cells) else ""
+        if any(zeile.values()):
+            out.append(zeile)
     return out
 
 

@@ -14,6 +14,9 @@ import app.domains.interview.models  # noqa: F401 – ensures models are registe
 import app.domains.corpus.models     # noqa: F401 – RAG-Korpus-Tabelle registrieren
 import app.domains.projekt.models     # noqa: F401 – Projektstruktur-Tabellen registrieren
 import app.domains.ergebnisse.models   # noqa: F401 – Ergebnis-Entwuerfe-Tabelle registrieren
+import app.domains.qualitaet.models    # noqa: F401 – Pruefprotokoll-Tabelle registrieren
+import app.domains.freigabe.models      # noqa: F401 – Checkliste/Entscheid registrieren
+import app.domains.dokumentenkopf.models  # noqa: F401 – Kopfdaten registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
 from app.domains.praesentation.service import PraesentationService
@@ -60,12 +63,63 @@ def _migrate_db(engine):
                 conn.execute(text("ALTER TABLE methoden_vorlage ADD COLUMN mapping_json TEXT"))
                 conn.commit()
 
+    # pia_pruefung: kapitelweiser Lauf (nachträglich ergänzt).
+    if "pia_pruefung" in inspector.get_table_names():
+        pp = {c["name"] for c in inspector.get_columns("pia_pruefung")}
+        with engine.connect() as conn:
+            for spalte, typ in (("status", "VARCHAR(20)"), ("schritt", "INTEGER"),
+                                ("teilbefunde_json", "TEXT"),
+                                ("nachschlag", "INTEGER"),
+                                ("nachweis_json", "TEXT"),
+                                ("konsolidiert_json", "TEXT")):
+                if spalte not in pp:
+                    conn.execute(text(
+                        f"ALTER TABLE pia_pruefung ADD COLUMN {spalte} {typ}"))
+            conn.commit()
+
+    # ergebnis_entwurf: Laufzustand der Rechtsgrundlagen-Kette.
+    if "ergebnis_entwurf" in inspector.get_table_names():
+        ee = {c["name"] for c in inspector.get_columns("ergebnis_entwurf")}
+        with engine.connect() as conn:
+            for spalte, typ in (("lauf_status", "VARCHAR(20)"),
+                                ("lauf_schritt", "INTEGER"),
+                                ("lauf_json", "TEXT"),
+                                ("changelog_json", "TEXT"),
+                                ("last_snapshot_json", "TEXT")):
+                if spalte not in ee:
+                    conn.execute(text(
+                        f"ALTER TABLE ergebnis_entwurf ADD COLUMN {spalte} {typ}"))
+            conn.commit()
+
     # corpus_chunks: strukturierte Initialisierungs-Dauer (nachträglich ergänzt).
     if "corpus_chunks" in inspector.get_table_names():
         cc_cols = {c["name"] for c in inspector.get_columns("corpus_chunks")}
         if "init_dauer_wochen" not in cc_cols:
             with engine.connect() as conn:
                 conn.execute(text("ALTER TABLE corpus_chunks ADD COLUMN init_dauer_wochen INTEGER"))
+                conn.commit()
+
+    # Die Checkliste traegt seit V0.35.1 dieselbe Aenderungskontrolle wie die
+    # uebrigen Ergebnisse.
+    if "freigabe_checkliste" in inspector.get_table_names():
+        vorhanden = {c["name"] for c in inspector.get_columns("freigabe_checkliste")}
+        for spalte, typ, standard in (("doc_version", "VARCHAR(20)", "'0.1'"),
+                                      ("changelog_json", "TEXT", "'[]'"),
+                                      ("last_snapshot_json", "TEXT", "'{}'")):
+            if spalte not in vorhanden:
+                with engine.connect() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE freigabe_checkliste ADD COLUMN {spalte} "
+                        f"{typ} DEFAULT {standard}"))
+                    conn.commit()
+
+    # Die Phase traegt seit der Projektinitialisierungsfreigabe einen Zustand:
+    # sie ist geplant, bis ihr Entscheid-Meilenstein erreicht ist.
+    if "phase" in inspector.get_table_names():
+        if "status" not in {c["name"] for c in inspector.get_columns("phase")}:
+            with engine.connect() as conn:
+                conn.execute(text(
+                    "ALTER TABLE phase ADD COLUMN status VARCHAR(30) DEFAULT 'geplant'"))
                 conn.commit()
 
 
@@ -110,24 +164,80 @@ def create_app(config_class=None):
     # Services aus der Konfiguration aufbauen ("Konfiguration vor Programmierung").
     app.method_service = MethodService(app.config["METHODS_DIR"])
     app.catalog_service = CatalogService(app.config["CATALOGS_DIR"])
-    llm_client = LLMClient(
-        api_key=app.config.get("ANTHROPIC_API_KEY"),
-        model=app.config.get("LLM_MODEL"),
-    )
+    # Beide Wege – Chat UND Embeddings – laufen durch die Pseudonymisierungs-
+    # schicht; der Anbieterschlüssel liegt dort, nicht hier.
+    pseudo_url = (app.config.get("PSEUDO_BASIS_URL") or "").rstrip("/")
+    pseudo_anwendung = app.config.get("PSEUDO_ANWENDUNG", "hermes-pia")
+    pseudo_mandant = app.config.get("PSEUDO_MANDANT", "standard")
+    # Ohne konfigurierten Dienst gibt es KEINEN LLM-Client – nicht etwa einen
+    # Ausweichweg zum Anbieter. Die Anwendung arbeitet dann rein deterministisch,
+    # genau wie früher ohne Anbieterschlüssel.
+    # Direktmodus nur, wenn AUSDRUECKLICH verlangt UND ein Schluessel da ist.
+    direkt_key = (app.config.get("ANTHROPIC_API_KEY", "")
+                  if app.config.get("PSEUDO_UMGEHEN") else "")
+    if pseudo_url:
+        llm_client = LLMClient(
+            basis_url=f"{pseudo_url}/anthropic",
+            model=app.config.get("LLM_MODEL"),
+            anwendung=pseudo_anwendung,
+            mandant=pseudo_mandant,
+        )
+    elif direkt_key:
+        app.logger.warning(
+            "PSEUDONYMISIERUNG ABGESCHALTET (PSEUDO_UMGEHEN=1): LLM-Aufrufe gehen "
+            "DIREKT an den Anbieter. Nur fuer die Entwicklung mit Testdaten.")
+        llm_client = LLMClient(model=app.config.get("LLM_MODEL"), anbieter_key=direkt_key)
+    else:
+        llm_client = None
     app.rag_service = RagService(VoyageEmbedder(
-        api_key=app.config.get("VOYAGE_API_KEY"),
+        basis_url=f"{pseudo_url}/voyage" if pseudo_url else "",
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),
-    ))
+        anwendung=pseudo_anwendung,
+        mandant=pseudo_mandant,
+    ) if pseudo_url else None)
     app.projekt_service = ProjektService()
     app.interview_service = InterviewService(
         app.method_service, app.catalog_service, llm_client, rag=app.rag_service,
         projekt_service=app.projekt_service,
     )
     app.generation_service = GenerationService(app.method_service)
+    # Kopfdaten: die zwoelf Angaben, die JEDES Dokument im Kopf traegt.
+    # Die Anrede wird einmal geschaetzt und danach gepflegt - nicht bei jedem
+    # Herunterladen neu erfragt.
+    from app.domains.dokumentenkopf.service import KopfdatenService
+    from app.domains.interview.extraction import detect_gender
+    app.kopfdaten_service = KopfdatenService(
+        erkenne_geschlecht=lambda name: detect_gender(llm_client, name))
+    # Projektinitialisierungsfreigabe: Checkliste, Tor, Projektentscheid.
+    from app.domains.freigabe.service import FreigabeService
+    from app.domains.praesentation.parser import parse_pia
+    app.freigabe_service = FreigabeService(
+        app.projekt_service, app.interview_service, parser=parse_pia,
+        kopfdaten_service=app.kopfdaten_service)
     # Abgeleitete Initialisierungs-Ergebnisse (eigene Module, PIA unberührt).
     from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    # Live-Rechtsquellen-Recherche (lexfind: Bund + 26 Kantone). Abschaltbar, weil
+    # es eine undokumentierte Fremd-API ist und die Suchbegriffe den Host verlassen.
+    # Aus: nur der mitgelieferte Offline-SR-Index (Bundesrecht, ohne Aktualitaet).
+    from app.domains.rechtsquellen.fedlex import FedlexClient
+    from app.domains.rechtsquellen.lexfind import LexfindClient
+    from app.domains.rechtsquellen.recherche import RechercheClient
+    _index = FedlexClient()
+    _recherche = RechercheClient(
+        lexfind=LexfindClient() if app.config.get("RECHERCHE_LIVE") else None,
+        index=_index,
+    )
+    # Artikelpruefung und Rechtsprechung nur, wenn die Live-Recherche
+    # ausdruecklich eingeschaltet ist - sonst melden beide «nicht pruefbar»
+    # bzw. liefern nichts. Dieselbe Regel wie bei lexfind: das Deployment
+    # entscheidet, ob Anfragen den Host verlassen.
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer
+    from app.domains.rechtsquellen.bger import BgerClient
+    _live = bool(app.config.get("RECHERCHE_LIVE"))
     app.rechtsgrundlagen_service = RechtsgrundlagenService(
         app.interview_service, app.projekt_service, app.generation_service, llm=llm_client,
+        fedlex=_index, recherche=_recherche,
+        artikel=ArtikelPruefer(aktiv=_live), bger=BgerClient(aktiv=_live),
     )
     from app.domains.ergebnisse.schutzbedarf.service import SchutzbedarfService
     app.schutzbedarf_service = SchutzbedarfService(
@@ -139,6 +249,8 @@ def create_app(config_class=None):
         api_url=app.config.get("STT_API_URL"),
         api_key=app.config.get("STT_API_KEY"),
         model=app.config.get("STT_MODEL", "whisper-1"),
+        language=app.config.get("STT_LANGUAGE", "de"),
+        prompt=app.config.get("STT_PROMPT", ""),
     )
 
     # Betreiber-Account (Super-Admin) anlegen, falls per .env konfiguriert.

@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block title %}Projektinitialisierungsfreigabe – {{ projekt.name }}{% endblock %}
+
+{% block main_class %}breit{% endblock %}
+{% block content %}
+<div class="projekt-page">
+
+  <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}"
+     class="breadcrumb-back">&#8592; {{ projekt.name }}</a>
+
+  <div class="projekt-head">
+    <h1>Darf die Phase Initialisierung beginnen?</h1>
+    <p class="section-herkunft freigabe-herkunft">
+      Im Dokument: Checkliste Projektinitialisierungsfreigabe
+      {%- if checkliste %} · Version {{ checkliste.doc_version or '0.1' }}
+      ({{ 'freigegeben' if freigegeben else 'in Arbeit' }}){% endif %}
+      {%- if checkliste and checkliste.quelle %} · bewertet auf Grundlage von:
+      {{ checkliste.quelle }}{% endif %}
+    </p>
+  </div>
+
+  {% if fehler %}<p class="freigabe-fehler">{{ fehler }}</p>{% endif %}
+  {% if hinweis %}<p class="freigabe-hinweis">{{ hinweis }}</p>{% endif %}
+
+  {% if not checkliste %}
+  {# Leerer Zustand: Zweck, Umfang, Dauer, Einstieg. #}
+  <section class="naechster-schritt">
+    <h2 class="ns-titel">Die Checkliste ist noch nicht erstellt.</h2>
+    <p class="ns-warum">
+      Sie hält fest, dass geprüft wurde, bevor der Auftraggeber entscheidet:
+      sechs generelle Prüfpunkte, dazu organisations- und projektspezifische.
+      HERMES PIA bewertet die generellen aus dem Projektinitialisierungsauftrag
+      und schlägt die übrigen vor – Sie prüfen, ergänzen und bewerten.
+      Rechnen Sie mit rund 10 Minuten.
+    </p>
+    {% if current_user.can_write %}
+    <form method="post" action="{{ url_for('ui.freigabe_erzeugen', projekt_id=projekt.id) }}">
+      <button type="submit" class="btn-primary">Checkliste erstellen</button>
+    </form>
+    {% endif %}
+  </section>
+  {% else %}
+
+  <form method="post" action="{{ url_for('ui.freigabe_speichern', projekt_id=projekt.id) }}">
+    {% for kapitel, nummer, titel in [
+         ('generell', '1.1', 'Generelle Prüfpunkte'),
+         ('organisation', '1.2', 'Organisationsspezifische Prüfpunkte'),
+         ('projekt', '1.3', 'Projektspezifische Prüfpunkte')] %}
+    <section class="freigabe-kapitel">
+      <h2>{{ nummer }} {{ titel }}</h2>
+      {% set zeilen = alle[kapitel] %}
+      {% if not zeilen %}
+        <p class="muted">
+          {% if kapitel == 'organisation' %}
+            Aus dem Auftrag liess sich hier nichts ableiten – Kapitel 0.5 nennt
+            keine Vorgabe der Stammorganisation. Ergänzen Sie eigene Prüfpunkte
+            im Dokument, wenn welche gelten.
+          {% else %}
+            Aus dem Auftrag liess sich hier nichts ableiten – Kapitel 7 nennt
+            keine Massnahmen. Ergänzen Sie eigene Prüfpunkte, wenn welche gelten.
+          {% endif %}
+        </p>
+      {% else %}
+      <table class="freigabe-tabelle pruefpunkte">
+        <thead>
+          <tr><th>Nr.</th><th>Kriterium</th><th>Bewertung</th><th>Erläuterung</th></tr>
+        </thead>
+        <tbody>
+        {% for z in zeilen %}
+          <tr class="bewertung-{{ (z.bewertung or 'offen') | replace(' ', '-') }}">
+            <td class="freigabe-nr">{{ z.nr }}</td>
+            <td>
+              {% if z.pruefpunkt %}<strong>{{ z.pruefpunkt }}</strong><br>{% endif %}
+              {{ z.kriterium }}
+              {% if z.herkunft and z.herkunft != 'HERMES PIA' %}
+              <span class="freigabe-herkunftsvermerk">{{ z.herkunft }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if freigegeben %}
+                {{ z.bewertung or '–' }}
+              {% else %}
+              <select name="bewertung-{{ kapitel }}-{{ loop.index0 }}" class="mic-select">
+                <option value="">– noch nicht bewertet –</option>
+                {% for wert in bewertungen %}
+                <option value="{{ wert }}" {% if z.bewertung == wert %}selected{% endif %}>
+                  {{ wert }}</option>
+                {% endfor %}
+              </select>
+              {% endif %}
+            </td>
+            <td class="freigabe-erlaeuterung">
+              {% if freigegeben %}
+                {{ z.erlaeuterung }}
+              {% else %}
+              <textarea name="erlaeuterung-{{ kapitel }}-{{ loop.index0 }}"
+                        rows="4" class="vb-textarea mitwachsend">{{ z.erlaeuterung }}</textarea>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </section>
+    {% endfor %}
+
+    {% if not freigegeben and current_user.can_write %}
+    <div class="freigabe-aktionen">
+      <button type="submit" class="btn-primary">Bewertungen sichern</button>
+      <button type="submit" class="btn-link"
+              formaction="{{ url_for('ui.freigabe_erzeugen', projekt_id=projekt.id) }}">
+        Generelle Prüfpunkte neu bewerten
+      </button>
+    </div>
+    {% endif %}
+  </form>
+
+  {# ---- Das Tor ---- #}
+  <section class="freigabe-tor">
+    <h2>Freigabe</h2>
+    {% if freigegeben %}
+      <p class="freigabe-erledigt">
+        Checkliste freigegeben
+        {%- if checkliste.freigegeben_am %} am
+        {{ checkliste.freigegeben_am.strftime('%d.%m.%Y') }}{% endif %}
+        {%- if checkliste.freigegeben_durch %} durch
+        {{ checkliste.freigegeben_durch }}{% endif %}.
+      </p>
+      {% if meilenstein and meilenstein.status == 'erreicht' %}
+        <p class="freigabe-erledigt">
+          Meilenstein Projektinitialisierungsfreigabe erreicht – die Phase
+          Initialisierung läuft.
+        </p>
+      {% elif current_user.can_write %}
+        <p>Damit kann der Auftraggeber den Meilenstein setzen. Der Entscheid
+          wird in der Liste Projektentscheide Steuerung nachgetragen.</p>
+        <form method="post"
+              action="{{ url_for('ui.freigabe_meilenstein', projekt_id=projekt.id) }}">
+          <label class="vb-label" for="datum">Entscheidungsdatum</label>
+          <input type="date" id="datum" name="datum" value="{{ heute }}"
+                 class="vb-textarea freigabe-datum">
+          <button type="submit" class="btn-primary">
+            Meilenstein als erreicht markieren</button>
+        </form>
+      {% endif %}
+    {% else %}
+      {% if offen %}
+      <p>{{ offen | length }}
+        {{ 'Prüfpunkt ist' if offen | length == 1 else 'Prüfpunkte sind' }}
+        noch offen oder nicht erfüllt:
+        {{ offen | map(attribute='nr') | join(', ') }}.
+        Solange bleibt die Freigabe gesperrt.</p>
+      {% else %}
+      <p>Alle Prüfpunkte sind bewertet. Mit der Freigabe wird die Checkliste
+        unveränderlich – sie ist ab dann der Nachweis, dass geprüft wurde.</p>
+      {% endif %}
+      {% if current_user.can_write %}
+      <form method="post" action="{{ url_for('ui.freigabe_geben', projekt_id=projekt.id) }}">
+        <button type="submit" class="btn-primary" {% if offen %}disabled{% endif %}>
+          Checkliste freigeben</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </section>
+
+  {% if checkliste %}
+  <section class="freigabe-kapitel">
+    <h2>Als Word-Dokument</h2>
+    <p class="muted">Nach der HERMES-Vorlage – mit dem Stand, der oben steht.</p>
+    <a class="btn-link"
+       href="{{ url_for('ui.freigabe_checkliste_docx', projekt_id=projekt.id,
+                        filename=dateinamen.checkliste) }}">
+      &#9654; Checkliste Projektinitialisierungsfreigabe (.docx)</a>
+    {% if entscheide %}
+    <br>
+    <a class="btn-link"
+       href="{{ url_for('ui.freigabe_entscheide_docx', projekt_id=projekt.id,
+                        filename=dateinamen.entscheide) }}">
+      &#9654; Liste Projektentscheide Steuerung (.docx)</a>
+    {% endif %}
+    {% if not freigegeben and current_user.can_write %}
+    {# Der Rueckweg: in Word bearbeiten, hier wieder hereingeben. Uebernommen
+       werden Bewertung, Erlaeuterung, Verantwortlich und Datum - die Fragen
+       selbst bleiben, wie sie sind. #}
+    <p class="muted freigabe-rueckweg">Sie können die Checkliste in Word
+      ausfüllen und hier wieder hereingeben. Übernommen werden Bewertung,
+      Erläuterung, Verantwortlich und Datum – die Prüfpunkte selbst bleiben
+      unverändert.</p>
+    <label class="btn-link upload-label">
+      Bearbeitete Checkliste hochladen (.docx)
+      <input type="file" accept=".docx" class="upload-input"
+             data-url="{{ url_for('ui.freigabe_checkliste_upload', projekt_id=projekt.id) }}">
+    </label>
+    {% endif %}
+    {% if current_user.can_write %}
+    {# Derselbe Weg wie beim Auftrag: die geprueften Fassungen werden ABGELEGT,
+       nicht in Einzelteile zerlegt. Sie sind Nachweise. #}
+    <label class="btn-link upload-label">
+      Freigabeversion hochladen (.docx)
+      <input type="file" accept=".docx" class="upload-input"
+             data-url="{{ url_for('ui.freigabe_checkliste_upload', projekt_id=projekt.id) }}?art=freigabe">
+    </label>
+    <label class="btn-link upload-label">
+      Freigegebene Fassung hochladen (.docx)
+      <input type="file" accept=".docx" class="upload-input"
+             data-url="{{ url_for('ui.freigabe_checkliste_upload', projekt_id=projekt.id) }}?art=freigegeben">
+    </label>
+    {% endif %}
+    <div id="upload-status" class="muted upload-status"></div>
+
+    {% if fassungen %}
+    <table class="freigabe-tabelle fassungen-tabelle">
+      <thead><tr><th>Art</th><th>Version</th><th>Datei</th><th>Abgelegt</th></tr></thead>
+      <tbody>
+      {% for f in fassungen %}
+        <tr>
+          <td>{{ 'freigegeben' if f.art == 'freigegeben' else 'zur Freigabe' }}</td>
+          <td class="freigabe-nr">{{ f.doc_version or '–' }}</td>
+          <td><a class="btn-link"
+                 href="{{ url_for('ui.freigabe_fassung_download', projekt_id=projekt.id,
+                                  fassung_id=f.id, filename=f.filename) }}">{{ f.filename }}</a></td>
+          <td class="muted">{{ f.erstellt_am.strftime('%d.%m.%Y %H:%M') if f.erstellt_am }}
+            {%- if f.hochgeladen_durch %} · {{ f.hochgeladen_durch }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  {# ---- Änderungskontrolle ---- #}
+  <section class="freigabe-kapitel">
+    <h2>Änderungskontrolle</h2>
+    {% set stand = versionsstand %}
+    {% if stand.changelog %}
+    <table class="freigabe-tabelle">
+      <thead><tr><th>Version</th><th>Name</th><th>Datum</th><th>Bemerkungen</th></tr></thead>
+      <tbody>
+      {% for e in stand.changelog %}
+        <tr><td class="freigabe-nr">{{ e.version }}</td><td>{{ e.name }}</td>
+            <td>{{ e.datum }}</td><td>{{ e.bemerkungen }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Version {{ checkliste.doc_version or '0.1' }} ist der erste
+      Entwurf – es gibt noch nichts zu protokollieren. Sobald Sie eine neue
+      Version anlegen, steht hier, was sich wann geändert hat.</p>
+    {% endif %}
+
+    {% if current_user.can_write %}
+    <form method="post" action="{{ url_for('ui.freigabe_neue_version', projekt_id=projekt.id) }}">
+      {% if stand.changed_sections %}
+      <p class="muted">Geändert seit der letzten Ausgabe:
+        {{ stand.changed_sections | map(attribute='number') | join(', ') }}.</p>
+      {% else %}
+      <p class="muted">Seit der letzten Ausgabe hat sich am Inhalt nichts
+        geändert. Eine neue Version können Sie trotzdem anlegen, wenn etwas
+        ausserhalb des Dokuments dafür spricht.</p>
+      {% endif %}
+      <label class="vb-label" for="bemerkungen">Bemerkungen (erscheinen in der
+        Änderungskontrolle):</label>
+      <textarea id="bemerkungen" name="bemerkungen" rows="2"
+                class="vb-textarea">{% if stand.changed_sections %}Kapitel {{ stand.changed_sections | map(attribute='number') | join(', ') }} angepasst.{% endif %}</textarea>
+      <button type="submit" class="btn-link">Neue Version anlegen</button>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if entscheide %}
+  <section class="freigabe-kapitel">
+    <h2>Liste Projektentscheide Steuerung</h2>
+    <table class="freigabe-tabelle">
+      <thead><tr><th>Nr.</th><th>Entscheid</th><th>Grundlagen</th>
+        <th>Entscheidungsträger</th><th>Datum</th></tr></thead>
+      <tbody>
+      {% for e in entscheide %}
+        <tr>
+          <td class="freigabe-nr">{{ e.nr }}</td>
+          <td>{{ e.entscheid }}</td>
+          <td>{{ e.grundlagen.replace('\n', ' · ') if e.grundlagen }}</td>
+          <td>{{ e.entscheidungstraeger }}</td>
+          <td>{{ e.entscheidungsdatum }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% endif %}
+</div>
+
+<script>
+// Erlaeuterungsfelder wachsen mit ihrem Inhalt. Gemessen im Handbuch: die
+// Begruendung von HERMES PIA ist regelmaessig laenger als zwei Zeilen, und
+// gerade sie ist das Wertvollste an der Zeile - abgeschnitten nuetzt sie
+// niemandem. Ohne Skript bleibt die Mindesthoehe aus dem Stylesheet.
+(function () {
+  function anpassen(feld) {
+    feld.style.height = 'auto';
+    feld.style.height = (feld.scrollHeight + 2) + 'px';
+  }
+  document.querySelectorAll('textarea.mitwachsend').forEach(function (feld) {
+    anpassen(feld);
+    feld.addEventListener('input', function () { anpassen(feld); });
+  });
+})();
+</script>
+
+<script>
+// Transportweg wie ueberall: Base64-JSON, weil der Hosting-Proxy binaere
+// POST-Bodies verschluckt.
+(function () {
+  var statusEl = document.getElementById('upload-status');
+  function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+  document.querySelectorAll('.upload-input').forEach(function (input) {
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      setStatus('Lade «' + file.name + '» hoch …');
+      var fr = new FileReader();
+      fr.onerror = function () {
+        setStatus('Die Datei liess sich nicht lesen. Prüfen Sie, ob sie noch in '
+                + 'einem anderen Programm geöffnet ist, und wählen Sie sie erneut aus.');
+      };
+      fr.onload = function () {
+        fetch(input.dataset.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name,
+                                 data: String(fr.result).split(',')[1] || '' })
+        })
+        .then(function (r) { return r.text().then(function (t) {
+          var d = {}; try { d = JSON.parse(t); } catch (e) {}
+          return { ok: r.ok, d: d };
+        }); })
+        .then(function (res) {
+          if (res.ok) { location.reload(); }
+          else { setStatus((res.d.error || 'Die Datei wurde nicht angenommen.')
+                         + ' Wählen Sie sie erneut aus oder laden Sie die Seite neu.'); }
+        })
+        .catch(function () {
+          setStatus('Die Verbindung zum Server brach ab. Ihre Datei wurde nicht '
+                  + 'gespeichert – versuchen Sie es gleich noch einmal.');
+        });
+      };
+      fr.readAsDataURL(file);
+    });
+  });
+})();
+</script>
+
+{% if auto_download %}
+{# Der Entscheid ist gefallen - das Dokument ist sein Beleg. Es wird bezogen,
+   ohne die Seite zu verlassen (Anhang, keine Navigation). #}
+<script>
+  window.addEventListener('load', function () {
+    window.location.href = {{ auto_download | tojson }};
+  });
+</script>
+{% endif %}
+{% endblock %}

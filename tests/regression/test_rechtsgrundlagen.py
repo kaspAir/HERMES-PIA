@@ -57,7 +57,9 @@ def test_seeding_ohne_llm_uebernimmt_pia_gesetze():
     # 0.4 Definitionen: enthält die Kürzel der genannten Gesetze
     abk = [r["abkuerzung"] for r in answers["definitionen"]["extracted"]]
     assert "StPO" in abk and "PrHG" in abk
-    assert answers["konsequenzen"]["extracted"]["text"] == ""
+    # Frueher: leerer Text. Ein leeres Pflichtkapitel liest sich aber wie
+    # «geprueft und unbedenklich» - jetzt sagt es, dass es fehlt.
+    assert "nicht beurteilt" in answers["konsequenzen"]["extracted"]["text"]
 
 
 def test_datenschutz_und_ebene_filter():
@@ -221,7 +223,10 @@ def test_llm_entdeckt_zusaetzliches_gesetz_und_weist_keine_luecke_aus():
     namen = [r["rechtsgrundlage"] for r in answers["bestehende_rechtsgrundlagen"]["extracted"]]
     assert "Strafregistergesetz (StReG)" in namen          # vom LLM selbst gefunden (nicht im PIA)
     luecken = answers["identifizierte_luecken"]["extracted"]
-    assert luecken and "Keine Lücke" in luecken[0]["luecke"]  # explizit ausgewiesen
+    # Frueher: «Keine Lücke identifiziert» samt Behauptung, es bestehe eine
+    # Rechtsgrundlage. Diese Analyse prueft die Ziele aber nicht einzeln - sie
+    # darf deshalb keine Entwarnung geben.
+    assert luecken and luecken[0]["luecke"] == "Nicht abschliessend geprüft"
 
 
 def test_betriebskonzept_ist_keine_rechtsgrundlage():
@@ -283,3 +288,108 @@ def test_kein_kantonslink_ohne_kantonsebene():
     # Kein Kantonslink, wenn Kantonsebene nicht gewählt (kantonales Gesetz zudem gefiltert)
     ref = answers["referenzierte_dokumente"]["extracted"]
     assert all("Kantonale Sammlung" not in r["link"] for r in ref)
+
+
+# ---- Leere Kapitel sagen, WARUM sie leer sind ---------------------------- #
+
+def _svc():
+    from app.domains.ergebnisse.rechtsgrundlagen.service import RechtsgrundlagenService
+    return RechtsgrundlagenService.__new__(RechtsgrundlagenService)
+
+
+def test_leeres_kapitel_liefert_nie_eine_leere_zeile():
+    """Gemessen an einer echten Analyse (Testprojekt 17): «Bevorstehende
+    Änderungen» und «Vorschläge zur Deckung» enthielten eine Zeile mit der
+    Nummer «01» und sonst nichts. Die Vorlage nummeriert die Zeile – für den
+    Leser sieht das aus, als sei die Erzeugung abgebrochen."""
+    svc = _svc()
+    zeilen = svc._rows_or_blank(None, ("rechtsgrundlage", "beschreibung", "auswirkung"),
+                                "bevorstehende_aenderungen")
+    assert len(zeilen) == 1
+    assert zeilen[0]["rechtsgrundlage"].startswith("Keine bevorstehende")
+    assert zeilen[0]["beschreibung"]
+    # Geprüft-und-nichts-gefunden darf nicht wie Entwarnung klingen.
+    assert "nicht ausgeschlossen" in zeilen[0]["beschreibung"]
+
+
+def test_product_compliance_leer_wird_benannt():
+    svc = _svc()
+    z = svc._rows_or_blank([], ("compliance", "beschreibung"), "product_compliance")
+    assert z[0]["compliance"] == "Kein Hinweis identifiziert"
+    assert z[0]["beschreibung"]
+
+
+def test_ohne_luecke_entfaellt_die_deckung():
+    """Ohne Lücke gibt es nichts zu decken – das ist ein Ergebnis, kein Ausfall."""
+    svc = _svc()
+    luecken = [{"luecke": "Keine Lücke identifiziert", "beschreibung": "…"}]
+    z = svc._deckungsvorschlaege(None, luecken)
+    assert z[0]["luecke"] == "Entfällt"
+    assert "keine Lücken" in z[0]["vorschlag"]
+
+
+def test_luecke_ohne_vorschlag_bleibt_sichtbar_offen():
+    """Gibt es eine Lücke, aber keinen Vorschlag, ist die Frage OFFEN – und muss
+    so dastehen. Eine leere Zeile liesse «geprüft» und «unbeantwortet» gleich
+    aussehen."""
+    svc = _svc()
+    luecken = [{"luecke": "Keine Grundlage für die Bekanntgabe an Dritte",
+                "beschreibung": "…"}]
+    z = svc._deckungsvorschlaege([], luecken)
+    assert len(z) == 1
+    assert z[0]["luecke"].startswith("Keine Grundlage")
+    assert z[0]["vorschlag"].startswith("Offen")
+
+
+def test_vorhandene_vorschlaege_bleiben_unangetastet():
+    svc = _svc()
+    echte = [{"luecke": "L", "vorschlag": "Verordnung anpassen"}]
+    assert svc._deckungsvorschlaege(echte, []) == echte
+
+
+# ---- Keine unverdiente Entwarnung ---------------------------------------- #
+
+def test_verfassung_und_emrk_sind_keine_ermaechtigungsgrundlage():
+    """Gemessen (BKI Test 6, biometrische Massenüberwachung): BV und EMRK
+    standen als «Bestehende Rechtsgrundlage» Nr. 01 und 02. Das ist eine
+    Umkehrung – sie sind die SCHRANKE des Eingriffs, nicht seine Ermächtigung.
+    Ein Dokument, das sie so aufführt, liest sich wie eine Erlaubnis."""
+    svc = _svc()
+    for name in ("Bundesverfassung der Schweizerischen Eidgenossenschaft (BV)",
+                 "Europäische Menschenrechtskonvention (EMRK)",
+                 "Kantonsverfassung des Kantons St. Gallen"):
+        assert svc._ist_schrankennorm(name), name
+        assert not svc._kap1_geeignet(name, "Bund und Kanton")
+    # Ein echtes Ermächtigungsgesetz bleibt unberührt.
+    assert not svc._ist_schrankennorm("Polizeigesetz des Kantons St. Gallen")
+
+
+def test_schrankennorm_als_grundlage_wird_zur_luecke():
+    """Sie darf nicht still verschwinden: dass nur Schrankennormen genannt
+    wurden, IST der Befund – es wurde keine Ermächtigung gefunden."""
+    svc = _svc()
+    rows = svc._luecken(None, ["Europäische Menschenrechtskonvention (EMRK)"])
+    assert len(rows) == 1
+    assert "Keine Ermächtigungsgrundlage" in rows[0]["luecke"]
+    assert "Art. 36 Abs. 1 BV" in rows[0]["beschreibung"]
+
+
+def test_ohne_befund_keine_behauptung_einer_rechtsgrundlage():
+    """Der alte Satz «Für die im Projekt geplanten Tätigkeiten besteht nach
+    dieser Analyse eine Rechtsgrundlage» war eine nie geprüfte Behauptung –
+    und stand über einem Vorhaben zur Massenüberwachung."""
+    svc = _svc()
+    rows = svc._luecken(None)
+    assert rows[0]["luecke"] == "Nicht abschliessend geprüft"
+    text = rows[0]["beschreibung"]
+    assert "besteht" not in text.split("darf")[0] or "nicht" in text
+    assert "nicht geschlossen werden" in text
+    assert "je Projektziel" in text
+
+
+def test_pflichtkapitel_bleiben_nie_wortlos():
+    """Im gemessenen Lauf waren «Beurteilung der Konsequenzen» und
+    «Empfehlung» vollständig leer – das Dokument sah abgeschlossen aus."""
+    svc = _svc()
+    assert "nicht freigabefähig" in svc._pflichttext("", "x ist nicht freigabefähig")
+    assert svc._pflichttext("Echte Beurteilung.", "ersatz") == "Echte Beurteilung."

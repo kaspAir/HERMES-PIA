@@ -364,7 +364,14 @@ class InterviewService:
         for section in self._interviewable_sections(method):
             sid = section.get("id")
             entry = answers.get(sid)
-            if not isinstance(entry, dict) or self._is_empty(entry.get("extracted")):
+            if not isinstance(entry, dict):
+                continue
+            # Ein LEERER Tabellenabschnitt wird NICHT uebersprungen: gerade dort
+            # muessen die verbindlichen HERMES-Zeilen nachgetragen werden
+            # (Pflichtrollen in Kap. 3.1, Pflichtzeilen in Kap. 0.5). Wer hier
+            # weitergeht, laesst das Dokument genau da unvollstaendig, wo die
+            # Methode am meisten vorschreibt.
+            if self._is_empty(entry.get("extracted")) and section.get("type") != "table":
                 continue
             # Termine: Datteln verwerfen und mit Dauer/Komplexität neu setzen –
             # sonst greift die genannte Phasendauer nicht auf bestehende Termine.
@@ -538,8 +545,19 @@ class InterviewService:
         """
         sid = section.get("id")
         rows = section_answer.get("extracted")
+        # Bei einem TABELLEN-Abschnitt ist eine fehlende oder unbrauchbare
+        # Extraktion eine LEERE Tabelle – kein Grund, die deterministischen
+        # HERMES-Korrekturen zu überspringen. Genau daran fehlten in Kap. 3.1
+        # die Pflichtrollen: lieferte das Modell keine Liste, lief
+        # `_ensure_base_roles` nie, und Kap. 5 erbte den Mangel, weil es aus
+        # 3.1 abgeleitet wird. Was HERMES verbindlich vorgibt, darf nicht
+        # davon abhängen, ob ein Modell etwas extrahiert hat.
+        if not isinstance(rows, list) and section.get("type") == "table":
+            rows = []
+            section_answer["extracted"] = rows
         if not isinstance(rows, list):
             return
+        self._ensure_pflichtzeilen(section, rows)
         if sid in ("referenzierte_dokumente", "mitgeltende_unterlagen"):
             # Niemals Fundstellen/Nummern erfinden: SR-/kantonale Nummern kennt das LLM nicht
             # zuverlässig. Spalte 'Nummer/Link' deterministisch leeren – nur der Name bleibt.
@@ -688,6 +706,32 @@ class InterviewService:
         s_ext = emit(extern_items, "Summe externe Kosten")
         out.append({"phase": "Total Initialisierung", "betrag": str(s_int + s_ext)})
         return out
+
+    @staticmethod
+    def _ensure_pflichtzeilen(section, rows):
+        """Zeilen, die die Methode verbindlich vorgibt, sicherstellen.
+
+        Welche das sind, steht in `method.yaml` (`pflichtzeilen`) – der Code
+        weiss nichts über ihren Inhalt. Erkannt wird eine Zeile am Wert der
+        ERSTEN Spalte; ist sie schon da, bleibt sie unangetastet, denn was der
+        Projektleiter gesagt hat, schlägt die Vorgabe.
+        """
+        pflicht = section.get("pflichtzeilen") or []
+        if not pflicht:
+            return
+        spalten = section.get("columns") or []
+        if not spalten:
+            return
+        schluessel = spalten[0].get("id")
+
+        def vorhanden(wert):
+            return any(str(r.get(schluessel, "")).strip().lower() == wert.lower()
+                       for r in rows if isinstance(r, dict))
+
+        for zeile in pflicht:
+            wert = str(zeile.get(schluessel, "")).strip()
+            if wert and not vorhanden(wert):
+                rows.append(dict(zeile))
 
     @staticmethod
     def _ensure_base_roles(rows):
@@ -895,13 +939,19 @@ class InterviewService:
     # Nachweis / Herkunft der Angaben (Transparenz-Anhang)                 #
     # ------------------------------------------------------------------ #
 
-    def build_nachweis(self, session, answers):
+    def build_nachweis(self, session, answers, mit_llm=True):
         """Erstellt je Abschnitt einen Herkunfts-/Begruendungseintrag.
 
         Herkunft wird deterministisch aus dem Entstehungsweg abgeleitet (vom
         Projektleiter diktiert vs. von HERMES PIA generiert/ergaenzt), die
         Begruendung per LLM formuliert (mit deterministischem Fallback).
         Rueckgabe: [{"abschnitt", "herkunft", "begruendung"}].
+
+        `mit_llm=False` laesst den Modellaufruf weg und nutzt nur die
+        deterministischen Begruendungen. Fuer das DOKUMENT ist die
+        ausformulierte Fassung richtig; als EVIDENZ in der Pruefung ist die
+        deterministische sogar die bessere - sie ist belegbar statt formuliert,
+        und der Schritt braucht keine Modellzeit.
         """
         entries = []
         for s in self._effective_method(session).get("sections", []):
@@ -930,8 +980,9 @@ class InterviewService:
                 "inhalt": self._inhalt_summary(extracted),
             })
 
-        context = self._suggestion_context(session, answers)
-        begr = nachweis_begruendungen(self.llm, entries, context) if self.llm else {}
+        context = self._suggestion_context(session, answers) if mit_llm else ""
+        begr = (nachweis_begruendungen(self.llm, entries, context)
+                if (self.llm and mit_llm) else {})
 
         result = []
         for e in entries:
@@ -1757,20 +1808,7 @@ def _assign_termine_dates(rows, start_datum_str, factor=1.0, ziel_wochen=None):
 
 
 def _bump_version(version_str, bump_type):
-    """
-    bump_type: 'minor' (+0.1) oder 'patch' (+0.0.1)
-    '0.1' + minor = '0.2'
-    '0.1' + patch = '0.1.1'
-    '0.1.1' + minor = '0.2'
-    """
-    parts = [int(p) for p in str(version_str).split('.')]
-    while len(parts) < 3:
-        parts.append(0)
-    if bump_type == 'minor':
-        parts[1] += 1
-        parts[2] = 0
-    else:
-        parts[2] += 1
-    if parts[2] == 0:
-        return f"{parts[0]}.{parts[1]}"
-    return f"{parts[0]}.{parts[1]}.{parts[2]}"
+    """Die Zaehlweise liegt im geteilten Baustein – EINE Rechenweise fuer alle
+    Ergebnisse, nicht eine je Dokument."""
+    from app.shared.versionierung import naechste_version
+    return naechste_version(version_str, bump_type)

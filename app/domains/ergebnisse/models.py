@@ -26,5 +26,14 @@ class ErgebnisEntwurf(Base):
     ebene = Column(String(40), nullable=True)          # 'bund' | 'kanton' | 'kommune' (CSV möglich)
     kanton = Column(String(60), nullable=True)
     answers_json = Column(Text, nullable=True)
+    # Laufzustand der vierschichtigen Kette. Sie braucht mehrere Modellaufrufe
+    # und laeuft deshalb schrittweise - ein Aufruf je Schicht, fortsetzbar.
+    lauf_status = Column(String(20), nullable=True)     # laufend | fertig
+    lauf_schritt = Column(Integer, default=0)
+    lauf_json = Column(Text, nullable=True)
+    # Versionierung – derselbe Vertrag wie beim PIA, damit der geteilte
+    # Baustein app/shared/versionierung.py beide bedienen kann.
     doc_version = Column(String(20), default="0.1")
+    changelog_json = Column(Text, default="[]")
+    last_snapshot_json = Column(Text, default="{}")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
