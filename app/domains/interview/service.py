@@ -1152,8 +1152,20 @@ class InterviewService:
     # Interne Hilfsmethoden                                                #
     # ------------------------------------------------------------------ #
 
-    def _interviewable_sections(self, method):
+    def befragbare_abschnitte(self, method):
+        """Die Abschnitte, durch die das Gespräch führt.
+
+        Öffentlich, weil es ausserhalb gebraucht wird: die Startseite rechnet
+        daraus «Etappe x von y» und die geschätzte Dauer. Vorher stand dort
+        eine ZWEITE, von Hand geschriebene Liste — sie kannte den Typ
+        `free_text` nicht, zählte 13 statt 14 Abschnitte und hielt die
+        Ausgangslage für nicht beantwortbar. Die Karte meldete deshalb «13 von
+        13 offen», obwohl der erste Abschnitt erfasst war.
+        """
         return [s for s in method.get("sections", []) if s.get("type") in _INTERVIEWABLE]
+
+    def _interviewable_sections(self, method):
+        return self.befragbare_abschnitte(method)
 
     def _answers(self, session):
         return json.loads(session.answers_json or "{}")
