@@ -108,6 +108,13 @@ DATUM_PLATZHALTER = "tt.mm.jjjj"
 LEERZEILE = "…"                  # nur als ALLEINIGER Zellinhalt ein Befund
 
 # ---- Nicht-HERMES-Begriffe (D-005) --------------------------------------- #
+# Begriffe, die NUR in einem Dokument der Initialisierung falsch sind. Die
+# Liste Projektentscheide Steuerung fuehrt bewusst das ganze Projekt auf - in
+# der Konzept- und Realisierungsphase ist ein Phasenbericht ein richtiges
+# HERMES-Ergebnis. Die Regel document-weit anzuwenden hiess, einer Vorlage
+# einen Fehler vorzuwerfen, den sie nicht macht.
+NUR_INITIALISIERUNG = ("phasenbericht",)
+
 NICHT_HERMES = {
     "steuerungsausschuss": "Projektausschuss",
     "lenkungsausschuss": "Projektausschuss",

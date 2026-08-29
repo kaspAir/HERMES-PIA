@@ -33,7 +33,13 @@ ENTSCHEIDE_VORLAGE = VORLAGEN / "liste_projektentscheide_steuerung.docx"
 
 # Platzhalter, die die Vorlage mitbringt und die im fertigen Dokument nichts
 # verloren haben. Der erste ist ein Datum, der zweite eine Auslassung.
-_PLATZHALTER = re.compile(r"^(tt\.mm\.jjjj|…|\.\.\.|#)$")
+# «Auswählen» ist der Vorgabewert der Auswahlfelder der Vorlage. Er bleibt
+# stehen, wo niemand bewertet hat - und sieht dann aus wie eine Angabe, obwohl
+# er das Gegenteil ist. Gemessen an einer erzeugten Checkliste stand er in
+# sechs Zeilen der Kapitel 1.2 und 1.3. Leer ist ehrlicher: die Freigabe wertet
+# eine leere Bewertung ohnehin als offenen Punkt, ein «Auswählen» dagegen
+# haette sie als Text durchgehen lassen.
+_PLATZHALTER = re.compile(r"^(tt\.mm\.jjjj|…|\.\.\.|#|Auswählen|Auswaehlen)$")
 
 W_TR = f"{{{W}}}tr"
 

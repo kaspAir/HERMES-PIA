@@ -48,10 +48,34 @@ def zellen(tr):
     return out
 
 
+def _tabellenueberschriften(dok):
+    """{Tabellen-Element: letzte Überschrift davor} – der fehlende Zusammenhang.
+
+    Die Vorlage führt drei gleich gebaute Tabellen untereinander:
+    Änderungskontrolle, Prüfung, Freigabe. In der Zeile selbst steht nur
+    «0.1 | | tt.mm.jjjj» – welche der drei es ist, sagt allein die Überschrift
+    DARÜBER. Ohne diesen Bezug traf die Ausnahme für Prüf- und Freigabezeilen
+    nie, und der Platzhalter «tt.mm.jjjj» wurde dort als Muss gemeldet, wo er
+    hingehört: beide Tabellen werden erst bei der Prüfung bzw. der Freigabe
+    ausgefüllt.
+    """
+    zuordnung, letzte = {}, ""
+    for kind in dok.element.body.iterchildren():
+        if kind.tag == f"{_W}p":
+            text = "".join(t.text or "" for t in kind.iter(f"{_W}t")).strip()
+            if text:
+                letzte = text
+        elif kind.tag == f"{_W}tbl":
+            zuordnung[kind] = letzte
+    return zuordnung
+
+
 def _tabellenzeilen(dok):
+    ueber = _tabellenueberschriften(dok)
     for tabelle in dok.tables:
+        titel = ueber.get(tabelle._tbl, "")
         for tr in tabelle._tbl.iter(f"{_W}tr"):
-            yield tabelle, tr
+            yield tabelle, tr, titel
 
 
 def _alle_absaetze(dok):
@@ -77,13 +101,19 @@ def _ist_freigabezeile(zeilentext):
     return any(w in t for w in ("prüfung", "pruefung", "freigabe", "geprüft", "genehmigt"))
 
 
-def pruefe_dokument(dok, standardtext=None):
-    """Alle Dok-Regeln über ein python-docx-Document. Liste von Befunden."""
+def pruefe_dokument(dok, standardtext=None, phasenuebergreifend=False):
+    """Alle Dok-Regeln über ein python-docx-Document. Liste von Befunden.
+
+    ``phasenuebergreifend``: das Dokument betrifft nicht nur die
+    Initialisierung (z.B. die Liste Projektentscheide Steuerung, die das
+    ganze Projekt fuehrt). Dann entfallen die Begriffsregeln, die allein
+    fuer die Initialisierung gelten.
+    """
     befunde = []
     befunde += list(_d003_platzhalter(dok))
     befunde += list(_d011_leere_platzhalterzeile(dok))
     befunde += list(_d004_hilfetexte(dok))
-    befunde += list(_d005_nicht_hermes_begriffe(dok))
+    befunde += list(_d005_nicht_hermes_begriffe(dok, phasenuebergreifend))
     befunde += list(_d081_freigabe_nicht_vorausgefuellt(dok))
     if standardtext:
         befunde += list(_d020_standardtext_unveraendert(dok, standardtext))
@@ -94,8 +124,11 @@ def pruefe_dokument(dok, standardtext=None):
 
 def _d003_platzhalter(dok):
     gemeldet = set()
-    for tabelle, tr in _tabellenzeilen(dok):
-        zeile = " ".join(zellstext(tc) for tc in zellen(tr))
+    for _tabelle, tr, ueberschrift in _tabellenzeilen(dok):
+        # Die Ueberschrift gehoert zum Zeilenkontext: sie sagt, ob dies die
+        # Aenderungskontrolle ist (Datum PFLICHT) oder die Pruef-/Freigabe-
+        # tabelle (Datum kommt spaeter).
+        zeile = " ".join(zellstext(tc) for tc in zellen(tr)) + " " + ueberschrift
         for tc in zellen(tr):
             text = zellstext(tc)
             klein = text.lower()
@@ -174,8 +207,10 @@ def _d004_hilfetexte(dok):
 
 # ---- D-005 --------------------------------------------------------------- #
 
-def _d005_nicht_hermes_begriffe(dok):
+def _d005_nicht_hermes_begriffe(dok, phasenuebergreifend=False):
     gemeldet = set()
+    if phasenuebergreifend:
+        gemeldet.update(K.NUR_INITIALISIERUNG)
     for p in _alle_absaetze(dok):
         text = "".join(t.text or "" for t in p.iter(f"{_W}t")).lower()
         for begriff, ersatz in K.NICHT_HERMES.items():

@@ -165,6 +165,68 @@ def d002_kosten_aus_aufwand_herleitbar(ctx):
                      "Kap. 3.3")
 
 
+@regel("D-007", MUSS)
+def d007_personalkosten_haben_eine_grundlage(ctx):
+    """Jede Personalkosten-Zeile in Kap. 3.3 braucht ihre Rolle in Kap. 3.1.
+
+    D-002 prueft, ob die Kosten zum Aufwand PASSEN - und steigt aus, sobald
+    Kap. 3.1 keine Personentage traegt (`not aufwand`). Dann fehlt der
+    Massstab, und genau das ist die gefaehrlichste Lage: gemessen an einem
+    echten Auftrag wies Kap. 3.3 74'000 CHF interne Personalkosten fuer
+    Projektleiter, Auftraggeber, ISDS und Anwendervertretung aus, waehrend
+    Kap. 3.1 EINE Zeile ohne Namen und ohne Personentage enthielt. Beide
+    Kapitel fuer sich sahen plausibel aus; nur zusammen ergaben sie Kosten
+    ohne Grundlage.
+
+    D-002 meldet zudem nur Unterdeckung. Diese Regel schliesst die andere
+    Richtung: Kosten, denen ueberhaupt kein Aufwand gegenuebersteht.
+    """
+    kosten = _zeilen(ctx, "kosten")
+    if not kosten:
+        return
+    rollen = set(_rollen_pt(ctx))
+    for r in kosten:
+        if not isinstance(r, dict):
+            continue
+        bezeichnung = str(r.get("phase", "")).strip()
+        klein = bezeichnung.lower()
+        # Nur PERSONAL-Zeilen; Sachmittel und Summen sind hier nicht gemeint.
+        if not K.enthaelt(klein, ("personalkosten", "fachexpertise", "personal")):
+            continue
+        if K.enthaelt(klein, ("total", "summe", "gesamt", "zwischen")):
+            continue
+        # Traegt Kap. 3.1 eine Rolle, deren Name in dieser Zeile vorkommt?
+        if any(rolle and rolle.split("/")[0].strip() in klein for rolle in rollen):
+            continue
+        yield Befund("D-007", MUSS, DATEN,
+                     f"«{bezeichnung}» steht in Kap. 3.3, aber Kap. 3.1 weist "
+                     f"für diese Rolle keinen Aufwand aus. Kosten ohne "
+                     f"Personentage sind nicht hergeleitet, sondern gesetzt.",
+                     "Kap. 3.1 / Kap. 3.3")
+
+
+@regel("D-063", MUSS)
+def d063_monatsverteilung_vorhanden(ctx):
+    """Traegt Kap. 3.1 Personentage, braucht Kap. 5 eine Verteilung.
+
+    D-001 vergleicht die beiden Kapitel - aber nur, wo BEIDE etwas sagen. Ist
+    Kap. 5 ganz leer, vergleicht sie nichts und schweigt. Gemessen an einem
+    echten Auftrag stand dort nur die Ueberschrift, ohne Tabelle.
+    """
+    aufwand = _rollen_pt(ctx)
+    if not aufwand:
+        return
+    verteilung = _zeilen(ctx, "projektorganisation")
+    if verteilung is None:
+        return                      # Kapitel nicht bearbeitet - D-040 sagt das
+    if not [r for r in verteilung
+            if isinstance(r, dict) and str(r.get("rolle_person", "")).strip()]:
+        yield Befund("D-063", MUSS, DATEN,
+                     f"Kap. 3.1 weist {len(aufwand)} Rolle(n) mit Personentagen "
+                     f"aus, Kap. 5 enthält keine Monatsverteilung. Der Aufwand "
+                     f"ist damit nicht planbar.", "Kap. 5")
+
+
 @regel("D-006", MUSS)
 def d006_ergebniszeilen_sind_benannte_ergebnisse(ctx):
     """Jede Zeile bezeichnet ein HERMES-Ergebnis oder ist als projektspezifisch

@@ -780,6 +780,52 @@ def _freigabe_dateinamen(projekt):
     }
 
 
+# ---- Das Qualitaetstor vor JEDEM erzeugten Dokument -------------------- #
+#
+# Es stand lange nur vor dem Projektinitialisierungsauftrag. Rechtsgrundlagen-
+# analyse, Checkliste und Liste Projektentscheide gingen ungeprueft hinaus -
+# gemessen an einem echten Lauf trugen alle drei den Datums-Platzhalter
+# «tt.mm.jjjj», die Liste zusaetzlich den Begriff «Phasenbericht», den es in
+# HERMES 2022 nicht gibt. Ein Tor vor einem von vier Dokumenten ist keines.
+
+def _dokumentbefunde(puffer, phasenuebergreifend=False):
+    """Die Regeln der Ebene «Dok» ueber einem erzeugten Dokument.
+
+    Verbraucht den Puffer NICHT: er wird danach noch ausgeliefert.
+    """
+    from docx import Document
+    from app.domains.qualitaet.dokument import pruefe_dokument
+    try:
+        puffer.seek(0)
+        dokument = Document(puffer)
+    except Exception:      # noqa: BLE001 – ein unlesbares Dokument ist kein Befund
+        return []
+    finally:
+        puffer.seek(0)
+    try:
+        return pruefe_dokument(dokument, phasenuebergreifend=phasenuebergreifend)
+    except Exception:      # noqa: BLE001 – die Pruefung darf die Ausgabe nicht kippen
+        current_app.logger.exception("Dokumentpruefung fehlgeschlagen")
+        return []
+
+
+def _gesperrt(puffer, titel, zurueck_url, trotzdem_url,
+              phasenuebergreifend=False):
+    """Antwort der Sperrseite – oder None, wenn ausgeliefert werden darf."""
+    from app.domains.qualitaet.modell import MUSS
+
+    if request.args.get("trotzdem"):
+        return None
+    befunde = _dokumentbefunde(puffer, phasenuebergreifend)
+    muss = [b for b in befunde if b.gewicht == MUSS]
+    if not muss:
+        return None
+    return render_template("dokument_blockiert.html", titel=titel, muss=muss,
+                           weitere=[b for b in befunde if b.gewicht != MUSS],
+                           zurueck_url=zurueck_url,
+                           trotzdem_url=trotzdem_url), 409
+
+
 @bp.get("/projekt/<int:projekt_id>/freigabe/checkliste/<path:filename>")
 @permission_required("read")
 def freigabe_checkliste_docx(projekt_id, filename):
@@ -810,6 +856,13 @@ def freigabe_checkliste_docx(projekt_id, filename):
     puffer = dokumente.checkliste_docx(svc.zeilen(checkliste), kopf=kopf,
                                        angaben=angaben, abschnitte=abschnitte,
                                        wissen=wissen)
+    sperre = _gesperrt(
+        puffer, "Die Checkliste Projektinitialisierungsfreigabe",
+        url_for("ui.freigabe", projekt_id=projekt.id),
+        url_for("ui.freigabe_checkliste_docx", projekt_id=projekt.id,
+                filename=filename, trotzdem=1))
+    if sperre is not None:
+        return sperre
     return send_file(puffer, mimetype=DOCX_MIME, as_attachment=True,
                      download_name=filename)
 
@@ -827,6 +880,16 @@ def freigabe_entscheide_docx(projekt_id, filename):
         version="0.1", status="in Arbeit", datum=f"{date.today():%d.%m.%Y}")
     puffer = dokumente.entscheide_docx(svc.entscheide(projekt.id), angaben=angaben,
                                        abschnitte=abschnitte, wissen=wissen)
+    sperre = _gesperrt(
+        puffer, "Die Liste Projektentscheide Steuerung",
+        url_for("ui.freigabe", projekt_id=projekt.id),
+        url_for("ui.freigabe_entscheide_docx", projekt_id=projekt.id,
+                filename=filename, trotzdem=1),
+        # Dieses Register fuehrt das GANZE Projekt, nicht nur die
+        # Initialisierung - der Phasenbericht spaeterer Phasen ist dort richtig.
+        phasenuebergreifend=True)
+    if sperre is not None:
+        return sperre
     return send_file(puffer, mimetype=DOCX_MIME, as_attachment=True,
                      download_name=filename)
 
@@ -1028,6 +1091,13 @@ def rechtsgrundlagen_version_post(projekt_id):
 def rechtsgrundlagen_download(projekt_id, filename):
     projekt = _load_projekt(projekt_id)
     buf = current_app.rechtsgrundlagen_service.generate_docx(projekt)
+    sperre = _gesperrt(
+        buf, "Die Rechtsgrundlagenanalyse",
+        url_for("ui.rechtsgrundlagen", projekt_id=projekt.id),
+        url_for("ui.rechtsgrundlagen_download", projekt_id=projekt.id,
+                filename=filename, trotzdem=1))
+    if sperre is not None:
+        return sperre
     return send_file(
         buf, as_attachment=True, download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")

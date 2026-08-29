@@ -141,11 +141,69 @@ def fuelle(doc, angaben, abschnitte=None, wissen=None):
     """
     _ERZEUGER._fill_cover(doc, angaben or {})
     _ERZEUGER._fill_headers(doc, angaben or {})
+    fuelle_aenderungskontrolle(doc, angaben or {})
     if abschnitte and wissen:
         uebernimm_gemeinsame_kapitel(doc, abschnitte, wissen)
     # Zuletzt: was jetzt noch magenta oder kursiv ist, ist Regieanweisung.
     _ERZEUGER._delete_style(doc, STYLE_HELP)
     _ERZEUGER._delete_style(doc, STYLE_EXAMPLE)
+    return doc
+
+
+def fuelle_aenderungskontrolle(doc, angaben):
+    """Die erste Zeile der Änderungskontrolle – Fassung, Name, Datum.
+
+    Beim Projektinitialisierungsauftrag schreibt der Erzeuger diese Tabelle aus
+    dem Änderungsprotokoll. Die abgeleiteten Ergebnisse haben kein solches
+    Protokoll und liessen die Zeile deshalb stehen, wie die Vorlage sie bringt:
+    «0.1 | | tt.mm.jjjj». Gemessen an drei echten Dokumenten – Rechtsgrundlagen-
+    analyse, Checkliste, Liste Projektentscheide – stand dort in allen dreien
+    der Platzhalter. Eine Änderungskontrolle ohne Datum kontrolliert nichts.
+
+    Die Tabellen für Prüfung und Freigabe bleiben unangetastet: sie werden
+    erst bei Prüfung bzw. Freigabe ausgefüllt, und ihr «tt.mm.jjjj» ist dort
+    kein Mangel, sondern der richtige Zustand.
+    """
+    from app.domains.freigabe.dokumente import (
+        W_TR, _row_cells, _set_tc_text, _tc_text)
+    from app.domains.generation.service import W, _p_text, _tag
+
+    # NICHT ueber `_tabelle_nach`: das verlangt eine Ueberschriften-
+    # Formatvorlage. In den abgeleiteten Ergebnissen steht «Aenderungskontrolle»
+    # als NORMALER Absatz - der Aufruf lief still ins Leere, und der Platzhalter
+    # blieb stehen. Hier zaehlt der Text, nicht die Formatvorlage.
+    tabelle, treffer = None, False
+    for el in doc.element.body:
+        if _tag(el) == "p":
+            text = (_p_text(el) or "").strip().lower()
+            if text:
+                treffer = "nderungskontrolle" in text or "nderungsprotokoll" in text
+        elif _tag(el) == "tbl" and treffer:
+            tabelle = el
+            break
+    if tabelle is None:
+        return doc
+    from datetime import date
+
+    # Das Datum faellt NIE aus: eine Aenderungskontrolle ohne Datum kontrolliert
+    # nichts, und der Platzhalter der Vorlage bliebe stehen.
+    werte = [str(angaben.get("version") or "0.1"),
+             str(angaben.get("autor") or angaben.get("projektleiter") or ""),
+             str(angaben.get("datum") or f"{date.today():%d.%m.%Y}")]
+    for zeile in tabelle:
+        if zeile.tag != W_TR:
+            continue
+        zellen = _row_cells(zeile)
+        if len(zellen) < 3:
+            continue
+        # Die Kopfzeile nicht überschreiben.
+        if _tc_text(zellen[0]).strip().lower().startswith("version"):
+            continue
+        for zelle, wert in zip(zellen, werte):
+            # Auch ein LEERER Wert wird geschrieben: sonst bliebe der
+            # Platzhalter der Vorlage stehen und behauptete etwas.
+            _set_tc_text(zelle, wert)
+        break
     return doc
 
 

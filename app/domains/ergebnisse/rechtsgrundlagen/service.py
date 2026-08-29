@@ -5,6 +5,7 @@ speichert sie als ErgebnisEntwurf und erzeugt das Dokument über die generische
 Generierung. Der PIA bleibt unangetastet.
 """
 import json
+import os
 import logging
 import re
 
@@ -78,6 +79,46 @@ def _kernworte(name):
     """
     return frozenset(w for w in re.findall(r"[a-zäöüéèàç]{4,}", (name or "").lower())
                      if w not in _NAME_FUELLWORTE)
+
+
+# Wie viele Anfangszeichen zwei Woerter teilen muessen, damit sie als dasselbe
+# Wort in anderer Beugung gelten. Sechs ist keine Feinjustierung, sondern die
+# Kante zwischen den beiden Fehlern, die hier moeglich sind: kuerzer, und
+# «Gesetz» faende «Gesellschaft»; laenger, und «Weisung»/«Weisungen» blieben
+# getrennt - genau die Dublette, die im Dokument stand.
+_BEUGUNGSPRAEFIX = 6
+
+
+def _gleicher_erlass(a, b):
+    """Bezeichnen zwei Wortmengen denselben Erlass?
+
+    Der exakte Mengenvergleich reichte nicht: «Cloud-Richtlinie / Cloud-Weisung
+    der zustaendigen Stammorganisation» und dieselbe Zeile mit «Cloud-Weisungen»
+    standen zweimal untereinander, eine davon ohne Beschreibung. Ein Buchstabe
+    Unterschied.
+
+    Unscharf verglichen wird deshalb NUR die Beugung: die Mengen muessen gleich
+    gross sein, und jedes abweichende Wort der einen Menge braucht in der
+    anderen ein Gegenstueck mit gemeinsamem Wortanfang. «Bundesgesetz ueber das
+    Strafregister» und «Verordnung ueber das Strafregister» bleiben damit
+    getrennt - sie unterscheiden sich in einem Wort OHNE gemeinsamen Anfang.
+    """
+    if a == b:
+        return True
+    if not a or not b or len(a) != len(b):
+        return False
+    nur_a, nur_b = sorted(a - b), sorted(b - a)
+    if len(nur_a) != len(nur_b):
+        return False
+    offen = list(nur_b)
+    for wort in nur_a:
+        partner = next((w for w in offen
+                        if os.path.commonprefix([wort, w]).__len__() >= _BEUGUNGSPRAEFIX),
+                       None)
+        if partner is None:
+            return False
+        offen.remove(partner)
+    return True
 
 
 class RechtsgrundlagenService:
@@ -311,7 +352,7 @@ class RechtsgrundlagenService:
                 # «Bundesgesetz über das Strafregister» und «Verordnung über das
                 # Strafregister» bleiben damit korrekt getrennt.
                 worte = _kernworte(name)
-                if worte and worte in gesehen_worte:
+                if worte and any(_gleicher_erlass(worte, f) for f in gesehen_worte):
                     continue
                 if worte:
                     gesehen_worte.append(worte)
@@ -390,9 +431,27 @@ class RechtsgrundlagenService:
             if g:
                 ent = (g.get("entity") or "CH").upper()
                 praefix = "SR" if ent in ("CH", "") else ent
-                beschreibung = f"{g['titel']} ({praefix} {g['sr']})"
+                # DER AMTLICHE TITEL STEHT VORNE, nicht der behauptete.
+                # Gemessen an einem echten Dokument: Kap. 1 fuehrte ein
+                # «Bundesgesetz ueber die Organisation der Bundesbehoerden
+                # (Parlamentsgesetz)» - diesen Erlass gibt es nicht, das ParlG
+                # heisst «Bundesgesetz ueber die Bundesversammlung». Die
+                # Nummer SR 171.10 daneben war RICHTIG. Das ist die
+                # unangenehmere Sorte Fehler: der Beleg stimmt, deshalb faellt
+                # niemandem auf, dass der Name geraten ist. Belegt schlaegt
+                # behauptet - und wo beide auseinandergehen, wird die
+                # Abweichung genannt statt stillschweigend geglaettet.
+                amtlich = (g.get("titel") or "").strip()
+                beschreibung = f"({praefix} {g['sr']})"
                 if g.get("url"):
                     beschreibung += f" – {g['url']}"
+                if amtlich:
+                    if not _gleicher_erlass(_kernworte(amtlich), _kernworte(name)):
+                        beschreibung += (f" · Im Projektinitialisierungsauftrag "
+                                         f"genannt als «{name}»")
+                    name = amtlich
+                else:
+                    beschreibung = f"{name} {beschreibung}"
             else:
                 beschreibung = (llm_row or {}).get("beschreibung", "")
                 if kantonslink:

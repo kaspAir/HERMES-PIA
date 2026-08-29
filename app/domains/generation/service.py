@@ -791,6 +791,24 @@ class GenerationService:
                 if row.tag == W_TR and _row_style(row) == style_id:
                     tbl.remove(row)
 
+        # WAS UEBRIG BLEIBT, IST INHALT - und traegt den Stil zu Unrecht.
+        # `_row_style` liest nur die ERSTE Zelle. Eine gemischte Zeile
+        # ueberlebt damit: gemessen stand in Kapitel 0.5 «Dokumentation» im
+        # normalen Stil und «MS Office Palette gem. Vorlage» daneben im
+        # Beispielstil. Die Zeile blieb also - richtig, es ist eine Vorgabe der
+        # Vorlage und kein Beispiel -, und die Pruefung meldete D-004 «Das
+        # Kapitel wurde nicht befuellt» ueber genau diese Vorgabe. Wer den
+        # Inhalt behaelt, muss auch seinen Stil geraderuecken.
+        for p_el in body.iter(f'{{{W}}}p'):
+            if _p_style(p_el) != style_id:
+                continue
+            pPr = p_el.find(f'{{{W}}}pPr')
+            if pPr is None:
+                continue
+            ps = pPr.find(f'{{{W}}}pStyle')
+            if ps is not None:
+                pPr.remove(ps)
+
 
 # ------------------------------------------------------------------ #
 # XML-Hilfsfunktionen                                                  #
@@ -865,6 +883,17 @@ def _set_p_text(p_el, text):
     (z.B. die Komplexitätseinschätzung der Ausgangslage) als Block erscheinen.
     """
     text = _fix_hermes_terms(text or '')
+    # WER DEN INHALT SCHREIBT, BESITZT AUCH DIE FORMATVORLAGE. Das
+    # Zuruecksetzen stand bisher nur an EINER der sechs Schreibstellen -
+    # ueberall sonst blieb 'HTabBeispiel85ptF' stehen, die Beispiel-Vorlage.
+    # Fuer das Auge sah die Zelle befuellt aus; die Pruefung liest aber die
+    # FORMATVORLAGE und meldete D-004 'Das Kapitel wurde nicht befuellt'
+    # ueber befuellten Inhalt. Gemessen an einem echten PIA: '21.09.2026' und
+    # 'MS Office Palette gem. Vorlage' - beide echt, beide als Muss gemeldet,
+    # beide nicht behebbar. Weil D-004 ein Muss ist, blockierte das den
+    # Download; man musste 'trotzdem' klicken. Ein Tor, das man bei jedem
+    # Dokument umgeht, schuetzt nichts mehr.
+    _clear_info_style(p_el)
     # Auch HYPERLINKS entfernen, nicht nur Textlaeufe. Die HERMES-Vorlage haelt
     # in Kapitel 0.5 einen Link "HERMES" in der Zelle; wer nur <w:r> loescht,
     # laesst ihn stehen und schreibt den neuen Text dahinter - in JEDER
@@ -897,6 +926,10 @@ def _set_p_multiline(p_el, text):
         _set_p_text(p_el, text)
         return
     lines = text.split('\n')
+    # ZUERST raeumen, DANN pPr lesen: sonst traegt der erste Absatz die
+    # Beispiel-Vorlage weiter (der einzeilige Weg raeumt ueber _set_p_text,
+    # dieser hier fuellt direkt), und die Kopie fuer die Folgeabsaetze auch.
+    _clear_info_style(p_el)
     pPr = p_el.find(f'{{{W}}}pPr')
 
     def _fill(target_p, line):
@@ -918,6 +951,9 @@ def _set_p_multiline(p_el, text):
         newp = etree.Element(f'{{{W}}}p')
         if pPr is not None:
             newp.append(copy.deepcopy(pPr))
+        # Die geerbte Formatvorlage kann die Beispiel-Vorlage sein - dann truege
+        # sie jeder Folgeabsatz weiter.
+        _clear_info_style(newp)
         _fill(newp, line)
         parent.insert(idx + k, newp)
 

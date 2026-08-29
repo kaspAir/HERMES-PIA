@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Ausgabe nicht möglich – offene Befunde{% endblock %}
+{% block content %}
+<h1>{{ titel }} ist noch nicht ausgabefähig</h1>
+
+{# Dieselbe Kante wie beim Projektinitialisierungsauftrag. Sie galt lange nur
+   dort - und deshalb gingen Rechtsgrundlagenanalyse, Checkliste und Liste
+   Projektentscheide ungeprüft hinaus, samt Datums-Platzhaltern der Vorlage und
+   Begriffen, die es in HERMES 2022 nicht gibt. Ein Qualitätstor, das nur vor
+   einem von vier Dokumenten steht, ist keines. #}
+<p class="hinweis">
+  Die Prüfung am erzeugten Dokument hat <strong>{{ muss|length }}</strong>
+  Muss-Befund{{ '' if muss|length == 1 else 'e' }} gefunden: Platzhalter der
+  Vorlage, unbefüllte Kapitel oder Begriffe, die HERMES 2022 nicht kennt.
+</p>
+
+<h2>Zu beheben ({{ muss|length }})</h2>
+<table class="befundliste">
+  <thead><tr><th>Regel</th><th>Fundstelle</th><th>Befund</th></tr></thead>
+  <tbody>
+  {% for b in muss %}
+    <tr><td><code>{{ b.regel }}</code></td><td>{{ b.fundstelle }}</td><td>{{ b.meldung }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if weitere %}
+<h2>Weitere Hinweise ({{ weitere|length }})</h2>
+<p class="hinweis">Diese verhindern die Ausgabe nicht.</p>
+<ul>
+  {% for b in weitere %}<li><code>{{ b.regel }}</code> {{ b.meldung }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<p class="form-actions">
+  <a href="{{ zurueck_url }}" class="btn-primary">Zurück</a>
+  {# Notausgang. Er gehört dazu – aber er soll die Ausnahme sein und nicht der
+     Weg, den man jedes Mal geht. #}
+  <a href="{{ trotzdem_url }}" class="btn-link">Trotzdem herunterladen (unvollständig)</a>
+</p>
+{% endblock %}
