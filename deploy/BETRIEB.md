@@ -274,9 +274,16 @@ erzeugt Auftrag, Präsentation, Projektplan, Rechtsgrundlagenanalyse,
 Schutzbedarfsanalyse sowie Checkliste und Liste Projektentscheide — und folgt
 dabei immer dem eigenen Vorschlag.
 
-```
-TESTLAUF=1            # NUR auf dev. Standard ist 0.
-```
+**NICHT in die `.env` eintragen.** `~/methodos/.env` (`SHARED_ENV`) wird von
+JEDER Stufe geladen — prod, test, int und dev. Ein `TESTLAUF=1` dort schaltet
+den Testlauf auf der Kundenumgebung und in der Produktion gleich mit ein.
+
+Die Einstellung steht deshalb im `dev`-Zweig von `hp_config` in
+`deploy/hermes_ctl.sh` (`HP_EXTRA_ENV="TESTLAUF=1"`), also dort, wo die Stufe
+schon bekannt ist. Sie wird NACH der geteilten Datei gesetzt und kann sie
+übersteuern; `hp_config` setzt sie zu Beginn jedes Aufrufs zurück, damit keine
+Stufe erbt, was für eine andere gedacht war. Zu tun ist also nichts ausser
+deployen.
 
 **Warum nur dev.** Der Testlauf erzeugt eine freigegebene Checkliste und einen
 erreichten Meilenstein, ohne dass ein Mensch geurteilt hat. Auf einer

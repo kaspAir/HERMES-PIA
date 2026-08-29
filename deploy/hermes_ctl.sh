@@ -48,6 +48,8 @@ hp_log() { echo "$(date '+%F %T') [$1] $2" >> "$LOG" 2>/dev/null; }
 # OOM-Killer irgendeinen Prozess - im schlimmsten Fall die Produktion.
 # Deshalb steht die hohe Zahl NUR auf dev, wo Ausfaelle nichts kosten.
 hp_config() {
+  # Immer zuruecksetzen: sonst erbt eine Stufe, was fuer eine andere gedacht war.
+  HP_EXTRA_ENV=""
   case "${1:-}" in
     prod) HP_BRANCH=main;        HP_PORT=8000; HP_DIR="$HOME_DIR/methodos";
           HP_WORKERS=2; HP_PID="$TMP/gunicorn.pid";      HP_DB="" ;;
@@ -56,7 +58,19 @@ hp_config() {
     int)  HP_BRANCH=integration; HP_PORT=8002; HP_DIR="$HOME_DIR/methodos-int";
           HP_WORKERS=1; HP_PID="$TMP/gunicorn-int.pid";  HP_DB="$HOME_DIR/methodos-int/data/methodos-int.db" ;;
     dev)  HP_BRANCH=develop;     HP_PORT=8003; HP_DIR="$HOME_DIR/methodos-dev";
-          HP_WORKERS=10; HP_PID="$TMP/gunicorn-dev.pid"; HP_DB="$HOME_DIR/methodos-dev/data/methodos-dev.db" ;;
+          HP_WORKERS=10; HP_PID="$TMP/gunicorn-dev.pid"; HP_DB="$HOME_DIR/methodos-dev/data/methodos-dev.db"
+          # NUR HIER: der Testlauf spielt ein Vorhaben ohne Rueckfragen durch und
+          # erzeugt dabei eine freigegebene Checkliste samt erreichtem Meilenstein,
+          # ohne dass ein Mensch geurteilt hat. Er gehoert deshalb ausschliesslich
+          # auf die Entwicklungsstufe.
+          #
+          # Und er gehoert NICHT in die gemeinsame .env: die wird von JEDER Stufe
+          # geladen (SHARED_ENV, siehe unten). Ein `TESTLAUF=1` dort haette ihn auf
+          # der Kundenumgebung und in der Produktion eingeschaltet - und dort waere
+          # er ein Weg, Nachweise zu erzeugen, die keine sind. Eine Einstellung, die
+          # je Stufe verschieden sein MUSS, gehoert in die Stufenkonfiguration und
+          # nicht in eine geteilte Datei.
+          HP_EXTRA_ENV="TESTLAUF=1" ;;
     *) echo "Unbekannte Umgebung: ${1:-<leer>} (prod|test|int|dev)" >&2; return 2 ;;
   esac
 }
@@ -90,6 +104,9 @@ hp_launch() {
   set -a
   [ -f "$SHARED_ENV" ] && . "$SHARED_ENV"
   [ -n "$HP_DB" ] && DATABASE_URL="sqlite:///$HP_DB"
+  # Stufenspezifisches ZULETZT: es muss die gemeinsame Datei uebersteuern
+  # koennen, nicht umgekehrt.
+  [ -n "$HP_EXTRA_ENV" ] && eval "export $HP_EXTRA_ENV"
   set +a
   (
     cd "$HP_DIR" || exit 1
