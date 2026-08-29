@@ -293,3 +293,42 @@ Ein grüner Lauf sagt «die Kette hält» — er sagt nichts über die Qualität
 Inhalts. Das Wertvollste am Lauf ist sein Protokoll: dort steht, welcher Schritt
 gescheitert wäre und ob der Download der Projektleitung wegen eines
 Muss-Befunds verweigert würde.
+
+
+## Worker und gleichzeitiges Schreiben
+
+| Stufe | Worker | Warum |
+|-------|--------|-------|
+| prod  | 2 | unveraendert |
+| test  | 3 | unveraendert |
+| int   | 1 | unveraendert |
+| dev   | **10** | dort wird gearbeitet, dort darf es ruckeln |
+
+**Warum mehr Worker als Kerne.** Der Host hat vier Kerne. Fuer Rechenarbeit
+waeren zehn Worker unsinnig — diese Anwendung wartet aber fast nur: ein Aufruf
+ans Sprachmodell darf 90 s dauern, und in dieser Zeit tut der Worker nichts
+ausser aufs Netz zu horchen. Mit einem einzigen Worker legt genau das die ganze
+Stufe lahm; jeder Reload landet in der Warteschlange und sieht aus wie ein
+Absturz.
+
+**Was dabei zu beobachten ist.** Die Grenze ist der Speicher, nicht die
+Rechenzeit: jeder Worker traegt die volle Anwendung. Auf dem geteilten Host
+laufen vier Stufen — nimmt dev zu viel, trifft der OOM-Killer irgendeinen
+Prozess, im schlimmsten Fall die Produktion. Nach dem Deploy einmal messen:
+
+```bash
+ps -o rss=,cmd= -C gunicorn | awk '{s+=$1} END {print s/1024 " MB gesamt"}'
+free -m
+```
+
+Wird es eng, ist die naechste Stufe nicht «weniger Worker», sondern
+`--threads`: zehn Threads in zwei Workern geben dieselbe Gleichzeitigkeit fuer
+zwei Prozess-Abbilder statt zehn.
+
+**Was mit den Workern zwingend zusammengehoert.** SQLite bringt von Haus aus
+`journal_mode=delete` mit (ein Schreiber sperrt ALLE Leser) und wartet nur 5 s
+auf eine Sperre. Bei einem Worker faellt das nie auf, weil gleichzeitiges
+Schreiben unmoeglich ist. Ab zwei Workern ist es der Normalfall — und dann
+bricht ein Interview mit «database is locked» ab. `app/shared/database.py`
+stellt deshalb **WAL** und ein Wartelimit von **30 s** ein. Wer die Worker
+erhoeht, ohne das zu haben, tauscht Haenger gegen Datenverlust.

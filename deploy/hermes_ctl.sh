@@ -34,6 +34,19 @@ mkdir -p "$TMP" "$HOME_DIR/logs" 2>/dev/null || true
 hp_log() { echo "$(date '+%F %T') [$1] $2" >> "$LOG" 2>/dev/null; }
 
 # env -> HP_BRANCH / HP_PORT / HP_DIR / HP_WORKERS / HP_PID / HP_DB
+#
+# ZUR ZAHL DER WORKER. Der Host hat vier Kerne - fuer CPU-Arbeit waeren mehr
+# Worker als Kerne sinnlos. Diese Anwendung wartet aber fast nur: ein Aufruf ans
+# Sprachmodell darf 90 s dauern, und waehrenddessen tut der Worker NICHTS ausser
+# auf das Netz zu horchen. Bei einem einzigen Worker legt genau das die ganze
+# Stufe lahm - jeder Reload landet in der Warteschlange und sieht aus wie ein
+# Absturz. Bei wartender Arbeit sind mehr Worker als Kerne deshalb richtig.
+#
+# Die Grenze ist der Speicher, nicht die Rechenzeit: jeder Worker traegt die
+# volle Anwendung (SQLAlchemy, python-docx, openpyxl, python-pptx). Auf dem
+# geteilten Host laufen vier Stufen; wenn dev zu viel nimmt, trifft der
+# OOM-Killer irgendeinen Prozess - im schlimmsten Fall die Produktion.
+# Deshalb steht die hohe Zahl NUR auf dev, wo Ausfaelle nichts kosten.
 hp_config() {
   case "${1:-}" in
     prod) HP_BRANCH=main;        HP_PORT=8000; HP_DIR="$HOME_DIR/methodos";
@@ -43,7 +56,7 @@ hp_config() {
     int)  HP_BRANCH=integration; HP_PORT=8002; HP_DIR="$HOME_DIR/methodos-int";
           HP_WORKERS=1; HP_PID="$TMP/gunicorn-int.pid";  HP_DB="$HOME_DIR/methodos-int/data/methodos-int.db" ;;
     dev)  HP_BRANCH=develop;     HP_PORT=8003; HP_DIR="$HOME_DIR/methodos-dev";
-          HP_WORKERS=1; HP_PID="$TMP/gunicorn-dev.pid";  HP_DB="$HOME_DIR/methodos-dev/data/methodos-dev.db" ;;
+          HP_WORKERS=10; HP_PID="$TMP/gunicorn-dev.pid"; HP_DB="$HOME_DIR/methodos-dev/data/methodos-dev.db" ;;
     *) echo "Unbekannte Umgebung: ${1:-<leer>} (prod|test|int|dev)" >&2; return 2 ;;
   esac
 }
