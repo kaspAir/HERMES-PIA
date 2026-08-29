@@ -172,11 +172,58 @@ class ArtikelPruefer:
         leser = PdfReader(io.BytesIO(self._oeffner(url, self.timeout)))
         return " ".join((s.extract_text() or "") for s in leser.pages)
 
+    # ---- Zuerich: eigene Plattform, zwei Sprunge -------------------------- #
+    #
+    # Zuerich laeuft nicht ueber Lexwork. Die Gesetzessammlung auf zh.ch ist
+    # eine HTML-Seite; der Volltext liegt als PDF in einer Notes-Ablage. Der
+    # Weg dorthin, gemessen:
+    #
+    #   1. zh.ch/.../zhlex-ls/erlass-170_4-....html
+    #      traegt einen Verweis auf .../zhlex_r.nsf/OpenAttachment?...&file=X.pdf
+    #   2. Diese Adresse antwortet NICHT mit dem PDF, sondern mit 154 Byte
+    #      HTML und einer JavaScript-Weiterleitung auf
+    #      .../zhlex_r.nsf/WebView/<docid>/$File/X.pdf
+    #   3. Dort liegt die amtliche Fassung.
+    #
+    # Zwei Spruenge also, und der zweite ist unsichtbar, wenn man nur den
+    # Statuscode anschaut: die Antwort ist 200, nur eben kein PDF.
+    _ZH_ANLAGE = re.compile(r"""["']([^"']*zhlex_r\.nsf/OpenAttachment[^"']*)["']""")
+    _JS_WEITER = re.compile(r"""window\.location\s*=\s*["']([^"']+)["']""")
+
+    @staticmethod
+    def _ist_zh_erlass(url):
+        text = str(url or "").lower()
+        return "zh.ch/" in text and "zhlex" in text
+
+    def _zh_pdf(self, url):
+        """Von einer Zuercher Erlassseite zur amtlichen PDF-Fassung – oder None."""
+        import html as _html
+        from urllib.parse import urljoin
+
+        seite = self._oeffner(url, self.timeout).decode("utf-8", "replace")
+        m = self._ZH_ANLAGE.search(seite)
+        if not m:
+            return None
+        anlage = urljoin(url, _html.unescape(m.group(1)))
+        daten = self._oeffner(anlage, self.timeout)
+        if daten[:4] == b"%PDF":
+            return anlage
+        ziel = self._JS_WEITER.search(daten.decode("utf-8", "replace"))
+        return urljoin(anlage, ziel.group(1)) if ziel else None
+
     def _kantons_text(self, url):
         api = self._kantons_api(url)
         if not api:
             # Kein Lexwork - aber vielleicht direkt die amtliche PDF-Fassung.
-            return self._pdf_text(url) if self._ist_pdf_adresse(url) else None
+            if self._ist_pdf_adresse(url):
+                return self._pdf_text(url)
+            # ... oder Zuerich, das seinen eigenen Weg geht.
+            if self._ist_zh_erlass(url):
+                pdf = self._zh_pdf(url)
+                return self._pdf_text(pdf) if pdf else None
+            # ... oder eine gewoehnliche HTML-Seite mit dem Erlasstext darin
+            # (Tessin etwa fuehrt seine Sammlung so).
+            return self._html_erlasstext(url)
         meta = json.loads(self._oeffner(api, self.timeout))["text_of_law"]
         pdf = meta.get("pdf_link") or ""
         if not pdf:
@@ -205,6 +252,38 @@ class ArtikelPruefer:
             log.warning("Erlasstext nicht abrufbar (%s): %s", quelle, e)
             text = None
         self._texte[quelle] = text
+        return text
+
+    # Wie viele Artikelmarken eine Seite mindestens tragen muss, damit sie als
+    # Erlasstext gilt. Der Wert ist bewusst vorsichtig: Eine Seite OHNE
+    # Artikelmarken ist kein Erlass, und sie als solchen zu lesen hiesse, fuer
+    # jeden gesuchten Artikel "existiert nicht" zu melden. Diese falsche
+    # Verneinung ist schlimmer als ein ehrliches "nicht pruefbar" - gemessen an
+    # Waadt (5'315 Zeichen Geruest, 0 Marken) und Jura (17'673 Zeichen, 0
+    # Marken), waehrend Tessin 44 traegt.
+    MINDEST_ARTIKELMARKEN = 5
+    _ARTIKELMARKE = re.compile(r"(?:\bArt\.|\bArtikel|\bArticle|§)\s*\d")
+
+    def _html_erlasstext(self, url):
+        """Der Erlasstext aus einer gewoehnlichen HTML-Seite - oder None.
+
+        Nur, wenn die Seite auch wirklich wie ein Erlass aussieht. Sonst gibt
+        dieses Modul lieber nichts zurueck: "nicht geprueft" und "nicht
+        vorhanden" sind zwei verschiedene Dinge.
+        """
+        try:
+            roh = self._oeffner(url, self.timeout)
+        except Exception as e:      # noqa: BLE001
+            log.warning("Seite nicht abrufbar (%s): %s", url, e)
+            return None
+        if roh[:4] == b"%PDF":
+            return self._pdf_text(url)
+        text = _text_aus_html(roh.decode("utf-8", "replace"))
+        marken = len(self._ARTIKELMARKE.findall(text))
+        if marken < self.MINDEST_ARTIKELMARKEN:
+            log.info("Seite traegt nur %s Artikelmarken - kein Erlasstext: %s",
+                     marken, url)
+            return None
         return text
 
     def pruefe(self, quelle, artikel):

@@ -95,3 +95,50 @@ faelle:
     erwartet:
       zustand: belegt
       sprachfassung: de
+
+  # ---- Kantone mit eigener Plattform -------------------------------------
+  - name: ZH 170.4 § 1 - Zuerich, zwei Spruenge bis zum Volltext
+    beschreibung: >
+      Zuerich laeuft nicht ueber Lexwork. Die Seite auf zh.ch verweist auf eine
+      Notes-Ablage, und die antwortet mit 154 Byte HTML und einer
+      JavaScript-Weiterleitung - Statuscode 200, aber kein PDF. Erst dahinter
+      liegt die amtliche Fassung. Dieser Fall haelt beide Spruenge fest.
+    quelle: https://www.zh.ch/de/politik-staat/gesetze-beschluesse/gesetzessammlung/zhlex-ls/erlass-170_4-2007_02_12-2008_10_01-125.html
+    artikel: "1"
+    herkunft: beobachtet
+    erwartet:
+      zustand: belegt
+
+  - name: ZH 170.4 § 999 - die Gegenprobe fuer Zuerich
+    quelle: https://www.zh.ch/de/politik-staat/gesetze-beschluesse/gesetzessammlung/zhlex-ls/erlass-170_4-2007_02_12-2008_10_01-125.html
+    artikel: "999"
+    herkunft: geprueft
+    erwartet:
+      zustand: existiert_nicht
+
+  - name: TI Art. 1 - Tessin fuehrt den Erlasstext in der HTML-Seite
+    quelle: https://www3.ti.ch/CAN/RLeggi/public/index.php/raccolta-leggi/legge/num/50
+    artikel: "1"
+    herkunft: beobachtet
+    erwartet:
+      zustand: belegt
+
+  - name: VD - kein Erlasstext, also kein Beleg
+    beschreibung: >
+      Waadt liefert ein 5'315 Zeichen grosses Geruest ohne eine einzige
+      Artikelmarke; der Text kommt per JavaScript nach. Der richtige Ausgang
+      ist "nicht pruefbar" - NICHT "existiert nicht". Eine falsche Verneinung
+      waere schlimmer als ein ehrliches Schweigen, und dieser Fall haelt genau
+      diese Grenze.
+    quelle: https://prestations.vd.ch/pub/blv-publication/actes/consolide/172.65?id=cf9df545-13f7-4106-a95b-9b3ab8fa8b01
+    artikel: "1"
+    herkunft: geprueft
+    erwartet:
+      zustand: nicht_pruefbar
+
+  - name: JU - dasselbe fuer Jura
+    quelle: https://rsju.jura.ch/fr/viewdocument.html?idn=20015&id=37686
+    artikel: "1"
+    herkunft: geprueft
+    erwartet:
+      zustand: nicht_pruefbar

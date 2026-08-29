@@ -415,3 +415,71 @@ def test_das_bundesrecht_ist_dreisprachig():
     from app.domains.rechtsquellen.kantone import BUND_SPRACHEN
 
     assert BUND_SPRACHEN == ("de", "fr", "it")   # Englisch ist nicht verbindlich
+
+
+# ---- Zuerich und die HTML-Sammlungen -------------------------------------- #
+#
+# Vier Kantone laufen nicht ueber Lexwork. Gemessen an ihren echten Antworten:
+#   ZH  zh.ch-Seite -> Notes-Anlage -> JavaScript-Weiterleitung -> PDF
+#   TI  der Erlasstext steht in der HTML-Seite selbst (44 Artikelmarken)
+#   VD  5'315 Zeichen Geruest, 0 Marken - der Text kommt per JavaScript
+#   JU  17'673 Zeichen, 0 Marken
+# Die letzten beiden muessen «nicht pruefbar» ergeben, nicht «existiert nicht».
+
+def test_zuercher_erlassseiten_werden_erkannt():
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    assert A._ist_zh_erlass(
+        "https://www.zh.ch/de/politik-staat/gesetze-beschluesse/"
+        "gesetzessammlung/zhlex-ls/erlass-170_4-2007_02_12-2008_10_01-125.html")
+    assert not A._ist_zh_erlass("https://bgs.so.ch/data/114.2/de")
+    assert not A._ist_zh_erlass("")
+
+
+def test_die_javascript_weiterleitung_wird_gelesen():
+    """Die echte Antwort der Notes-Ablage: 154 Byte, Statuscode 200, kein PDF."""
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    echte_antwort = (
+        '<html>\n<head>\n<script>\nwindow.location="/appl/zhlex_r.nsf/WebView/'
+        'FC97129514A47FC0C1258B0900254C34/$File/170.4_12.2.07_125.pdf"\n'
+        "</script>\n</head>\n</html>\n")
+    m = A._JS_WEITER.search(echte_antwort)
+    assert m and m.group(1).endswith("170.4_12.2.07_125.pdf")
+
+
+def test_die_anlage_wird_auf_der_seite_gefunden():
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    ausschnitt = ('<a href="https://www.notes.zh.ch/appl/zhlex_r.nsf/'
+                  'OpenAttachment?Open&amp;docid=FC97&amp;file=170.4.pdf">PDF</a>')
+    m = A._ZH_ANLAGE.search(ausschnitt)
+    assert m and "OpenAttachment" in m.group(1)
+
+
+def test_eine_seite_ohne_artikelmarken_ist_kein_erlass():
+    """Waadt und Jura liefern Seiten ohne eine einzige Marke. Sie als
+    Erlasstext zu lesen hiesse, jeden gesuchten Artikel für nicht existent zu
+    erklären — eine falsche Verneinung, schlimmer als ehrliches Schweigen."""
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer
+
+    p = ArtikelPruefer(aktiv=True, oeffner=lambda url, t: b"<html><body>"
+                       b"<h1>Publication</h1><p>Chargement en cours</p></body></html>")
+    assert p._html_erlasstext("https://prestations.vd.ch/pub/x") is None
+
+
+def test_eine_seite_mit_artikelmarken_gilt_als_erlass():
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer
+
+    seite = ("<html><body>" + "".join(
+        f"<p>Art. {i} Testbestimmung.</p>" for i in range(1, 8)) + "</body></html>")
+    p = ArtikelPruefer(aktiv=True, oeffner=lambda url, t: seite.encode("utf-8"))
+    text = p._html_erlasstext("https://www3.ti.ch/x")
+    assert text and "Testbestimmung" in text
+
+
+def test_die_artikelmarke_kennt_alle_schreibweisen():
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    treffer = A._ARTIKELMARKE.findall("Art. 1 und § 3 und Artikel 5 und Article 7")
+    assert len(treffer) == 4
