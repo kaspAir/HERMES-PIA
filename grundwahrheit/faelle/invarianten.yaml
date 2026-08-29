@@ -1,0 +1,56 @@
+# Invarianten: schlaegt die Pruefung an, wenn sie soll — und schweigt sie sonst?
+#
+# Art: offline — kein Netz, laeuft in der Testsuite mit.
+#
+# Die Sollwerte sind hier nicht bekannt, sondern ZWINGEND: Wenn Kapitel 3.1
+# vierzig Personentage ausweist und Kapitel 5 nur fuenfundzwanzig verteilt,
+# dann widersprechen sich zwei Kapitel desselben Dokuments. Das muss auffallen,
+# unabhaengig davon, wie die Regel heute gebaut ist.
+#
+# Beide Richtungen gehoeren dazu. Eine Pruefung, die immer meldet, ist so
+# wertlos wie eine, die nie meldet — deshalb traegt jeder Fall auch, was NICHT
+# kommen darf.
+
+art: offline
+titel: Invarianten der Datenebene
+
+faelle:
+  - name: Personentage widersprechen der Monatsverteilung
+    beschreibung: >
+      Kapitel 3.1 weist 40 PT aus, Kapitel 5 verteilt 25. Die Kostenrechnung
+      in Kapitel 3.3 haengt an derselben Zahl — ein solcher Widerspruch macht
+      das ganze Dokument unbrauchbar und darf nicht durchgehen.
+    eingabe:
+      personalaufwand:
+        extracted:
+          - {rolle: Projektleiter, name: A. Muster, aufwand: "40"}
+      projektorganisation:
+        extracted:
+          - {rolle_person: Projektleiter / A. Muster, monat_1: "10",
+             monat_2: "10", monat_3: "5", bestaetigung: bestätigt}
+    erwartet:
+      muss_melden: [D-001]
+
+  - name: Personentage und Monatsverteilung stimmen ueberein
+    beschreibung: >
+      Dieselbe Lage, nur stimmig. Ohne diesen Fall wuesste man nicht, ob die
+      Regel rechnet oder bloss immer meldet.
+    eingabe:
+      personalaufwand:
+        extracted:
+          - {rolle: Projektleiter, name: A. Muster, aufwand: "25"}
+      projektorganisation:
+        extracted:
+          - {rolle_person: Projektleiter / A. Muster, monat_1: "10",
+             monat_2: "10", monat_3: "5", bestaetigung: bestätigt}
+    erwartet:
+      darf_nicht_melden: [D-001]
+
+  - name: Ein leerer Auftrag meldet keine falschen Widersprueche
+    beschreibung: >
+      Ohne Angaben gibt es nichts abzugleichen. Regeln, die Zahlen vergleichen,
+      duerfen hier nicht anschlagen — sonst ertraenkt der erste Entwurf den
+      Benutzer in Befunden, die er nicht beheben kann.
+    eingabe: {}
+    erwartet:
+      darf_nicht_melden: [D-001]

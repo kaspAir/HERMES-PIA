@@ -220,7 +220,15 @@ class ArtikelPruefer:
         m = re.search(r'id="art_%s"(.{0,300})' % re.escape(artikel), text, re.DOTALL)
         roh = m.group(1) if m else None
         if roh is None:
-            m = re.search(r"\bArt\.\s*%s\b(.{0,200})" % re.escape(artikel), text,
+            # Kantone zaehlen ihre Bestimmungen NICHT einheitlich: Solothurn,
+            # Aargau und Zuerich fuehren "§", St. Gallen "Art.". Gemessen an
+            # den amtlichen Fassungen: SO 44x "§" und 0x "Art.", AG 233x "§",
+            # SG 170x "Art." und 0x "§". Wer nur "Art." sucht, meldet fuer die
+            # halbe Deutschschweiz "existiert nicht" - eine falsche
+            # Verneinung, und die ist schlimmer als ein ehrliches
+            # "nicht pruefbar".
+            m = re.search(r"(?:\bArt\.|\bArtikel|§)\s*%s\b(.{0,200})"
+                          % re.escape(artikel), text,
                           re.DOTALL)
             roh = m.group(1) if m else None
         if roh is None:
@@ -230,7 +238,7 @@ class ArtikelPruefer:
         # trennen. Umgekehrt schneidet der Punkt von «Art.» die Überschrift ab -
         # gemessen blieb von «Art. 36 Einschränkungen von Grundrechten» das Wort
         # «Art» übrig.
-        kopf = re.sub(r"^Art(?:\.|ikel)\s*\S+\s*", "", klar).strip()
+        kopf = re.sub(r"^(?:Art(?:\.|ikel)|§)\s*\S+\s*", "", klar).strip()
         # Der Normtext beginnt mit der Absatznummer «1» (Fedlex) bzw. einem
         # Satzanfang; die Überschrift steht davor.
         kopf = re.split(r"\s+1\s+(?=[A-ZÄÖÜ])|\s+\d\s+", kopf, maxsplit=1)[0]
@@ -240,7 +248,7 @@ class ArtikelPruefer:
         # ehrliche Auskunft; als «Ueberschrift» ausgegeben waere er irrefuehrend.
         if not kopf or kopf[0].isdigit():
             volltext = _text_aus_html(roh).replace("&nbsp;", " ")
-            volltext = re.sub(r"^\s*>?\s*Art(?:\.|ikel)\s*\S+\s*", "", volltext)
+            volltext = re.sub(r"^\s*>?\s*(?:Art(?:\.|ikel)|§)\s*\S+\s*", "", volltext)
             return BELEGT, "[Wortlaut] " + volltext.strip()[:200]
         return BELEGT, kopf[:160]
 

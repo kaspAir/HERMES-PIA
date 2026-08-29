@@ -1,0 +1,97 @@
+# Fundstellen: existiert der Artikel, und heisst er, wie wir behaupten?
+#
+# Art: online — diese Faelle fragen die amtlichen Sammlungen. Sie pruefen
+# nicht unseren Code, sondern die Verbindung zur Welt: antwortet Fedlex noch,
+# hat ein Kanton seine Plattform umgestellt, steht der Artikel noch dort.
+#
+# HERKUNFT DER SOLLWERTE
+#   geprueft   – die Ueberschrift ist fachlich bekannt und wurde von mir
+#                gegen mein Wissen geprueft, nicht aus einem Lauf uebernommen.
+#   beobachtet – die Ueberschrift stammt aus der amtlichen Fassung; sie
+#                bestaetigt, dass die Nummerierung erkannt wird. Als Sollwert
+#                gilt hier der ZUSTAND, nicht der Wortlaut.
+
+art: online
+titel: Fundstellen gegen die amtlichen Sammlungen
+
+faelle:
+  # ---- Bund: dreisprachig, alle Fassungen gleich verbindlich -------------
+  - name: BV Art. 36 — der Standardfall jeder Grundrechtspruefung
+    quelle: https://www.fedlex.admin.ch/eli/cc/1999/404/de
+    artikel: "36"
+    herkunft: geprueft
+    erwartet:
+      zustand: belegt
+      ueberschrift: Einschränkungen von Grundrechten
+      sprachfassung: de
+
+  - name: BV Art. 5 — Legalitaetsprinzip, Grundlage der Normstufenpruefung
+    quelle: https://www.fedlex.admin.ch/eli/cc/1999/404/de
+    artikel: "5"
+    herkunft: geprueft
+    erwartet:
+      zustand: belegt
+      ueberschrift: Grundsätze rechtsstaatlichen Handelns
+      sprachfassung: de
+
+  - name: BV Art. 13 — Privatsphaere, bei Datenbearbeitung immer einschlaegig
+    quelle: https://www.fedlex.admin.ch/eli/cc/1999/404/de
+    artikel: "13"
+    herkunft: geprueft
+    erwartet:
+      zustand: belegt
+      ueberschrift: Schutz der Privatsphäre
+      sprachfassung: de
+
+  - name: StPO Art. 354 — der gemessene Fehlgriff, der die Pruefung ausloeste
+    beschreibung: >
+      Im Dokument stand einmal «StPO Art. 351 ff., insb. Art. 354» fuer die
+      Vollstreckung von Bussen. Art. 354 regelt die Einsprache gegen den
+      Strafbefehl. Dieser Fall haelt fest, dass die Ueberschrift geholt wird —
+      damit eine falsche Zuordnung auffaellt.
+    quelle: https://www.fedlex.admin.ch/eli/cc/2010/267/de
+    artikel: "354"
+    herkunft: geprueft
+    erwartet:
+      zustand: belegt
+      ueberschrift: Einsprache
+      sprachfassung: de
+
+  - name: BV Art. 999 — es gibt ihn nicht
+    beschreibung: >
+      Die Gegenprobe. Ohne sie wuesste man nicht, ob «belegt» etwas bedeutet:
+      ein Pruefer, der alles belegt, belegt nichts.
+    quelle: https://www.fedlex.admin.ch/eli/cc/1999/404/de
+    artikel: "999"
+    herkunft: geprueft
+    erwartet:
+      zustand: existiert_nicht
+
+  # ---- Kantone: Nummerierung uneinheitlich -------------------------------
+  - name: SG 142.1 Art. 1 — Kanton mit «Art.»-Zaehlung
+    quelle: https://www.gesetzessammlung.sg.ch/data/142.1/de
+    artikel: "1"
+    herkunft: beobachtet
+    erwartet:
+      zustand: belegt
+      sprachfassung: de
+
+  - name: SO 114.2 § 1 — Kanton mit «§»-Zaehlung
+    beschreibung: >
+      Solothurn fuehrt 44 Paragraphen und keinen einzigen «Art.». Solange der
+      Pruefer nur «Art.» kannte, meldete er hier «existiert nicht» — eine
+      falsche Verneinung fuer die halbe Deutschschweiz.
+    quelle: https://bgs.so.ch/data/114.2/de
+    artikel: "1"
+    herkunft: beobachtet
+    erwartet:
+      zustand: belegt
+      sprachfassung: de
+
+  - name: AG 150.700 § 1 — zweiter Kanton mit «§»-Zaehlung
+    quelle: https://gesetzessammlungen.ag.ch/data/150.700/de
+    artikel: "1"
+    herkunft: beobachtet
+    erwartet:
+      zustand: belegt
+      sprachfassung: de
