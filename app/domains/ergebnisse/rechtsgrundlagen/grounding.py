@@ -138,3 +138,108 @@ def ground_federal(namen, ebene=None, client=None, kanton=None):
         if best:
             out[name] = best[0]
     return out
+
+
+# ======================================================================== #
+#  Kantonale Fundstellen – NUR aus der Sammlung des eigenen Kantons
+# ======================================================================== #
+
+# Dieselbe Rolle wie _GENERISCH, nur fuer die romanischen Amtssprachen. Ohne
+# sie zaehlten «Legge», «sulla», «della» als Bedeutungswoerter mit - und eine
+# beliebige Tessiner «Legge cantonale sulla protezione della natura» erreichte
+# gegenueber «Legge sulla protezione dei dati personali» eine Deckung von 60 %.
+_GENERISCH_ROMANISCH = {
+    "legge", "leggi", "regolamento", "ordinanza", "decreto", "loi", "ordonnance",
+    "reglement", "règlement", "arrete", "arrêté", "cantonale", "cantonal",
+    "cantonali", "sulla", "sull", "sugli", "sui", "della", "delle", "degli",
+    "dei", "del", "che", "per", "con", "sur", "les", "des", "aux", "concernant",
+    "relative", "relatif",
+}
+
+
+def nennt_bund(name):
+    """Weist der Erlassname sich selbst als Bundesrecht aus?
+
+    Fuer solche Namen wird die kantonale Sammlung gar nicht erst gefragt: ein
+    kantonaler Treffer waere per Definition der falsche Erlass. Gemessen als
+    reale Gefahr - mehrere Kantone fuehren ihr Datenschutzgesetz unter der
+    Abkuerzung «DSG», die auch das Bundesgesetz traegt.
+    """
+    n = (name or "").lower()
+    return any(w in n for w in ("bundesgesetz", "bundesverordnung",
+                                "bundesbeschluss", "bundesrecht", "bundesrats"))
+
+
+_GENERISCH_ALLE = _GENERISCH | _GENERISCH_ROMANISCH
+
+
+def _bedeutungswoerter(text):
+    """Die Woerter eines Erlassnamens, die ihn von anderen unterscheiden."""
+    woerter = re.findall(r"[A-Za-zÄÖÜäöüÀàÈèÉéÌìÒòÙù]{4,}", text or "")
+    return [w.lower() for w in woerter
+            if w.lower() not in _GENERISCH_ALLE]
+
+
+def namensdeckung(name, titel):
+    """Welcher Anteil der Bedeutungswoerter des Namens steht im Titel? (0…1)
+
+    Der Ersatz fuer die Auswahl «kuerzeste Systematik-Nummer». Diese traf in
+    beiden gemessenen Faellen zufaellig das Richtige: Zuerich 170.4 gewann
+    gegen 704.1 nur alphabetisch, Tessin 163.100 gegen 480.100 ebenso. Eine
+    Auswahl, die von der Schreibweise einer Nummer abhaengt, ist keine.
+    Ohne Bedeutungswoerter im Namen gibt es keine Aussage – dann 0.
+    """
+    gesucht = _bedeutungswoerter(name)
+    if not gesucht:
+        return 0.0
+    heuhaufen = (titel or "").lower()
+    getroffen = sum(1 for w in gesucht if w in heuhaufen)
+    return getroffen / len(gesucht)
+
+
+# Unter diesem Anteil gilt ein Treffer als anderer Erlass. Nicht als Feinschliff
+# gewaehlt, sondern als Kante: bei 0.5 traegt der Treffer die Haelfte des Namens
+# NICHT - das ist keine Fundstelle mehr, sondern ein Themenverwandter.
+MINDESTDECKUNG = 0.6
+
+
+def ground_kantonal(namen, kanton, client=None):
+    """{name -> {sr, titel, url}} aus der Erlasssammlung EINES Kantons.
+
+    Bewusst NICHT ueber `ground_federal`: dort wird Bundesrecht immer mitgesucht
+    und geht in der Sortierung vor. Hier ist die kantonale Fassung gesucht, und
+    ein Bundestreffer waere der falsche Erlass.
+
+    Drei Siebe, alle drei noetig: der Treffer muss zum Suchbegriff gehoeren
+    (`passt_zum_begriff`, in lexfind), dieselbe Erlassform tragen (`_form_passt`)
+    und den Namen tatsaechlich decken (`namensdeckung`). Ohne Netz leer.
+    """
+    if not client or not kanton or not namen:
+        return {}
+    begriffe_je_name = {n: suchbegriffe(n) for n in namen
+                        if n and not nennt_bund(n)}
+    alle = [t for terms in begriffe_je_name.values() for t in terms]
+    if not alle:
+        return {}
+    # Grosszuegig viele Kandidaten holen: die drei Siebe unten sind streng, und
+    # der richtige Erlass steht nicht zwingend vorn. Gemessen: das Tessiner
+    # Datenschutzgesetz (163.100) war der FUENFTE Treffer zum Begriff
+    # «protezione» - mit den ersten drei blieb es unauffindbar.
+    treffer = client.suche_kanton(alle, kanton, treffer_je_begriff=8)
+    out = {}
+    for name, terms in begriffe_je_name.items():
+        kandidaten = {}
+        for t in terms:
+            for hit in treffer.get(t, []):
+                if not hit.get("url") or not _form_passt(name, hit.get("titel")):
+                    continue
+                deckung = namensdeckung(name, hit.get("titel"))
+                if deckung < MINDESTDECKUNG:
+                    continue
+                kandidaten[hit["sr"]] = (deckung, hit)
+        # Deckung zuerst; die Nummer entscheidet nur noch den Gleichstand.
+        best = sorted(kandidaten.values(),
+                      key=lambda p: (-p[0], len(p[1]["sr"]), p[1]["sr"]))
+        if best:
+            out[name] = best[0][1]
+    return out

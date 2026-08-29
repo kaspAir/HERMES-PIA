@@ -1,0 +1,62 @@
+# Vom Erlassnamen bis zum geprueften Paragraphen — der ganze Weg.
+#
+# Diese Faelle beginnen dort, wo die Kartierung tatsaechlich aufhoert: bei
+# einem NAMEN und einer Fundstelle im Fliesstext. Keine Adresse, keine
+# SR-Nummer. Genau diese Luecke blieb lange unbemerkt, weil jede Einzelteil-
+# pruefung gruen war: die Adresse liess sich finden, der Artikel liess sich
+# lesen — nur verband nichts das eine mit dem anderen.
+#
+# HERKUNFT im Sollwert
+#   zitat       – die Adresse stand im Zitat (oder folgt aus der SR-Nummer)
+#   erlassname  – die Adresse wurde ueber den Namen in der kantonalen
+#                 Sammlung ermittelt. Schwaecher, deshalb ausgewiesen.
+
+art: online
+titel: Kantonale Fundstellen vom Namen her
+
+faelle:
+  - name: Zuercher IDG § 1 — kantonales Recht, nur ueber den Namen auffindbar
+    kanton: ZH
+    erlass: "Gesetz über die Information und den Datenschutz (IDG)"
+    fundstelle: "LS 170.4, insb. § 1"
+    erwartet:
+      zustand: belegt
+      herkunft: erlassname
+
+  # Gegenprobe. Ohne sie hiesse «belegt» nur, dass irgendetwas geantwortet hat.
+  - name: Zuercher IDG § 999 — den es nicht gibt
+    kanton: ZH
+    erlass: "Gesetz über die Information und den Datenschutz (IDG)"
+    fundstelle: "LS 170.4, § 999"
+    erwartet:
+      zustand: existiert_nicht
+      herkunft: erlassname
+
+  - name: Tessiner Datenschutzgesetz Art. 1 — italienische Sammlung
+    kanton: TI
+    erlass: "Legge sulla protezione dei dati personali"
+    fundstelle: "RL 163.100, art. 1"
+    erwartet:
+      zustand: belegt
+      herkunft: erlassname
+
+  # Ein Bundesgesetz in einem kantonalen Projekt darf NICHT ueber die
+  # kantonale Sammlung laufen. Mehrere Kantone fuehren ihr Datenschutzgesetz
+  # ebenfalls als «DSG» — der Namensweg traefe dort den falschen Erlass.
+  - name: Bundes-DSG im Zuercher Projekt — geht ueber die SR-Nummer, nicht ueber den Namen
+    kanton: ZH
+    erlass: "Bundesgesetz über den Datenschutz (DSG)"
+    fundstelle: "SR 235.1, Art. 6"
+    erwartet:
+      zustand: belegt
+      herkunft: zitat
+
+  # Kein Treffer ist ein gueltiges Ergebnis. Waere es das nicht, wuerde der
+  # Aufloeser irgendeine Adresse liefern und der Pruefer irgendetwas belegen.
+  - name: Erfundener Erlass — bleibt ohne Adresse und damit ungeprueft
+    kanton: ZH
+    erlass: "Gesetz über die kantonale Raumfahrt (RaumFG)"
+    fundstelle: "LS 999.9, § 1"
+    erwartet:
+      zustand: nicht_pruefbar
+      herkunft: ""

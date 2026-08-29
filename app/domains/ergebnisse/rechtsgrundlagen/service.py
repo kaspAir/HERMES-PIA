@@ -12,7 +12,8 @@ from app.domains.ergebnisse.models import ErgebnisEntwurf
 from app.domains.ergebnisse import pia_quelle
 from app.domains.ergebnisse.projektwissen import Projektwissen
 from app.domains.ergebnisse.rechtsgrundlagen import kette
-from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_federal
+from app.domains.ergebnisse.rechtsgrundlagen.grounding import (
+    ground_federal, ground_kantonal)
 from app.domains.ergebnisse.rechtsgrundlagen.proposals import analysiere
 from app.domains.projekt.reference import ERG_PIA
 from app.domains.rechtsquellen.artikel import ArtikelPruefer
@@ -213,6 +214,30 @@ class RechtsgrundlagenService:
                                   self.recherche, kanton=wissen.kanton)
         except Exception:  # noqa: BLE001 – Grounding-Störung darf den Entwurf nicht kippen
             return {}
+
+    def _erlass_aufloeser(self, wissen):
+        """Erlassname -> Adresse des amtlichen Textes, fuer den eigenen Kanton.
+
+        Der fehlende Anschluss zwischen der Fundstellenpruefung und dem
+        kantonalen Recht. Die Kartierung schreibt die Fundstelle als Fliesstext
+        («LS 170.4, insb. § 1»); darin steht keine Adresse, und eine
+        LS-/RL-Nummer laesst sich nicht wie eine SR-Nummer aufloesen. Ohne
+        diesen Schritt fiel JEDE kantonale Angabe auf «nicht prüfbar» – der
+        Zuercher Erlasstext war erreichbar und wurde nie gelesen.
+
+        Gefragt wird ausschliesslich die Sammlung DIESES Kantons. Ohne Kanton
+        oder ohne Live-Recherche bleibt es leer; geraten wird nie.
+        """
+        def aufloesen(namen):
+            if not getattr(wissen, "kanton", ""):
+                return {}
+            try:
+                gefunden = ground_kantonal(namen, wissen.kanton, self.recherche)
+            except Exception:   # noqa: BLE001 – Recherchestörung darf nicht kippen
+                return {}
+            return {name: treffer["url"] for name, treffer in gefunden.items()
+                    if treffer.get("url")}
+        return aufloesen
 
     def _grounding_names(self, namen, ebene, kanton=None):
         """Verifizierte Fundstellen (live über lexfind, sonst Offline-Index) zu einer
@@ -671,7 +696,8 @@ class RechtsgrundlagenService:
             lauf["fundstellen"] = kette.pruefe_fundstellen(
                 befunde, artikel_pruefer=getattr(self, "artikel", None),
                 bger=getattr(self, "bger", None),
-                sr_aufloeser=getattr(self.fedlex, "url_fuer_sr", None))
+                sr_aufloeser=getattr(self.fedlex, "url_fuer_sr", None),
+                erlass_aufloeser=self._erlass_aufloeser(wissen))
             # Aus der Fachpruefung uebernommen, wo es ein _takt() gibt - hier
             # nicht. Der Schritt kann je nach Zahl der Erlasse dauern (ein
             # Abruf je Erlass), deshalb gehoert seine Dauer ins Protokoll.

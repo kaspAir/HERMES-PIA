@@ -976,8 +976,11 @@ def zu_kapiteln(lauf):
     if gepruefte:
         for b in gepruefte:
             if b["zustand"] == "belegt":
+                # Bei einer ueber den Namen ermittelten Quelle steht das dabei.
+                wie = ("amtlich geprüft; Quelle über den Erlassnamen ermittelt"
+                       if b.get("herkunft") == "erlassname" else "amtlich geprüft")
                 text = (f"Art. {b['artikel']} – «{b['ueberschrift']}» "
-                        f"(amtlich geprüft)")
+                        f"({wie})")
             elif b["zustand"] == "existiert_nicht":
                 text = (f"Art. {b['artikel']} EXISTIERT IM AMTLICHEN TEXT NICHT. "
                         f"Diese Fundstelle ist zu berichtigen.")
@@ -1402,8 +1405,26 @@ def _quelle_finden(grundlage, sr_aufloeser=None):
     return grundlage.get("fundstelle_url") or grundlage.get("url")
 
 
+def namen_ohne_adresse(befunde, sr_aufloeser=None):
+    """Die Erlassnamen, zu denen im Zitat KEINE Adresse steht.
+
+    Nur fuer diese wird nachgeschlagen. Ein Zitat, das seine Fundstelle selbst
+    traegt, soll nicht nachtraeglich von einer Namenssuche ueberschrieben
+    werden - die Angabe im Dokument ist die genauere.
+    """
+    raus = []
+    for e in befunde or []:
+        for g in (e.get("kartierung") or {}).get("grundlagen") or []:
+            if not isinstance(g, dict) or _quelle_finden(g, sr_aufloeser):
+                continue
+            name = str(g.get("erlass") or "").strip()
+            if name and name not in raus:
+                raus.append(name)
+    return raus
+
+
 def pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None,
-                       sr_aufloeser=None):
+                       sr_aufloeser=None, erlass_aufloeser=None):
     """Verifiziert Artikelangaben und holt – wo nötig – Rechtsprechung.
 
     Dieser Schritt ruft KEIN Modell. Er prüft, was frühere Schichten behauptet
@@ -1412,6 +1433,15 @@ def pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None,
 
     Rückgabe: {"je_taetigkeit": {nr: {...}}, "zitierbare_entscheide": [...]}.
     """
+    # EINMAL fuer den ganzen Lauf nachschlagen, nicht je Taetigkeit: derselbe
+    # Erlass kommt in mehreren Taetigkeiten vor, und jede Abfrage geht an einen
+    # fremden Dienst.
+    nachgeschlagen = {}
+    if erlass_aufloeser is not None:
+        offen = namen_ohne_adresse(befunde, sr_aufloeser)
+        if offen:
+            nachgeschlagen = erlass_aufloeser(offen) or {}
+
     je_taetigkeit, zitierbar = {}, []
     for i, e in enumerate(befunde or []):
         artikel = []
@@ -1419,11 +1449,20 @@ def pruefe_fundstellen(befunde, artikel_pruefer=None, bger=None,
             if not isinstance(g, dict):
                 continue
             quelle = _quelle_finden(g, sr_aufloeser)
+            # HERKUNFT mitfuehren: eine ueber den Erlassnamen ermittelte Adresse
+            # ist schwaecher als eine zitierte. Sie kann den falschen Erlass
+            # treffen, und dann belegt der Pruefer etwas, das niemand behauptet
+            # hat. Wer das spaeter liest, muss sehen, worauf der Beleg beruht.
+            herkunft = "zitat" if quelle else ""
+            if not quelle:
+                quelle = nachgeschlagen.get(str(g.get("erlass") or "").strip())
+                herkunft = "erlassname" if quelle else ""
             zitat = f"{g.get('fundstelle', '')} {g.get('erlass', '')}"
             if artikel_pruefer is None:
                 continue
             for b in artikel_pruefer.pruefe_fundstelle(quelle, zitat):
-                artikel.append(dict(b, erlass=g.get("erlass", "")))
+                artikel.append(dict(b, erlass=g.get("erlass", ""),
+                                    herkunft=herkunft))
 
         entscheide, grund = [], ""
         noetig, grund = bger_relevanz(e)

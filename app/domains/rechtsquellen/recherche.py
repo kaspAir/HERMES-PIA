@@ -59,3 +59,19 @@ class RechercheClient:
 
         self.letzte_quelle = ("lexfind" if live_ok else ("index" if out else "keine"))
         return out
+
+    def suche_kanton(self, begriffe, kanton, treffer_je_begriff=3):
+        """Nur die kantonale Sammlung – ohne Netz gibt es hier NICHTS.
+
+        Der Offline-Index kennt ausschliesslich Bundesrecht. Ihn hier als Netz
+        einzusetzen hiesse, auf eine kantonale Frage eine Bundesantwort zu geben.
+        Ohne lexfind bleibt die Antwort deshalb leer, und der Aufrufer meldet
+        ehrlich «nicht prüfbar».
+        """
+        if self.lexfind is None or not begriffe or not kanton:
+            return {}
+        try:
+            return self.lexfind.suche_kanton(begriffe, kanton, treffer_je_begriff)
+        except Exception as e:      # noqa: BLE001 – Ausfall darf nie blockieren
+            log.warning("lexfind (kantonal) nicht nutzbar: %s", e)
+            return {}

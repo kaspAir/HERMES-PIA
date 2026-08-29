@@ -261,3 +261,30 @@ class LexfindClient:
                 out[begriff] = hits[:treffer_je_begriff]
             time.sleep(0.15)      # freundlich zur fremden API
         return out
+
+    def suche_kanton(self, begriffe, kanton, treffer_je_begriff=3):
+        """Wie `suche_mehrere`, aber AUSSCHLIESSLICH in der Sammlung eines Kantons.
+
+        Getrennt von `suche_mehrere`, weil dort Bundesrecht immer mitgesucht wird
+        und in der Sortierung vorgeht. Das ist richtig, solange ein Erlassname
+        einen Bundeserlass meinen kann - und falsch, wenn ausdruecklich der
+        kantonale Erlass gesucht ist. Gemessen: «Gesetz ueber die Information und
+        den Datenschutz (IDG)» bekam ueber die gemeinsame Suche SR 128, das
+        Informationssicherheitsgesetz DES BUNDES. Wer diese Adresse an den
+        Artikelpruefer weiterreicht, laesst ihn den falschen Erlass lesen - und
+        bekommt ein «belegt», das nichts belegt.
+
+        Leeres Dict bei unbekanntem Kanton; nie ein Bundestreffer.
+        """
+        kid = KANTON_ENTITY.get((kanton or "").strip().lower())
+        if not kid or not begriffe:
+            return {}
+        out = {}
+        for begriff in dict.fromkeys(b for b in begriffe if b):
+            hits = [h for h in self.suche(begriff, entities=[kid],
+                                          treffer=max(treffer_je_begriff, 5))
+                    if passt_zum_begriff(begriff, h.get("titel"), h.get("stichworte"))]
+            if hits:
+                out[begriff] = hits[:treffer_je_begriff]
+            time.sleep(0.15)      # freundlich zur fremden API
+        return out

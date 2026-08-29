@@ -54,9 +54,17 @@ BELEGT = "belegt"
 EXISTIERT_NICHT = "existiert_nicht"
 NICHT_PRUEFBAR = "nicht_pruefbar"
 
-# «Art. 36», «Art. 5 Abs. 1 BV», «Art. 351 ff.», «Art. 13a»
+# «Art. 36», «Art. 5 Abs. 1 BV», «Art. 351 ff.», «Art. 13a», «§ 1 Abs. 2»
+#
+# Das Paragraphenzeichen gehoert hierher, nicht nur in die Artikelsuche. Es
+# stand dort bereits - und trotzdem blieb eine Zuercher Fundstelle ungeprueft:
+# hier wurde aus «LS 170.4, insb. § 1» gar keine Nummer gelesen, also gab es
+# nichts zu suchen. Der Erlasstext war erreichbar, die Suche funktionierte, und
+# der Befund kam trotzdem nie zustande. Gemessen an einem echten Zitat.
+#
+# Kein \b vor dem Zeichen: § ist kein Wortzeichen, die Wortgrenze traefe nie.
 _ZITAT = re.compile(
-    r"\bArt(?:\.|ikel)\s*(\d+[a-z]?)"
+    r"(?:\bArt(?:\.|ikel)|§)\s*(\d+[a-z]?)"
     r"(?:\s*(?:Abs\.\s*\d+[a-z]?))?"
     r"(?:\s*(?:lit\.\s*[a-z]))?"
     r"(?:\s*(?:Ziff\.\s*\d+))?",

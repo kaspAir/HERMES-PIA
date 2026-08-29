@@ -483,3 +483,131 @@ def test_die_artikelmarke_kennt_alle_schreibweisen():
 
     treffer = A._ARTIKELMARKE.findall("Art. 1 und § 3 und Artikel 5 und Article 7")
     assert len(treffer) == 4
+
+
+# ---- Der Weg vom Erlassnamen zur Adresse ---------------------------------- #
+#
+# Die Kartierung liefert einen NAMEN und eine Fundstelle im Fliesstext
+# («LS 170.4, insb. § 1») — keine Adresse. Fuer Bundesrecht half die
+# SR-Nummer, fuer kantonales Recht gab es nichts: der Artikelpruefer wurde nie
+# gefragt, obwohl er gekonnt haette.
+
+def test_das_paragraphenzeichen_wird_im_zitat_gelesen():
+    """Es stand in der Artikelsuche, fehlte aber beim Lesen der Nummer — und
+    damit gab es fuer jede Zuercher Fundstelle nichts zu suchen."""
+    from app.domains.rechtsquellen.artikel import artikelnummern
+
+    assert artikelnummern("LS 170.4, insb. \u00a7 1") == ["1"]
+    assert artikelnummern("\u00a7 12 Abs. 2 und \u00a7 13a") == ["12", "13a"]
+    assert artikelnummern("Art. 5 Abs. 1 BV") == ["5"]
+
+
+def test_bundeserlasse_gehen_nicht_ueber_die_kantonale_sammlung():
+    """Mehrere Kantone fuehren ihr Datenschutzgesetz ebenfalls als «DSG»."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import nennt_bund
+
+    assert nennt_bund("Bundesgesetz \u00fcber den Datenschutz (DSG)")
+    assert not nennt_bund("Gesetz \u00fcber die Information und den Datenschutz (IDG)")
+
+
+def test_die_namensdeckung_entscheidet_statt_der_nummer():
+    """Gemessene Titel. Die alte Auswahl «kuerzeste Systematik-Nummer» traf
+    hier zweimal zufaellig das Richtige — Zuerich 170.4 gewann gegen 704.1 nur
+    alphabetisch. Eine Auswahl, die an der Schreibweise einer Nummer haengt,
+    ist keine."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import (
+        namensdeckung, MINDESTDECKUNG)
+
+    idg = "Gesetz \u00fcber die Information und den Datenschutz (IDG)"
+    assert namensdeckung(idg, "Gesetz \u00fcber die Information und den Datenschutz") == 1.0
+    assert namensdeckung(
+        idg, "Informations- und Akteneinsichtsverordnung der obersten Organe"
+    ) < MINDESTDECKUNG
+
+    ti = "Legge sulla protezione dei dati personali"
+    assert namensdeckung(ti, "Legge sulla protezione dei dati personali") == 1.0
+    assert namensdeckung(ti, "Legge cantonale sulla protezione della natura") < MINDESTDECKUNG
+
+
+def test_nur_die_kantonale_sammlung_wird_gefragt():
+    """Sucht man Bund und Kanton zusammen, gewinnt der Bund: das Zuercher IDG
+    bekam so die Adresse von SR 128 — dem Informationssicherheitsgesetz DES
+    BUNDES. Der Artikelpruefer haette den falschen Erlass gelesen."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_kantonal
+
+    class Sammlung:
+        def __init__(self):
+            self.gefragt = []
+
+        def suche_kanton(self, begriffe, kanton, treffer_je_begriff=3):
+            self.gefragt.append((tuple(begriffe), kanton))
+            return {"IDG": [{"sr": "170.4", "entity": "ZH",
+                             "titel": "Gesetz \u00fcber die Information und den Datenschutz",
+                             "url": "https://www.zh.ch/...erlass-170_4-...html"}]}
+
+    s = Sammlung()
+    treffer = ground_kantonal(
+        ["Gesetz \u00fcber die Information und den Datenschutz (IDG)"], "ZH", s)
+    assert treffer and list(treffer.values())[0]["sr"] == "170.4"
+    assert s.gefragt and s.gefragt[0][1] == "ZH"
+
+
+def test_ohne_treffer_bleibt_es_ohne_adresse():
+    """Kein Treffer ist ein gueltiges Ergebnis. Sonst lieferte der Aufloeser
+    irgendeine Adresse und der Pruefer belegte irgendetwas."""
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_kantonal
+
+    class Leer:
+        def suche_kanton(self, begriffe, kanton, treffer_je_begriff=3):
+            return {}
+
+    assert ground_kantonal(["Gesetz \u00fcber die Raumfahrt"], "ZH", Leer()) == {}
+    assert ground_kantonal(["Gesetz"], "", Leer()) == {}
+
+
+def test_nachgeschlagen_wird_nur_was_keine_adresse_hat():
+    """Eine Angabe im Dokument ist genauer als eine Namenssuche und darf von
+    ihr nicht ueberschrieben werden."""
+    from app.domains.ergebnisse.rechtsgrundlagen import kette
+
+    befunde = [{"kartierung": {"grundlagen": [
+        {"erlass": "Mit Adresse", "fundstelle": "https://www.fedlex.admin.ch/eli/cc/1999/404/de"},
+        {"erlass": "Ohne Adresse", "fundstelle": "LS 170.4, \u00a7 1"},
+    ]}}]
+    assert kette.namen_ohne_adresse(befunde) == ["Ohne Adresse"]
+
+
+def test_die_herkunft_der_adresse_steht_im_befund():
+    """Eine ueber den Namen ermittelte Adresse kann den falschen Erlass
+    treffen. Wer das Ergebnis liest, muss sehen, worauf der Beleg beruht."""
+    from app.domains.ergebnisse.rechtsgrundlagen import kette
+
+    class Pruefer:
+        @staticmethod
+        def pruefe_fundstelle(quelle, zitat):
+            return [{"artikel": "1", "zustand": "belegt", "ueberschrift": "Zweck",
+                     "quelle": quelle, "sprachfassung": "de"}]
+
+    befunde = [{"taetigkeit": {"taetigkeit": "T"}, "kartierung": {"grundlagen": [
+        {"erlass": "Kantonales Gesetz", "fundstelle": "LS 170.4, \u00a7 1"}]}}]
+    erg = kette.pruefe_fundstellen(
+        befunde, artikel_pruefer=Pruefer(),
+        erlass_aufloeser=lambda namen: {"Kantonales Gesetz": "https://www.zh.ch/x"})
+    befund = erg["je_taetigkeit"]["0"]["artikel"][0]
+    assert befund["herkunft"] == "erlassname"
+    assert befund["quelle"] == "https://www.zh.ch/x"
+
+
+def test_ohne_aufloeser_bleibt_alles_wie_bisher():
+    from app.domains.ergebnisse.rechtsgrundlagen import kette
+
+    class Pruefer:
+        @staticmethod
+        def pruefe_fundstelle(quelle, zitat):
+            return [{"artikel": "1", "zustand": "nicht_pruefbar", "ueberschrift": "",
+                     "quelle": quelle, "sprachfassung": ""}]
+
+    befunde = [{"taetigkeit": {"taetigkeit": "T"}, "kartierung": {"grundlagen": [
+        {"erlass": "Kantonales Gesetz", "fundstelle": "LS 170.4, \u00a7 1"}]}}]
+    erg = kette.pruefe_fundstellen(befunde, artikel_pruefer=Pruefer())
+    assert erg["je_taetigkeit"]["0"]["artikel"][0]["herkunft"] == ""

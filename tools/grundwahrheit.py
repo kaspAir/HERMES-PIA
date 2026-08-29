@@ -71,7 +71,56 @@ def _pruefe_fundstelle(fall):
     return (kopf[:60] or zustand)
 
 
-PRUEFARTEN = {"invarianten": _pruefe_invarianten, "fundstellen": _pruefe_fundstelle}
+def _pruefe_kantonale_fundstelle(fall):
+    """Der GANZE Weg: Erlassname + Kanton -> Adresse -> geprueftem Paragraphen.
+
+    Die Faelle in `fundstellen.yaml` starten bei einer fertigen Adresse. Genau
+    dort lag die Luecke: Adresse und Artikelpruefung funktionierten je fuer
+    sich, und trotzdem wurde kein kantonaler Paragraph geprueft, weil die
+    Kartierung gar keine Adresse liefert. Ein Fall, der beim NAMEN beginnt,
+    haette das gezeigt - die Faelle davor konnten es nicht.
+    """
+    from app.domains.ergebnisse.rechtsgrundlagen import kette
+    from app.domains.ergebnisse.rechtsgrundlagen.grounding import ground_kantonal
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer
+    from app.domains.rechtsquellen.fedlex import FedlexClient
+    from app.domains.rechtsquellen.lexfind import LexfindClient
+    from app.domains.rechtsquellen.recherche import RechercheClient
+
+    recherche = RechercheClient(lexfind=LexfindClient(), index=FedlexClient())
+    kanton = fall["kanton"]
+
+    def aufloesen(namen):
+        gefunden = ground_kantonal(namen, kanton, recherche)
+        return {n: t["url"] for n, t in gefunden.items() if t.get("url")}
+
+    befunde = [{"taetigkeit": {"taetigkeit": fall["name"]},
+                "kartierung": {"grundlagen": [{"erlass": fall["erlass"],
+                                               "fundstelle": fall["fundstelle"],
+                                               "ermaechtigt": True}]}}]
+    ergebnis = kette.pruefe_fundstellen(
+        befunde, artikel_pruefer=ArtikelPruefer(aktiv=True),
+        sr_aufloeser=FedlexClient().url_fuer_sr, erlass_aufloeser=aufloesen)
+    treffer = (ergebnis["je_taetigkeit"]["0"]["artikel"] or [])
+    erwartet = fall.get("erwartet") or {}
+
+    if not treffer:
+        raise Abweichung("kein Artikelbefund - die Nummer wurde nicht gelesen")
+    b = treffer[0]
+    if b["zustand"] != erwartet.get("zustand"):
+        raise Abweichung(f"Zustand «{b['zustand']}» statt «{erwartet.get('zustand')}»")
+    soll_herkunft = (erwartet.get("herkunft") or "").strip()
+    if soll_herkunft and b.get("herkunft") != soll_herkunft:
+        raise Abweichung(f"Herkunft «{b.get('herkunft')}» statt «{soll_herkunft}»")
+    soll_kopf = (erwartet.get("ueberschrift") or "").strip()
+    if soll_kopf and soll_kopf.lower() not in (b.get("ueberschrift") or "").lower():
+        raise Abweichung(f"Ueberschrift «{(b.get('ueberschrift') or '')[:70]}» "
+                         f"enthaelt «{soll_kopf}» nicht")
+    return f"{b['zustand']} ({b.get('herkunft') or 'ohne Quelle'})"
+
+
+PRUEFARTEN = {"invarianten": _pruefe_invarianten, "fundstellen": _pruefe_fundstelle,
+              "kantonale_fundstellen": _pruefe_kantonale_fundstelle}
 
 
 # ---- Laufen ---------------------------------------------------------------- #
