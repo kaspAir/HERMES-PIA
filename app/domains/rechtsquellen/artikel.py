@@ -118,17 +118,65 @@ class ArtikelPruefer:
         return treffer[0]["file"]["value"] if treffer else None
 
     # ---- Kanton ---------------------------------------------------------- #
+    # Die Adressen, die lexfind zu kantonalen Erlassen zurueckgibt. GEMESSEN
+    # ueber alle 26 Kantone (siehe unten), nicht angenommen:
+    #
+    #   https://bgs.so.ch/data/114.2/de
+    #   https://www.belex.sites.be.ch/data/152.043/de
+    #   https://gesetzessammlungen.ag.ch/data/150.700/de
+    #
+    # Also `/data/<Nummer>/<Sprache>`. Die erste Fassung dieses Ausdrucks
+    # erwartete `/data/<Sprache>/texts_of_law/<Slug>` und traf damit **keinen
+    # einzigen** Kanton: die Artikelpruefung fiel fuer kantonales Recht immer
+    # auf «nicht pruefbar» zurueck - ehrlich in der Ausgabe, aber die Funktion
+    # lief nie. Gefunden hat es eine Messung ueber alle Kantone, nicht ein
+    # Test: die Tests arbeiteten mit einer von Hand gebauten Beispieladresse.
+    _KANTON_ADRESSEN = (
+        # Gemessene Form: Nummer vor Sprache, ohne `texts_of_law`.
+        re.compile(r"^(https?://[^/]+)/(?:data|app)/([^/?#]+)/([a-z]{2})/?(?:[?#].*)?$"),
+        # Aeltere Form mit `texts_of_law` - bleibt gueltig, falls sie vorkommt.
+        re.compile(r"^(https?://[^/]+)/(?:data|app)/([a-z]{2})/texts_of_law/([^/?#]+)"),
+    )
+
     @staticmethod
     def _kantons_api(url):
-        """Aus dem Sammlungs-Link die JSON-Adresse der Lexwork-Plattform."""
-        m = re.match(r"(https?://[^/]+)/(?:app|data)/([a-z]{2})/texts_of_law/([^/?#]+)",
-                     str(url or ""))
-        return f"{m.group(1)}/api/{m.group(2)}/texts_of_law/{m.group(3)}" if m else None
+        """Aus der Erlass-Adresse die JSON-Adresse der Lexwork-Plattform.
+
+        Ziel ist immer `<Host>/api/<Sprache>/texts_of_law/<Nummer>` - gemessen
+        an SO, SG und AG, die alle mit `pdf_link` antworten.
+        """
+        text = str(url or "").strip()
+        m = ArtikelPruefer._KANTON_ADRESSEN[0].match(text)
+        if m:
+            host, nummer, sprache = m.group(1), m.group(2), m.group(3)
+            return f"{host}/api/{sprache}/texts_of_law/{nummer}"
+        m = ArtikelPruefer._KANTON_ADRESSEN[1].match(text)
+        if m:
+            return f"{m.group(1)}/api/{m.group(2)}/texts_of_law/{m.group(3)}"
+        return None
+
+    @staticmethod
+    def _ist_pdf_adresse(url):
+        """Zeigt die Adresse direkt auf eine PDF-Fassung?
+
+        Nicht jeder Kanton laeuft ueber Lexwork. Genf und Schwyz liefern die
+        amtliche Fassung als PDF-Datei; dort gibt es keine JSON-Schnittstelle,
+        wohl aber den Text. Gemessen, nicht vermutet.
+        """
+        ohne_frage = str(url or "").split("?")[0].split("#")[0].lower()
+        return ohne_frage.endswith(".pdf") or "/pdf/" in ohne_frage
+
+    def _pdf_text(self, url):
+        from pypdf import PdfReader
+
+        leser = PdfReader(io.BytesIO(self._oeffner(url, self.timeout)))
+        return " ".join((s.extract_text() or "") for s in leser.pages)
 
     def _kantons_text(self, url):
         api = self._kantons_api(url)
         if not api:
-            return None
+            # Kein Lexwork - aber vielleicht direkt die amtliche PDF-Fassung.
+            return self._pdf_text(url) if self._ist_pdf_adresse(url) else None
         meta = json.loads(self._oeffner(api, self.timeout))["text_of_law"]
         pdf = meta.get("pdf_link") or ""
         if not pdf:
@@ -196,11 +244,31 @@ class ArtikelPruefer:
             return BELEGT, "[Wortlaut] " + volltext.strip()[:200]
         return BELEGT, kopf[:160]
 
+    @staticmethod
+    def sprachfassung(quelle):
+        """Welche Sprachfassung liegt unter dieser Adresse? '' wenn unklar.
+
+        Bundesrecht erscheint dreisprachig, und alle Fassungen sind gleich
+        verbindlich - ihre Auslegung kann aber auseinandergehen. Ein Beleg ohne
+        Angabe der geprueften Fassung ist deshalb nur ein halber Beleg: Er sagt,
+        dass der Artikel existiert, aber nicht, an welchem Wortlaut er gemessen
+        wurde.
+        """
+        text = str(quelle or "").lower().split("?")[0].split("#")[0].rstrip("/")
+        for sprache in ("de", "fr", "it", "rm", "en"):
+            # Fedlex: .../eli/cc/1999/404/de   Lexwork: .../data/114.2/de
+            if text.endswith("/" + sprache):
+                return sprache
+            if f"/{sprache}/" in text:
+                return sprache
+        return ""
+
     def pruefe_fundstelle(self, quelle, zitat):
         """Alle Artikel EINES Zitats. Rückgabe: Liste von Befunden."""
         raus = []
+        sprache = self.sprachfassung(quelle)
         for nr in artikelnummern(zitat):
             zustand, kopf = self.pruefe(quelle, nr)
             raus.append({"artikel": nr, "zustand": zustand, "ueberschrift": kopf,
-                         "quelle": quelle})
+                         "quelle": quelle, "sprachfassung": sprache})
         return raus

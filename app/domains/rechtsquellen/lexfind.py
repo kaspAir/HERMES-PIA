@@ -66,6 +66,31 @@ KANTON_ENTITY = {
 }
 
 
+# Reihenfolge der Amtssprachen. Frueher stand hier nur "de" - die
+# lateinischen Kantone fuehren ihre Erlasse aber NUR in ihrer Sprache (Genf
+# etwa allein unter 'fr'). Wer nur Deutsch nimmt, bekommt dort eine leere
+# Adresse, und die Fundstellenpruefung faellt still auf «nicht pruefbar»,
+# obwohl der Erlass erreichbar waere. Gemessen ueber alle 26 Kantone.
+SPRACHFOLGE = ("de", "fr", "it", "rm", "en")
+
+
+def adresse_aus(dta_urls, sprachfolge=None):
+    """Die Erlass-Adresse aus den Sprachfassungen.
+
+    ``sprachfolge`` ist die Amtssprachenfolge des Kantons (siehe
+    `kantone.sprachen`); ohne Angabe gilt die allgemeine Reihenfolge. Gibt es
+    keine der bekannten Sprachen, wird die erste vorhandene genommen: eine
+    Adresse in einer unerwarteten Sprache ist immer noch besser als keine.
+    """
+    adressen = {u.get("language"): u.get("original_url")
+                for u in (dta_urls or []) if u.get("original_url")}
+    folge = tuple(sprachfolge or ()) + SPRACHFOLGE
+    for sprache in folge:
+        if adressen.get(sprache):
+            return adressen[sprache]
+    return next(iter(adressen.values())) if adressen else ""
+
+
 def entity_ids(ebene=None, kanton=None):
     """Welche Sammlungen durchsucht werden.
 
@@ -202,11 +227,7 @@ class LexfindClient:
                 stichworte = stichworte or _entfrage_hervorhebung(m.get("keywords_hl"))
                 if titel and stichworte:
                     break
-            url = ""
-            for u in (eintrag.get("dta_urls") or []):
-                if u.get("language") == "de" and u.get("original_url"):
-                    url = u["original_url"]
-                    break
+            url = adresse_aus(eintrag.get("dta_urls"))
             ent = eintrag.get("entity") or {}
             gefunden.append({
                 "sr": sr, "titel": titel, "url": url, "stichworte": stichworte,

@@ -283,3 +283,135 @@ def test_ohne_ueberschrift_steht_der_wortlaut_da(monkeypatch):
     assert text.startswith("[Wortlaut] ")
     assert "Höchstbetrag der Busse" in text
     assert not text.startswith("Art")
+
+
+# ---- Kantonale Fundstellen: gemessen, nicht angenommen -------------------- #
+#
+# Eine Messung über alle 26 Kantone (Suche → Adresse → JSON → PDF → Text) ergab:
+# die Artikelprüfung trug für **keinen einzigen** Kanton. Der Grund war kein
+# Ausfall der Quellen, sondern eine Adressform, die es nicht gibt: der Code
+# erwartete `/data/<Sprache>/texts_of_law/<Slug>`, lexfind liefert aber
+# `/data/<Nummer>/<Sprache>`. Kantonale Artikel fielen deshalb immer auf «nicht
+# prüfbar» — ehrlich in der Ausgabe, aber die Funktion lief nie.
+#
+# Die bestehenden Tests konnten das nicht finden: sie arbeiteten mit einer von
+# Hand gebauten Beispieladresse in der erwarteten Form. Ein Test, der seine
+# Eingabe selbst erfindet, prüft die Annahme mit, statt sie zu widerlegen.
+
+def test_die_gemessene_adressform_wird_umgebaut():
+    """`/data/<Nummer>/<Sprache>` – so liefert lexfind es wirklich."""
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    assert A._kantons_api("https://bgs.so.ch/data/114.2/de") \
+        == "https://bgs.so.ch/api/de/texts_of_law/114.2"
+    assert A._kantons_api("https://www.belex.sites.be.ch/data/152.043/de") \
+        == "https://www.belex.sites.be.ch/api/de/texts_of_law/152.043"
+    assert A._kantons_api("https://gesetzessammlungen.ag.ch/data/150.700/de") \
+        == "https://gesetzessammlungen.ag.ch/api/de/texts_of_law/150.700"
+
+
+def test_die_aeltere_adressform_bleibt_gueltig():
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    assert A._kantons_api("https://ai.clex.ch/app/de/texts_of_law/172.700") \
+        == "https://ai.clex.ch/api/de/texts_of_law/172.700"
+
+
+def test_fremde_adressen_werden_nicht_umgebaut():
+    """Bund und eigene Kantonsplattformen sind kein Lexwork."""
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    assert A._kantons_api("https://www.fedlex.admin.ch/eli/cc/1999/404/de") is None
+    assert A._kantons_api(
+        "https://www.zh.ch/de/politik-staat/gesetze-beschluesse/"
+        "gesetzessammlung/zhlex-ls/erlass-170_4-2008") is None
+    assert A._kantons_api("") is None
+    assert A._kantons_api(None) is None
+
+
+def test_direkte_pdf_fassungen_werden_erkannt():
+    """Genf und Schwyz liefern die amtliche Fassung als PDF, ohne Lexwork."""
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    assert A._ist_pdf_adresse("https://www.sz.ch/public/upload/assets/5406/140_411.pdf?fp=2")
+    assert A._ist_pdf_adresse("https://silgeneve.ch/legis/program/books/RSG/pdf/rsg_a2_08")
+    assert not A._ist_pdf_adresse("https://bgs.so.ch/data/114.2/de")
+    assert not A._ist_pdf_adresse("")
+
+
+def test_die_amtssprache_entscheidet_ueber_die_adresse():
+    """Genf führt seine Erlasse NUR auf Französisch – «nur de» fand nichts."""
+    from app.domains.rechtsquellen.lexfind import adresse_aus
+
+    assert adresse_aus([{"language": "fr", "original_url": "F"},
+                        {"language": "de", "original_url": "D"}]) == "D"
+    assert adresse_aus([{"language": "fr", "original_url": "F"}]) == "F"
+    assert adresse_aus([{"language": "it", "original_url": "I"}]) == "I"
+    # Unbekannte Sprache ist besser als keine Adresse.
+    assert adresse_aus([{"language": "xx", "original_url": "X"}]) == "X"
+    assert adresse_aus([]) == ""
+    assert adresse_aus(None) == ""
+
+
+def test_die_amtssprachen_der_kantone_sind_hinterlegt():
+    """Angabe des Nutzers, mit der Sprachenkarte abgeglichen.
+
+    Sie steht im Code und nicht in einem Messskript, weil sie das Verhalten
+    bestimmt: Wer einen Genfer Erlass mit einem deutschen Begriff sucht,
+    findet ihn nicht.
+    """
+    from app.domains.rechtsquellen.kantone import KANTON_SAMMLUNG, sprachen
+
+    assert sprachen("GE") == ("fr",)
+    assert sprachen("VD") == ("fr",)
+    assert sprachen("TI") == ("it",)
+    assert sprachen("FR")[0] == "fr"          # zweisprachig, Hauptsprache FR
+    assert sprachen("BE") == ("de", "fr")     # zweisprachig, Hauptsprache DE
+    assert sprachen("GR") == ("de", "it", "rm")
+    assert sprachen("ZH") == ("de",)
+    # Jeder Kanton bekommt eine Auskunft, auch die ohne Sondereintrag.
+    assert all(sprachen(k) for k in KANTON_SAMMLUNG)
+
+
+def test_die_adresswahl_folgt_der_amtssprache():
+    from app.domains.rechtsquellen.kantone import sprachen
+    from app.domains.rechtsquellen.lexfind import adresse_aus
+
+    beide = [{"language": "de", "original_url": "D"},
+             {"language": "fr", "original_url": "F"}]
+    # Freiburg fuehrt Franzoesisch zuerst, Bern Deutsch.
+    assert adresse_aus(beide, sprachen("FR")) == "F"
+    assert adresse_aus(beide, sprachen("BE")) == "D"
+    # Ohne Angabe bleibt es bei der allgemeinen Reihenfolge.
+    assert adresse_aus(beide) == "D"
+
+
+def test_der_befund_nennt_die_gepruefte_sprachfassung():
+    """Bundesrecht ist dreisprachig, alle Fassungen sind gleich verbindlich —
+    und ihre Auslegung kann auseinandergehen. Ein Beleg ohne Angabe der
+    geprüften Fassung sagt, DASS der Artikel existiert, aber nicht, an welchem
+    Wortlaut er gemessen wurde."""
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer as A
+
+    assert A.sprachfassung("https://www.fedlex.admin.ch/eli/cc/1999/404/de") == "de"
+    assert A.sprachfassung("https://www.fedlex.admin.ch/eli/cc/1999/404/fr") == "fr"
+    assert A.sprachfassung("https://bgs.so.ch/data/114.2/de") == "de"
+    assert A.sprachfassung("https://x.ch/data/1/it") == "it"
+    # Wo die Adresse nichts hergibt, wird nichts behauptet.
+    assert A.sprachfassung("https://silgeneve.ch/legis/books/RSG/rsg_a2_08") == ""
+    assert A.sprachfassung("") == ""
+
+
+def test_die_sprachfassung_steht_im_befund():
+    from app.domains.rechtsquellen.artikel import ArtikelPruefer
+
+    p = ArtikelPruefer(aktiv=False)          # ohne Netz: Zustand nicht prüfbar
+    befunde = p.pruefe_fundstelle("https://www.fedlex.admin.ch/eli/cc/1999/404/de",
+                                  "Art. 4")
+    assert befunde and befunde[0]["sprachfassung"] == "de"
+
+
+def test_das_bundesrecht_ist_dreisprachig():
+    from app.domains.rechtsquellen.kantone import BUND_SPRACHEN
+
+    assert BUND_SPRACHEN == ("de", "fr", "it")   # Englisch ist nicht verbindlich

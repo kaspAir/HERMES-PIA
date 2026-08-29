@@ -38,6 +38,48 @@ KANTON_SAMMLUNG = {
 }
 
 
+# Amtssprachen je Kanton, in der Reihenfolge, in der gesucht werden soll.
+# Angabe vom Nutzer, mit der Sprachenkarte der Schweiz abgeglichen. Sie steht
+# hier und nicht im Messskript, weil sie das Verhalten bestimmt: Wer einen
+# Genfer Erlass mit einem deutschen Begriff sucht, findet ihn nicht - die
+# lateinischen Kantone fuehren ihre Gesetze nur in ihrer Sprache.
+KANTON_SPRACHEN = {
+    # Hauptsprache Franzoesisch
+    "GE": ("fr",), "VD": ("fr",), "NE": ("fr",), "JU": ("fr",),
+    "FR": ("fr", "de"),          # zweisprachig, Hauptsprache Franzoesisch
+    # Zweisprachig, Hauptsprache Deutsch
+    "BE": ("de", "fr"), "VS": ("de", "fr"),
+    # Hauptsprache Italienisch
+    "TI": ("it",),
+    # Dreisprachig, Hauptsprache Deutsch
+    "GR": ("de", "it", "rm"),
+}
+# Alle uebrigen Kantone: Deutsch.
+STANDARDSPRACHEN = ("de",)
+
+
+# Bundesrecht erscheint dreisprachig (DE / FR / IT). Alle drei Fassungen sind
+# gleichermassen verbindlich - und ihre Auslegung kann auseinandergehen. Fuer
+# die Fundstellenpruefung heisst das: Es genuegt nicht, einen Artikel zu
+# belegen; es muss dastehen, WELCHE Sprachfassung geprueft wurde. Englische
+# Fassungen gibt es, sie sind aber nicht verbindlich und bleiben aussen vor.
+BUND_SPRACHEN = ("de", "fr", "it")
+
+
+def sprachen(kanton_code):
+    """Amtssprachen eines Kantons, wichtigste zuerst."""
+    return KANTON_SPRACHEN.get((kanton_code or "").upper(), STANDARDSPRACHEN)
+
+
+def sprachen_fuer_namen(name):
+    """Dieselbe Auskunft ueber den Kantonsnamen statt das Kuerzel."""
+    gesucht = (name or "").strip().lower()
+    for code, eintrag in KANTON_SAMMLUNG.items():
+        if eintrag["name"].lower() == gesucht or code.lower() == gesucht:
+            return sprachen(code)
+    return STANDARDSPRACHEN
+
+
 def sammlung_link(kanton_code):
     """Link zur offiziellen Gesetzessammlung eines Kantons – oder None."""
     eintrag = KANTON_SAMMLUNG.get((kanton_code or "").upper())
