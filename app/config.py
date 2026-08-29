@@ -30,6 +30,14 @@ class Config:
     # verlassen den Host (nur Rechtsbegriffe, nie Projekttext – siehe lexfind.py).
     RECHERCHE_LIVE = os.environ.get("RECHERCHE_LIVE", "1") == "1"
 
+    # ---- Testlauf: ein Vorhaben ohne Rueckfragen durchspielen ------------- #
+    # Standardmaessig AUS, und das ist keine Vorsicht, sondern noetig: ein
+    # Testlauf erzeugt einen vollstaendigen PIA samt Freigabe, ohne dass ein
+    # Mensch je gefragt wurde. Auf einer Kundenstufe waere das ein Weg,
+    # Nachweise zu erzeugen, die keine sind. Nur auf der Entwicklungsstufe
+    # setzen (TESTLAUF=1 in der .env).
+    TESTLAUF = os.environ.get("TESTLAUF", "0") == "1"
+
     # Skills (Laufzeit-Steuerung der LLM-Aufrufe). Layout: base/ + mandant-<id>/.
     # Kanonische Quelle ist das Skills-Repo; per scripts/sync_skills.py hierher
     # gespiegelt. Fehlt der Ordner, arbeitet die App wie ohne Skills.

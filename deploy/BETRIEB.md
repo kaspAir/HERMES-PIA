@@ -266,3 +266,30 @@ Die Auswertung nennt je Regel, wie oft sie ausgelöst hat und in wie vielen PIAs
 **Regeln, die nie oder immer auslösen, sind Kandidaten zur Überarbeitung** – die
 einen tragen nichts bei, die anderen sind zu scharf oder zeigen einen echten
 Systemfehler.
+
+## Testlauf (nur Entwicklungsstufe)
+
+Ein Vorhaben ohne Rückfragen durchspielen: Ausgangslage beschreiben, HERMES PIA
+erzeugt Auftrag, Präsentation, Projektplan, Rechtsgrundlagenanalyse,
+Schutzbedarfsanalyse sowie Checkliste und Liste Projektentscheide — und folgt
+dabei immer dem eigenen Vorschlag.
+
+```
+TESTLAUF=1            # NUR auf dev. Standard ist 0.
+```
+
+**Warum nur dev.** Der Testlauf erzeugt eine freigegebene Checkliste und einen
+erreichten Meilenstein, ohne dass ein Mensch geurteilt hat. Auf einer
+Kundenstufe wäre das ein Weg, Nachweise zu erzeugen, die keine sind. Ist der
+Schalter aus, gibt es den Dienst gar nicht — die Routen antworten mit 404, und
+das Formular erscheint nicht.
+
+Jede vom Testlauf gesetzte Bewertung trägt den Vermerk «TESTLAUF: ohne
+menschliches Urteil automatisch bestätigt.» in der Erläuterung; er steht danach
+im erzeugten Word-Dokument.
+
+**Was er zeigt und was nicht.** Frage und Antwort kommen aus derselben Quelle.
+Ein grüner Lauf sagt «die Kette hält» — er sagt nichts über die Qualität des
+Inhalts. Das Wertvollste am Lauf ist sein Protokoll: dort steht, welcher Schritt
+gescheitert wäre und ob der Download der Projektleitung wegen eines
+Muss-Befunds verweigert würde.

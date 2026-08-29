@@ -133,6 +133,61 @@
   {% endif %}
 </div>
 
+{# ---- Testlauf ------------------------------------------------------------
+   Nur da, wo ausdruecklich eingeschaltet (Config TESTLAUF) - also auf der
+   Entwicklungsstufe. Auf einer Kundenstufe waere ein Knopf, der einen ganzen
+   Auftrag samt Freigabe erzeugt, ohne dass jemand gefragt wurde, ein Weg zu
+   Nachweisen, die keine sind. #}
+{% if testlauf %}
+<div class="index-hero">
+  <form method="post" action="{{ url_for('ui.testlauf_start') }}" class="start-form-card">
+    <h2 class="start-form-title">Testlauf</h2>
+    <p class="start-form-hint">Beschreiben Sie nur die Ausgangslage. HERMES PIA
+      spielt den Rest ohne Rückfragen durch und folgt dabei immer dem eigenen
+      Vorschlag: Auftrag, Präsentation, Projektplan, Rechtsgrundlagenanalyse,
+      Schutzbedarfsanalyse, Checkliste und Liste Projektentscheide.
+      <strong>Das prüft, ob die Kette hält — nicht, ob der Inhalt stimmt.</strong>
+      Wer fragt und wer antwortet, ist hier dasselbe.</p>
+    {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
+    <div class="form-row form-row-wide">
+      <label for="ausgangslage">Ausgangslage</label>
+      <textarea id="ausgangslage" name="ausgangslage" rows="5" required
+                placeholder="Worum geht es? Was ist der Anlass, was soll erreicht werden?"></textarea>
+    </div>
+    <div class="form-row">
+      <label for="t_projektname">Projektname</label>
+      <input type="text" id="t_projektname" name="projektname" placeholder="Testlauf">
+    </div>
+    <div class="form-row">
+      <label for="t_verwaltungseinheit">Verwaltungseinheit</label>
+      <input type="text" id="t_verwaltungseinheit" name="verwaltungseinheit">
+    </div>
+    <div class="form-row">
+      <label for="t_auftraggeber">Auftraggeber/in</label>
+      <input type="text" id="t_auftraggeber" name="auftraggeber">
+    </div>
+    <div class="form-row form-row-wide">
+      <label>Staatsebene</label>
+      <span>
+        <label class="chk"><input type="checkbox" name="ebene" value="bund" checked> Bund</label>
+        <label class="chk"><input type="checkbox" name="ebene" value="kanton"> Kanton</label>
+        <label class="chk"><input type="checkbox" name="ebene" value="kommune"> Kommune</label>
+      </span>
+    </div>
+    <div class="form-row">
+      <label for="t_kanton">Kanton</label>
+      <input type="text" id="t_kanton" name="kanton" maxlength="20"
+             placeholder="z. B. ZH – leer lassen für «nur Bund»">
+    </div>
+    <div class="form-row-action">
+      <button type="submit" class="btn-primary btn-large">
+        Durchspielen &#8594;
+      </button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 {% if projekte %}
 <div class="sessions-section">
   <h2>Projekte</h2>

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="admin-page">
+  <a href="{{ url_for('ui.index') }}" class="breadcrumb-back">&larr; Startseite</a>
+  <h2>Testlauf: {{ lauf.ausgangslage[:70] }}{% if lauf.ausgangslage|length > 70 %}…{% endif %}</h2>
+
+  {# Der Hinweis steht OBEN und nicht als Fussnote. Wer diese Seite oeffnet,
+     soll zuerst lesen, was diese Ergebnisse NICHT sind. #}
+  <p class="hero-desc"><strong>Diese Ergebnisse sind kein geprüfter Projektauftrag.</strong>
+    Der Testlauf folgt immer dem eigenen Vorschlag: Frage und Antwort kommen aus
+    derselben Quelle. Er zeigt, ob die Kette hält — er sagt nichts darüber, ob
+    der Inhalt stimmt. Die Freigabe der Checkliste übergeht das Tor, das sonst
+    ein Mensch passieren müsste; jede so gesetzte Bewertung ist im Dokument als
+    Testlauf vermerkt.</p>
+
+  <section class="vorlage-block">
+    <div id="lauf" class="lauf-box"
+         data-endpoint="{{ url_for('ui.testlauf_schritt', lauf_id=lauf.id) }}"
+         data-gesamt="{{ schritte | length }}"
+         data-start="{{ zustand.schritt }}"
+         data-fertig="{{ 'ja' if zustand.fertig else 'nein' }}">
+      <div class="lauf-kopf">
+        <strong id="lauf-titel">Testlauf läuft …</strong>
+        <span id="lauf-zaehler" class="fussnote"></span>
+      </div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="lauf-balken" style="width:0"></div></div>
+      <ol class="lauf-schritte">
+        {% for name in schritte %}
+        <li id="lschritt-{{ loop.index0 }}"><span class="lauf-punkt">&bull;</span> {{ name }}</li>
+        {% endfor %}
+      </ol>
+      <p class="fussnote" id="lauf-dauer"></p>
+      <p class="fehler" id="lauf-fehler" style="display:none"></p>
+      <p id="lauf-neu" style="display:none">
+        <button type="button" class="btn-primary" id="lauf-wiederholen">Weiterlaufen</button>
+        <span class="fussnote">Das bereits Erledigte bleibt erhalten.</span>
+      </p>
+    </div>
+
+    <h3 class="vorlage-title">Protokoll</h3>
+    {# Das Protokoll ist der eigentliche Ertrag. Ein Lauf, der durchlaeuft, ohne
+       zu sagen WAS er getan hat, ist eine Behauptung. #}
+    <ol class="lauf-protokoll" id="lauf-protokoll">
+      {% for eintrag in zustand.protokoll %}
+      <li><span class="fussnote">{{ eintrag.schritt }}</span> {{ eintrag.text }}</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  {% if lauf.projekt_id %}
+  <section class="vorlage-block">
+    <h3 class="vorlage-title">Was entstanden ist</h3>
+    <p><a href="{{ url_for('ui.projekt_detail', projekt_id=lauf.projekt_id) }}">Projekt öffnen</a>
+      — dort liegen der Auftrag, die Präsentation, der Projektplan, die
+      Rechtsgrundlagenanalyse, die Schutzbedarfsanalyse sowie Checkliste und
+      Liste Projektentscheide.</p>
+    {% if lauf.session_id %}
+    <p><a href="{{ url_for('ui.interview_workspace', session_id=lauf.session_id) }}">Interview ansehen</a>
+      — jeder Abschnitt mit seiner Herkunft.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  var box = document.getElementById('lauf');
+  var gesamt = parseInt(box.dataset.gesamt, 10);
+  var balken = document.getElementById('lauf-balken');
+  var zaehler = document.getElementById('lauf-zaehler');
+  var titel = document.getElementById('lauf-titel');
+  var dauer = document.getElementById('lauf-dauer');
+  var fehler = document.getElementById('lauf-fehler');
+  var liste = document.getElementById('lauf-protokoll');
+  var index = parseInt(box.dataset.start, 10) || 0;
+  var fertig = box.dataset.fertig === 'ja';
+  var seit = null;
+
+  function markiere(i, zustand) {
+    var li = document.getElementById('lschritt-' + i);
+    if (li) { li.className = zustand; }
+  }
+  function tick() {
+    if (!seit) return;
+    dauer.textContent = 'läuft seit ' + Math.round((Date.now() - seit) / 1000) + ' s';
+  }
+  function scheitern(text) {
+    markiere(index, 'gescheitert');
+    fehler.textContent = text;
+    fehler.style.display = '';
+    document.getElementById('lauf-neu').style.display = '';
+    seit = null; dauer.textContent = '';
+  }
+  // Das Protokoll waechst waehrend des Laufs. Neu gezeichnet wird nur, was
+  // dazugekommen ist - sonst springt die Seite bei jedem Schritt.
+  function zeichneProtokoll(eintraege) {
+    while (liste.children.length < eintraege.length) {
+      var e = eintraege[liste.children.length];
+      var li = document.createElement('li');
+      var s = document.createElement('span');
+      s.className = 'fussnote';
+      s.textContent = e.schritt;
+      li.appendChild(s);
+      li.appendChild(document.createTextNode(' ' + e.text));
+      liste.appendChild(li);
+    }
+  }
+  function abschluss(status) {
+    for (var i = 0; i < gesamt; i++) { markiere(i, 'erledigt'); }
+    balken.style.width = '100%';
+    titel.textContent = (status === 'fertig')
+      ? 'Testlauf abgeschlossen.' : 'Testlauf abgebrochen.';
+    zaehler.textContent = '';
+    seit = null; dauer.textContent = '';
+  }
+  function schritt() {
+    if (index >= gesamt) { abschluss('fertig'); return; }
+    markiere(index, 'aktiv');
+    titel.textContent = 'Läuft: ' + (document.getElementById('lschritt-' + index)
+                        || {textContent: ''}).textContent.trim();
+    zaehler.textContent = 'Schritt ' + (index + 1) + ' von ' + gesamt;
+    balken.style.width = Math.round(index / gesamt * 100) + '%';
+    seit = Date.now(); tick();
+    // Kein FormData: multipart laesst der Hosting-Proxy nicht durch.
+    fetch(box.dataset.endpoint, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'},
+      body: ''
+    })
+      .then(function (r) {
+        return r.text().then(function (t) {
+          var d = null;
+          try { d = JSON.parse(t); } catch (e) { d = null; }
+          return {ok: r.ok, status: r.status, d: d, text: t};
+        });
+      })
+      .then(function (a) {
+        if (!a.ok || !a.d) {
+          return scheitern(a.d
+            ? (a.d.fehler || 'Der Schritt ist fehlgeschlagen.')
+            : ('Der Server meldete einen Fehler (Code ' + a.status + '): '
+               + a.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)));
+        }
+        zeichneProtokoll(a.d.protokoll || []);
+        if (a.d.schritt > index) { markiere(index, 'erledigt'); }
+        index = a.d.schritt;
+        balken.style.width = Math.round(index / gesamt * 100) + '%';
+        if (a.d.fertig) { abschluss(a.d.status); return; }
+        schritt();
+      })
+      .catch(function (e) {
+        scheitern('Die Verbindung zum Server ist abgebrochen ('
+                  + (e && e.message ? e.message : 'unbekannt') + ').');
+      });
+  }
+  document.getElementById('lauf-wiederholen').addEventListener('click', function () {
+    fehler.style.display = 'none';
+    document.getElementById('lauf-neu').style.display = 'none';
+    schritt();
+  });
+  for (var i = 0; i < index; i++) { markiere(i, 'erledigt'); }
+  setInterval(tick, 1000);
+  if (fertig) { abschluss(box.dataset.fertig); } else { schritt(); }
+})();
+</script>
+{% endblock %}

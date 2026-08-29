@@ -17,6 +17,7 @@ import app.domains.ergebnisse.models   # noqa: F401 – Ergebnis-Entwuerfe-Tabel
 import app.domains.qualitaet.models    # noqa: F401 – Pruefprotokoll-Tabelle registrieren
 import app.domains.freigabe.models      # noqa: F401 – Checkliste/Entscheid registrieren
 import app.domains.dokumentenkopf.models  # noqa: F401 – Kopfdaten registrieren
+import app.domains.testlauf.models   # noqa: F401 – Testlauf registrieren
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
 from app.domains.praesentation.service import PraesentationService
@@ -244,6 +245,18 @@ def create_app(config_class=None):
         app.interview_service, app.projekt_service, app.config["METHODS_DIR"], llm=llm_client,
     )
     app.praesentation_service = PraesentationService(llm_client)
+    # Testlauf: ein Vorhaben ohne Rueckfragen durchspielen. Nur wo AUSDRUECKLICH
+    # eingeschaltet - er erzeugt einen vollstaendigen PIA samt Freigabe, ohne
+    # dass ein Mensch gefragt wurde. Ist er aus, gibt es den Dienst gar nicht:
+    # eine Route, die ins Leere greift, ist sicherer als eine, die auf ein Flag
+    # vertraut.
+    from app.domains.testlauf.service import TestlaufService
+    app.testlauf_service = (
+        TestlaufService(app.interview_service, app.projekt_service,
+                        app.generation_service, app.praesentation_service,
+                        app.rechtsgrundlagen_service, app.schutzbedarf_service,
+                        app.freigabe_service)
+        if app.config.get("TESTLAUF") else None)
     app.auth_service = AuthService()
     app.transcriber = Transcriber(
         api_url=app.config.get("STT_API_URL"),

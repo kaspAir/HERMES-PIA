@@ -10,6 +10,7 @@ from flask import (
 )
 
 from app.domains.auth.models import ROLE_MEMBER, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from app.domains.generation import pia as pia_dokument
 from app.domains.llm.entscheid import entscheide
 from app.domains.llm.kontext import loese_kontext, projekt_schluessel, setze_kontext
 from app.domains.llm.errors import (
@@ -241,7 +242,79 @@ def index():
         _zustand_je_projekt(projekte, method))
     return render_template("index.html", method=method, projekte=projekte,
                            vorschlag=vorschlag, weitere=weitere, ruhige=ruhige,
+                           testlauf=current_app.testlauf_service is not None,
                            begruessung=begruessung(datetime.now().hour))
+
+
+# ---- Testlauf: ein Vorhaben ohne Rueckfragen durchspielen -------------- #
+#
+# Nur vorhanden, wo ausdruecklich eingeschaltet (Config TESTLAUF). Auf einer
+# Kundenstufe waere ein Knopf, der einen vollstaendigen PIA samt Freigabe
+# erzeugt, ohne dass jemand gefragt wurde, ein Weg zu Nachweisen, die keine
+# sind.
+
+def _testlauf_dienst():
+    dienst = getattr(current_app, "testlauf_service", None)
+    if dienst is None:
+        abort(404)
+    return dienst
+
+
+@bp.post("/testlauf")
+@permission_required("write")
+def testlauf_start():
+    from app.domains.testlauf.service import TestlaufFehler
+
+    dienst = _testlauf_dienst()
+    user = current_user()
+    try:
+        lauf = dienst.starte(
+            org_id=user.org_id,
+            ausgangslage=request.form.get("ausgangslage", "").strip(),
+            projektname=request.form.get("projektname", "").strip() or "Testlauf",
+            projektleiter=(request.form.get("projektleiter", "").strip()
+                           or getattr(user, "name", None) or user.email),
+            auftraggeber=request.form.get("auftraggeber", "").strip() or None,
+            verwaltungseinheit=request.form.get("verwaltungseinheit", "").strip() or None,
+            ebene=",".join(request.form.getlist("ebene")) or None,
+            kanton=request.form.get("kanton", "").strip() or None,
+        )
+    except TestlaufFehler as e:
+        method = current_app.method_service.get("hermes_pia")
+        projekte = current_app.projekt_service.projekte_for_org(user.org_id)
+        return render_template("index.html", method=method, projekte=projekte,
+                               testlauf=True, error=str(e),
+                               begruessung=begruessung(datetime.now().hour)), 400
+    return redirect(url_for("ui.testlauf_seite", lauf_id=lauf.id))
+
+
+@bp.get("/testlauf/<int:lauf_id>")
+@permission_required("read")
+def testlauf_seite(lauf_id):
+    dienst = _testlauf_dienst()
+    lauf = dienst.hole(lauf_id)
+    if lauf is None or lauf.org_id != current_user().org_id:
+        abort(404)
+    from app.domains.testlauf import service as testlauf_modul
+    return render_template("testlauf.html", lauf=lauf,
+                           zustand=dienst.zustand(lauf),
+                           schritte=[n for _, n in testlauf_modul.SCHRITTE])
+
+
+@bp.post("/testlauf/<int:lauf_id>/schritt")
+@permission_required("write")
+def testlauf_schritt(lauf_id):
+    """EINE Arbeitseinheit. Antwortet IMMER JSON - auch beim Absturz, damit der
+    Browser den Grund anzeigen kann statt einer HTML-Fehlerseite."""
+    dienst = _testlauf_dienst()
+    lauf = dienst.hole(lauf_id)
+    if lauf is None or lauf.org_id != current_user().org_id:
+        abort(404)
+    try:
+        return jsonify(dienst.schritt(lauf_id))
+    except Exception as e:      # noqa: BLE001 – der Grund muss zum Browser
+        current_app.logger.exception("Testlauf-Schritt abgestürzt")
+        return jsonify({"fehler": f"{e.__class__.__name__}: {e}"}), 500
 
 
 @bp.post("/interview/start")
@@ -1492,69 +1565,12 @@ def interview_version_post(session_id):
 @permission_required("read")
 def interview_download(session_id, filename):
     """Generiert den PIA aus dem aktuellen Stand und liefert ihn als Download."""
-    svc = current_app.interview_service
-    gen = current_app.generation_service
     session = _load_session(session_id)
+    # Erzeugt wird an EINER Stelle - derselbe Weg, den der Testlauf geht.
+    buf, answers = pia_dokument.erzeuge(
+        session, current_app.interview_service, current_app.generation_service,
+        current_app.projekt_service)
 
-    answers = json.loads(session.answers_json or "{}")
-    changelog = json.loads(session.changelog_json or "[]")
-
-    name_part = session.project_name or "Projekt"
-    name_display = f"{name_part} / {session.projektnummer}" if session.projektnummer else name_part
-
-    pl_g = ag_g = "u"
-    if getattr(svc, "llm", None):
-        from app.domains.interview.extraction import detect_gender
-        pl_g = detect_gender(svc.llm, session.created_by or "")
-        ag_g = detect_gender(svc.llm, session.auftraggeber or "")
-
-    metadata = {
-        "projektname":        name_display,
-        "projektleiter":      session.created_by or "",
-        "auftraggeber":       session.auftraggeber or "",
-        "projektleiter_weiblich": pl_g == "w",
-        "auftraggeber_weiblich":  ag_g == "w",
-        # Volle Geschlechtsangabe (w/m/u) für die geschlechtergerechten Deckblatt-Labels;
-        # Autor = erfassende Person = Projektleiter/in.
-        "projektleiter_geschlecht": pl_g,
-        "auftraggeber_geschlecht":  ag_g,
-        "autor_geschlecht":         pl_g,
-        "autor":              session.created_by or "",
-        "verwaltungseinheit": session.verwaltungseinheit or "",
-        "geschaeftsbereich":  session.geschaeftsbereich or "",
-        "innenauftragsnummer": session.innenauftragsnummer or "",
-        "projektnummer":      session.projektnummer or "",
-        "datum":              date.today().strftime("%d.%m.%Y"),
-        "version":            session.doc_version or "0.0",
-        "status":             "in Arbeit",
-        "klassifizierung":    "Nicht klassifiziert",
-    }
-
-    # Komplexitätseinschätzung (aus der Ausgangslage-Vertiefung) in den Ausgangslage-
-    # Text einfliessen lassen – begründet die abgeleiteten Dauern in Kap. 4.1.
-    ausgangslage = answers.get("ausgangslage")
-    if isinstance(ausgangslage, dict) and ausgangslage.get("komplexitaet"):
-        extracted = ausgangslage.setdefault("extracted", {})
-        if isinstance(extracted, dict):
-            extracted["text"] = svc.composed_ausgangslage(answers)
-
-    nachweis = svc.build_nachweis(session, answers)
-
-    # Hat das Projekt eine eigene Word-Vorlage? Dann im Format DIESER Vorlage
-    # erzeugen (gleiche abgeleitete Struktur wie das Interview), sonst kanonisch.
-    methoden_vorlage = None
-    projekt = (current_app.projekt_service.projekt_for_ergebnis(session.ergebnis_id)
-               if session.ergebnis_id else None)
-    if projekt is not None:
-        methoden_vorlage = current_app.projekt_service.resolve_methoden_vorlage(projekt)
-    if methoden_vorlage is not None:
-        method = svc._effective_method(session)
-        buf = gen.generate_into_template(
-            methoden_vorlage.data, method, answers, metadata,
-            changelog=changelog, nachweis=nachweis)
-    else:
-        buf = gen.generate(session.method_id, answers, metadata,
-                           changelog=changelog, nachweis=nachweis)
     # VERBINDLICHE Pruefung vor der Ausgabe (Briefing Abschnitt 4.1):
     # Muss-Befunde verhindern die Ausgabe, Vorbehalte werden als Auflage gefuehrt.
     # Die Dok-Ebene laeuft mit - Platzhalter und Hilfetexte zeigen sich erst hier.
