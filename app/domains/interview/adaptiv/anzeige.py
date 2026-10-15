@@ -131,12 +131,12 @@ def anzeige(zustand, session, answers, kriterien, reife, rag_stand=None):
     offen = []
     for a in zustand.aktive:
         e = _eintrag(a, rev, nach_id)
-        # Offene Annahmen und Fragen nicht zwischen bestätigten Angaben
-        # verstecken (Auftrag 8.2): sie stehen zusätzlich oben.
+        # Offene Fragen, Interpretationen und Vorschläge stehen OBEN und nur
+        # dort – nicht zwischen bestätigten Angaben versteckt (Auftrag 8.2) und
+        # nicht doppelt. Nach der Bestätigung wandern sie in ihren Bereich.
         if a["art"] == "unbekannt" or not a["bestaetigt"]:
             offen.append(e)
-            if a["art"] == "unbekannt":
-                continue
+            continue
         gruppen[_bereich(a)]["eintraege"].append(e)
 
     konflikte = []

@@ -78,10 +78,19 @@
 
   // ---- Zeichnen ---------------------------------------------------------- //
 
-  function zeichneVerlauf(nachrichten) {
-    var unten = el.verlauf.scrollHeight - el.verlauf.scrollTop - el.verlauf.clientHeight < 40;
+  var ersteZeichnung = true;
+
+  function zeichneVerlauf(nachrichten, frage) {
+    // Beim ersten Zeichnen und wenn man ohnehin unten war: zum neuesten Beitrag.
+    // Wer nach oben gescrollt hat, um etwas nachzulesen, wird nicht weggerissen.
+    var unten = ersteZeichnung ||
+      el.verlauf.scrollHeight - el.verlauf.scrollTop - el.verlauf.clientHeight < 40;
+    ersteZeichnung = false;
     el.verlauf.textContent = '';
+    // Die offene Frage steht in der Fragekarte – nicht zusätzlich im Verlauf.
+    var offenId = frage && frage.nachricht_id;
     (nachrichten || []).forEach(function (m) {
+      if (offenId && m.id === offenId) return;
       var li = knoten('li', 'ai-nachricht ai-nachricht--' + m.rolle +
                             (m.status === 'fehler' ? ' ai-nachricht--fehler' : ''));
       li.appendChild(knoten('span', 'wer', m.rolle === 'benutzer' ? 'Du' : 'HERMES PIA'));
@@ -310,7 +319,7 @@
     if (a.revision < angezeigt) return false;           // veraltet – verwerfen
     angezeigt = a.revision;
     ansicht = a;
-    zeichneVerlauf(a.nachrichten);
+    zeichneVerlauf(a.nachrichten, a.frage);
     zeichneFrage(a.frage);
     zeichneErkannt(a);
     ansagen(a);

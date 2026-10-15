@@ -1238,3 +1238,14 @@ tr.widersprochen td:last-child { opacity: 1; text-decoration: none; }
 /* Der Abgleich traegt den Amber-Ton der offenen Pflicht: er verlangt eine
    Entscheidung, meldet aber keinen Fehler. */
 .kopfdaten-abgleich { border-left-color: var(--color-required); }
+
+/* ---- Schmale Bildschirme: Kopfzeile darf umbrechen -------------------------
+   Gefunden am UI-Nachweis des adaptiven Interviews (15.10.2026): bei 390 px
+   ragte die Benutzerleiste («Abmelden», E-Mail, Organisation) über den Rand
+   hinaus und erzeugte seitliches Scrollen – auf JEDER Seite der Anwendung. */
+@media (max-width: 700px) {
+  .brand-bar { flex-wrap: wrap; padding: 10px 16px; }
+  .user-menu { flex-wrap: wrap; gap: 6px 12px; margin-left: 0; }
+  .user-email { overflow-wrap: anywhere; }
+  header { padding: 10px 16px; }
+}

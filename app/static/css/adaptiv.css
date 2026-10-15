@@ -100,3 +100,8 @@
 @media (prefers-reduced-motion: no-preference) {
   .ai-eintrag--neu { transition: box-shadow .6s ease; }
 }
+
+/* Der Diktatknopf ist im bisherigen Interview absolut in die Ecke des
+   Textfelds gesetzt. Hier steht er in der Zeile neben «Senden». */
+.ai-eingabe .btn-voice { position: static; padding: 9px 14px; font-size: 14px; }
+.ai-eingabe .voice-status { margin-top: 0; }
