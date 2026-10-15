@@ -19,6 +19,8 @@ Fällt der konfigurierte Weg aus, gibt es einen Fehler – nie einen Wechsel auf
 den anderen Weg. Ohne Weg ist der Client inaktiv: embed() liefert None, und
 Aufrufer behandeln das als «RAG nicht verfügbar».
 """
+import time
+
 import requests
 
 from app.domains.llm.errors import PseudoNichtErreichbar
@@ -46,6 +48,10 @@ class VoyageEmbedder:
         self.projekt = projekt or "korpus"
         # Wie viele Tokens der Dienst gemeldet hat – für die Kostenkontrolle.
         self.tokens = 0
+        # Bei Ratenbegrenzung (429): im Gespräch kurz warten, beim Laden länger
+        # (das Ladeskript setzt die Werte hoch).
+        self.wiederholungen = 2
+        self.wartezeit = 5
 
     @property
     def modus(self):
@@ -102,6 +108,18 @@ class VoyageEmbedder:
         for i in range(0, len(texts), _BATCH):
             batch = texts[i:i + _BATCH]
             resp = self._anfrage(batch, input_type)
+            # Ratenbegrenzung des Anbieters (HTTP 429): warten und DENSELBEN Weg
+            # erneut versuchen – nie auf einen anderen Weg ausweichen.
+            for versuch in range(self.wiederholungen):
+                if getattr(resp, "status_code", 200) != 429:
+                    break
+                warte = resp.headers.get("Retry-After") if getattr(resp, "headers", None) else None
+                try:
+                    sekunden = float(warte) if warte else self.wartezeit * (2 ** versuch)
+                except ValueError:
+                    sekunden = self.wartezeit * (2 ** versuch)
+                time.sleep(min(sekunden, 60))
+                resp = self._anfrage(batch, input_type)
             resp.raise_for_status()
             antwort = resp.json()
             self.tokens += int((antwort.get("usage") or {}).get("total_tokens") or 0)
