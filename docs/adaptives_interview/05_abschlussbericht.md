@@ -9,7 +9,7 @@ Kennzeichnung in diesem Bericht:
 **[I]** implementiert · **[T]** automatisiert geprüft · **[D]** auf dev tatsächlich
 nachgewiesen · **[O]** offen
 
-Stand dieses Berichts: auf dev laufen V0.43.1 und die Datenwege; der echte RAG- und Interviewnachweis fehlt noch (Schlüssel) – siehe Abschnitt 4.
+Stand dieses Berichts: V0.43.3 auf dev; echter RAG- und Interviewnachweis erbracht (synthetischer Korpus) – siehe Abschnitt 4.
 
 ## 1. Adaptives Interview und PIA
 
@@ -94,33 +94,52 @@ sie sind für diese Änderung nicht gelaufen. Zuordnung AT01–AT26:
 
 ## 4. Auf dev nachgewiesen
 
-- **[D] Deploy V0.43.1** (`ac35d1b`) auf dev, über das Jenkins-Deploy-Skript; Sicherung
-  vorab automatisch (`methodos-dev.db.vor-deploy-ac35d1b-20261015-172031`).
-- **[D] Datenwege** laut `/health`: Sprachmodell «direkt», Embeddings «aus – VOYAGE_API_KEY
-  fehlt», Spracherkennung «aus».
-- **Vorfall beim ersten Deploy (V0.43.0):** zehn parallel startende Worker migrierten
-  gleichzeitig, einer scheiterte an «duplicate column name»; dev war einige Minuten nicht
-  erreichbar, bis der Watchdog neu startete. Daten unberührt (Migration rein additiv,
-  Sicherung vorab). Behoben in V0.43.1: Migration unter Dateisperre, belegt mit
-  `test_migration_parallel` unter Python 3.9 (ohne Sperre 2 von 3 Läufen rot, mit Sperre
-  5 von 5 grün).
+Alle Läufe mit **echtem Sprachmodell** (`claude-sonnet-4-6`, direkt), **echten Embeddings**
+(`voyage-3`, direkt) und dem **synthetischen Korpus** (10 erfundene Vorhaben, 30 Chunks,
+extern freigegeben). Der simulierte Projektleiter antwortet aus einem festen Antwortbuch;
+Fragen, Aussagen und Themen erzeugt das Modell. Ergebnisse unter `nachweis-dev/lauf-1..3/`.
 
-**Noch nicht nachgewiesen** – es fehlt der serverseitige Voyage-Schlüssel. Vorbereitet sind:
+- **[D] Deploy** V0.43.0 → V0.43.3 über das Jenkins-Deploy-Skript, jedes Mal mit Sicherung
+  vorab. Vorfall bei V0.43.0 (parallele Migration) siehe unten.
+- **[D] Datenwege** laut `/health`: Sprachmodell und Embeddings «direkt», Spracherkennung
+  «aus». Banner in der Oberfläche entsprechend.
+- **[D] Korpus geladen:** 1'270 Embedding-Tokens; Bestandsaufnahme danach: 10 Dokumente,
+  30 Chunks, einheitlich `voyage-3`/1024, Korpusversion `synthetisch-2026-10-15`.
+- **[D] Echter RAG-Abruf mit Quellen:** je Suche 30 Chunks verglichen, 0 inkompatibel;
+  Themen tragen ihre Fundstellen (Projekt, Abschnitt, Auszug, Korpusversion); die
+  HERMES-5.1-Methodenaussage wurde als «nicht übernehmen» eingeordnet.
+- **[D] Vollständiger Durchlauf (Lauf 2, Fall A):** offener Einstieg → Fragen aus Lücken und
+  Vergleichsprojekten → berechnete Vorschläge (Terminplan, Monatsverteilung 73 PT auf fünf
+  Monate) übernommen → Abschlussprüfung ohne Blocker → fertiggestellt. Word-Datei ohne
+  Dokumentbefund; Kap. 5 stimmt mit Kap. 3.1 überein.
+- **[D] Korrektur und Widerspruch (Lauf 3, Fall B):** ausdrückliche Korrektur ersetzt das
+  Startdatum, Vorschläge rechnen nach; «höchstens 4 Tage» gegen «10 Tage» wird ein offener
+  Widerspruch mit Rückfrage, «Es gilt …» löst ihn. Word-Datei als Entwurf mit Anhang
+  «Offene Punkte».
+- **[D] Kosten:** Lauf 1 USD 1.25, Lauf 2 USD 0.71, Lauf 3 USD 0.15 – zusammen rund
+  **USD 2.11** (gerechnet mit bewusst hoch angesetzten Preisen 5/25/0.20 USD je Mio Tokens).
 
-1. `~/.hermes-env/dev.env` mit `VOYAGE_API_KEY` anlegen (nur serverseitig), dev neu starten.
-2. `python scripts/korpus_bestand.py ~/methodos-dev/data/methodos-dev.db` – Bestand dokumentieren.
-3. `python scripts/ingest_synthetischer_korpus.py --ausfuehren` – synthetischer Korpus
-   (≈ 1'500 Tokens).
-4. `python tools/dev_echtlauf.py --ziel ~/nachweis-dev --ausfuehren --preise … --budget-usd 10`
-   – vollständiger Fall und Korrektur-/Widerspruchsfall mit echtem Modell und echtem RAG,
-   zwei Word-Dateien, Protokolle, Verbrauch.
-5. Sichtprüfung in der Oberfläche (Organisation «Synthetik-Nachweis (erfunden)»): Quellen,
-   Anzeige «Für den PIA erkannt».
+**Befunde aus den echten Läufen, behoben und mit Tests festgehalten
+(`test_echtlauf_befunde.py`):**
+
+1. «45 Personentage» statt «45» → keine Monatsverteilung, Kap. 5 leer (V0.43.2).
+2. Dadurch Angebot eines Untersuchungsauftrags → das Modell erfand ein Ziel (V0.43.2).
+3. Themenflut: 33 Themen, acht Fassungen desselben aus derselben Quelle, dieselbe Frage
+   viermal → 11 Themen in Lauf 2 (V0.43.2).
+4. Stille Ersetzung statt Widerspruch → offener Widerspruch ohne Korrektursignal (V0.43.3).
+5. Zehn parallel startende Worker migrierten gleichzeitig → Start abgebrochen, dev einige
+   Minuten nicht erreichbar → Migration unter Dateisperre (V0.43.1).
+
+**[O] Noch nicht auf dev nachgewiesen:** Sichtprüfung der Oberfläche (Quellen, Anzeige «Für
+den PIA erkannt») durch Screenshots auf dev – dafür braucht es eine angemeldete Sitzung; die
+Sessions liegen in der Organisation «Synthetik-Nachweis (erfunden)»: Lauf 2 Fall A = Session
+20, Lauf 3 Fall B = Session 22.
 
 ## 5. Offen
 
-- Echter RAG-Abruf, echter Interviewdurchlauf, Word-Dateien aus dem
-  echten Lauf (Abschnitt 4).
+- RAG mit den echten (pseudonymisierten) Aufträgen: erst nach Bereinigung und ausdrücklicher
+  Freigabe oder mit der Schutzschicht (Entscheid «A» vom 15.10.2026).
+- Sichtprüfung der Oberfläche auf dev (Abschnitt 4).
 - Direkter Sprachmodellweg: `PSEUDO_UMGEHEN` steht in der geteilten `.env`, die alle Stufen
   laden (nur Variablennamen gelesen). Ob er auf test/int/prod wirkt, hängt vom Wert ab –
   Entscheid des Betreibers, siehe Betriebsanleitung.

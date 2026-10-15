@@ -1,0 +1,674 @@
+{
+  "fall": "B",
+  "titel": "Korrektur und Widerspruch (Beispielstadt, erfunden)",
+  "session_id": 22,
+  "zwischenstaende": [
+    {
+      "beitrag": "Die Beispielstadt will ihre drei Schalterdienste zusammenlegen. Die Initialisierung beginnt am 1. März 2027 und dauert bis Ende August 2027. Der Auftraggeber rechnet mit 10 Personentagen.",
+      "frage": "Sollen wir in der Initialisierung untersuchen, wie und zu welchem Zeitpunkt Mitarbeitende und allfällige Personalvertretungen in das Vorhaben einbezogen werden sollen, um Akzeptanzrisiken frühzeitig zu erkennen und zu bewerten?",
+      "aktion": "erkunden",
+      "offene_konflikte": [],
+      "ersetzt": [],
+      "eckdaten": {
+        "start_initialisierung": {
+          "wert": "2027-03-01",
+          "aussage": "A-0002",
+          "art": "benutzerangabe",
+          "unvollstaendig": false
+        },
+        "ende_initialisierung": {
+          "wert": "2027-08-31",
+          "aussage": "A-0003",
+          "art": "benutzerangabe",
+          "unvollstaendig": false
+        }
+      }
+    },
+    {
+      "beitrag": "Korrektur: die Initialisierung beginnt erst am 1. April 2027, nicht im März.",
+      "frage": "Was soll am Ende der Initialisierung erreicht sein – woran erkennst du, dass die Phase erfolgreich war?",
+      "aktion": "erkunden",
+      "offene_konflikte": [],
+      "ersetzt": [
+        "Die Initialisierung beginnt am 1. März 2027.",
+        "Vorschlag Terminplan: 8 Ergebnisse zwischen 01.03.2027 und 31.08.2027 terminiert, Abnahme durch den AG",
+        "Vorschlag Monatsverteilung AG: 10 PT auf 6 Monat(e) (2 / 2 / 2 / 2 / 1 / 1)"
+      ],
+      "eckdaten": {
+        "ende_initialisierung": {
+          "wert": "2027-08-31",
+          "aussage": "A-0003",
+          "art": "benutzerangabe",
+          "unvollstaendig": false
+        },
+        "start_initialisierung": {
+          "wert": "2027-04-01",
+          "aussage": "A-0007",
+          "art": "benutzerangabe",
+          "unvollstaendig": false
+        }
+      }
+    },
+    {
+      "beitrag": "Der Auftraggeber kann für die ganze Initialisierung höchstens 4 Tage einsetzen.",
+      "frage": "Du hast einerseits erwähnt, dass der Auftraggeber mit 10 Personentagen Aufwand rechnet, andererseits dass er höchstens 4 Personentage einsetzen kann – welche Angabe gilt?",
+      "aktion": "widerspruch",
+      "offene_konflikte": [
+        "«Der Auftraggeber rechnet mit 10 Personentagen Aufwand.» und «Der Auftraggeber kann für die ganze Initialisierung höchstens 4 Personentage einsetzen.» passen nicht zusammen."
+      ],
+      "ersetzt": [
+        "Die Initialisierung beginnt am 1. März 2027.",
+        "Vorschlag Terminplan: 8 Ergebnisse zwischen 01.03.2027 und 31.08.2027 terminiert, Abnahme durch den AG",
+        "Vorschlag Monatsverteilung AG: 10 PT auf 6 Monat(e) (2 / 2 / 2 / 2 / 1 / 1)",
+        "Vorschlag Monatsverteilung AG: 10 PT auf 5 Monat(e) (2 / 2 / 2 / 2 / 2)"
+      ],
+      "eckdaten": {
+        "ende_initialisierung": {
+          "wert": "2027-08-31",
+          "aussage": "A-0003",
+          "art": "benutzerangabe",
+          "unvollstaendig": false
+        },
+        "start_initialisierung": {
+          "wert": "2027-04-01",
+          "aussage": "A-0007",
+          "art": "benutzerangabe",
+          "unvollstaendig": false
+        }
+      }
+    },
+    {
+      "beitrag": "Es gilt: der Auftraggeber setzt 4 Personentage ein, die 10 Tage waren eine erste Schätzung.",
+      "frage": "Danke für die Klärung. Aber zurück zur eigentlichen Frage: Was soll am Ende der Initialisierung konkret erreicht sein – woran erkennst du, dass die Phase erfolgreich abgeschlossen wurde?",
+      "aktion": "erkunden",
+      "offene_konflikte": [],
+      "ersetzt": [
+        "Die Initialisierung beginnt am 1. März 2027.",
+        "Vorschlag Terminplan: 8 Ergebnisse zwischen 01.03.2027 und 31.08.2027 terminiert, Abnahme durch den AG",
+        "Vorschlag Monatsverteilung AG: 10 PT auf 6 Monat(e) (2 / 2 / 2 / 2 / 1 / 1)",
+        "Vorschlag Monatsverteilung AG: 10 PT auf 5 Monat(e) (2 / 2 / 2 / 2 / 2)"
+      ],
+      "eckdaten": {
+        "ende_initialisierung": {
+          "wert": "2027-08-31",
+          "aussage": "A-0003",
+          "art": "benutzerangabe",
+          "unvollstaendig": false
+        },
+        "start_initialisierung": {
+          "wert": "2027-04-01",
+          "aussage": "A-0007",
+          "art": "benutzerangabe",
+          "unvollstaendig": false
+        }
+      }
+    }
+  ],
+  "gespraech": [
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Lass uns mit «Synthetik B – Korrektur und Widerspruch» beginnen. Worum geht es bei diesem Vorhaben? Erzähl mir vom Anlass, vom Problem, das gelöst werden soll, und was Du schon weisst – so ausführlich, wie Du magst.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Die Beispielstadt will ihre drei Schalterdienste zusammenlegen. Die Initialisierung beginnt am 1. März 2027 und dauert bis Ende August 2027. Der Auftraggeber rechnet mit 10 Personentagen.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Sollen wir in der Initialisierung untersuchen, wie und zu welchem Zeitpunkt Mitarbeitende und allfällige Personalvertretungen in das Vorhaben einbezogen werden sollen, um Akzeptanzrisiken frühzeitig zu erkennen und zu bewerten?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Korrektur: die Initialisierung beginnt erst am 1. April 2027, nicht im März.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Was soll am Ende der Initialisierung erreicht sein – woran erkennst du, dass die Phase erfolgreich war?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Der Auftraggeber kann für die ganze Initialisierung höchstens 4 Tage einsetzen.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "widerspruch",
+      "text": "Du hast einerseits erwähnt, dass der Auftraggeber mit 10 Personentagen Aufwand rechnet, andererseits dass er höchstens 4 Personentage einsetzen kann – welche Angabe gilt?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Es gilt: der Auftraggeber setzt 4 Personentage ein, die 10 Tage waren eine erste Schätzung.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Danke für die Klärung. Aber zurück zur eigentlichen Frage: Was soll am Ende der Initialisierung konkret erreicht sein – woran erkennst du, dass die Phase erfolgreich abgeschlossen wurde?",
+      "status": "verarbeitet"
+    }
+  ],
+  "aussagen": [
+    {
+      "schluessel": "A-0001",
+      "inhalt": "Die Beispielstadt will ihre drei Schalterdienste zusammenlegen.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "gesamtvorhaben",
+      "ziele": [
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0002",
+      "inhalt": "Die Initialisierung beginnt am 1. März 2027.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "ersetzt",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "eckdaten",
+          "felder": {
+            "start_initialisierung": "2027-03-01"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0003",
+      "inhalt": "Die Initialisierung dauert bis Ende August 2027.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "eckdaten",
+          "felder": {
+            "ende_initialisierung": "2027-08-31"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0004",
+      "inhalt": "Der Auftraggeber rechnet mit 10 Personentagen Aufwand.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "verworfen",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "personalaufwand",
+          "felder": {
+            "rolle": "Auftraggeber",
+            "aufwand": "10"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0005",
+      "inhalt": "Vorschlag Terminplan: 8 Ergebnisse zwischen 01.03.2027 und 31.08.2027 terminiert, Abnahme durch den AG",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": false,
+      "status": "ersetzt",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Stakeholder Liste",
+            "termin": "07.04.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Studie",
+            "termin": "28.06.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Rechtsgrundlagenanalyse",
+            "termin": "22.05.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Schutzbedarfsanalyse",
+            "termin": "22.05.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen; Liste Projektentscheide Führung)",
+            "termin": "07.07.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Entscheid Auftraggeber"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Projektmanagementplan",
+            "termin": "04.08.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Durchführungsauftrag",
+            "termin": "22.08.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Meilenstein Durchführungsfreigabe (mit Checkliste Durchführungsfreigabe; Liste Projektentscheide Steuerung)",
+            "termin": "31.08.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Entscheid Auftraggeber"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0006",
+      "inhalt": "Vorschlag Monatsverteilung AG: 10 PT auf 6 Monat(e) (2 / 2 / 2 / 2 / 1 / 1)",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": false,
+      "status": "ersetzt",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "projektorganisation",
+          "felder": {
+            "rolle_person": "AG / Alex Beispiel",
+            "monat_1": "2",
+            "monat_2": "2",
+            "monat_3": "2",
+            "monat_4": "2",
+            "monat_5": "1",
+            "monat_6": "1"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0007",
+      "inhalt": "Die Initialisierung beginnt am 1. April 2027.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "eckdaten",
+          "felder": {
+            "start_initialisierung": "2027-04-01"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0008",
+      "inhalt": "Vorschlag Terminplan: 8 Ergebnisse zwischen 01.04.2027 und 31.08.2027 terminiert, Abnahme durch den AG",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": false,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Stakeholder Liste",
+            "termin": "01.05.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Studie",
+            "termin": "09.07.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Rechtsgrundlagenanalyse",
+            "termin": "08.06.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Schutzbedarfsanalyse",
+            "termin": "08.06.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen; Liste Projektentscheide Führung)",
+            "termin": "16.07.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Entscheid Auftraggeber"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Projektmanagementplan",
+            "termin": "08.08.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Durchführungsauftrag",
+            "termin": "23.08.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Meilenstein Durchführungsfreigabe (mit Checkliste Durchführungsfreigabe; Liste Projektentscheide Steuerung)",
+            "termin": "31.08.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Entscheid Auftraggeber"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0009",
+      "inhalt": "Vorschlag Monatsverteilung AG: 10 PT auf 5 Monat(e) (2 / 2 / 2 / 2 / 2)",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": false,
+      "status": "ersetzt",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "projektorganisation",
+          "felder": {
+            "rolle_person": "AG / Alex Beispiel",
+            "monat_1": "2",
+            "monat_2": "2",
+            "monat_3": "2",
+            "monat_4": "2",
+            "monat_5": "2"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0010",
+      "inhalt": "Der Auftraggeber kann für die ganze Initialisierung höchstens 4 Personentage einsetzen.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "personalaufwand",
+          "felder": {
+            "rolle": "Auftraggeber",
+            "aufwand": "4"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0011",
+      "inhalt": "Vorschlag Monatsverteilung AG: 4 PT auf 5 Monat(e) (1 / 1 / 1 / 1 / 0)",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": false,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "projektorganisation",
+          "felder": {
+            "rolle_person": "AG / Alex Beispiel",
+            "monat_1": "1",
+            "monat_2": "1",
+            "monat_3": "1",
+            "monat_4": "1"
+          }
+        }
+      ]
+    }
+  ],
+  "konflikte": [
+    {
+      "id": 1,
+      "aussagen": [
+        "A-0004",
+        "A-0010"
+      ],
+      "beschreibung": "«Der Auftraggeber rechnet mit 10 Personentagen Aufwand.» und «Der Auftraggeber kann für die ganze Initialisierung höchstens 4 Personentage einsetzen.» passen nicht zusammen.",
+      "quelle": "gespraech",
+      "status": "geloest",
+      "loesung": "Die 10 Personentage waren eine erste Schätzung; gültig sind 4 Personentage Einsatz des Auftraggebers.",
+      "revision_erkannt": 5,
+      "revision_geloest": 7
+    }
+  ],
+  "themen": [
+    {
+      "thema": "Einbezug von Mitarbeitenden und Personalvertretung in der Initialisierung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 8,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Personalvertretung wurde erst nach dem Konzept einbezogen. Daraus entstand Widerstand, der die Umsetzung um ein halbes Jahr verzögerte. Unklare Rollen am gemeinsamen Schalter führten zu Doppelarbeit.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-03 Zusammenlegung Schalterdienste"
+        },
+        {
+          "chunk_id": 9,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Personalvertretung und Mitarbeitende von Beginn an einbeziehen. Rollen und Abläufe am gemeinsamen Schalter früh klären.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-03 Zusammenlegung Schalterdienste"
+        }
+      ]
+    }
+  ],
+  "kriterien": [
+    {
+      "id": "K-AL-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-ECK-START",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-ECK-ENDE",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-ZI-1",
+      "zustand": "offen",
+      "details": []
+    },
+    {
+      "id": "K-PA-1",
+      "zustand": "offen",
+      "details": [
+        "PL: aufwand fehlt"
+      ]
+    },
+    {
+      "id": "K-RI-1",
+      "zustand": "offen",
+      "details": []
+    },
+    {
+      "id": "K-AL-2",
+      "zustand": "offen",
+      "details": []
+    },
+    {
+      "id": "K-ZI-2",
+      "zustand": "offen",
+      "details": []
+    },
+    {
+      "id": "K-RB-1",
+      "zustand": "offen",
+      "details": []
+    },
+    {
+      "id": "K-PA-2",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-SM-1",
+      "zustand": "offen",
+      "details": []
+    },
+    {
+      "id": "K-KO-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-TE-1",
+      "zustand": "offen",
+      "details": [
+        "Stakeholder Liste: termin, abnahme fehlt",
+        "Studie: termin, abnahme fehlt",
+        "Rechtsgrundlagenanalyse: termin, abnahme fehlt",
+        "Schutzbedarfsanalyse: termin, abnahme fehlt",
+        "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen;: termin, abnahme fehlt",
+        "Projektmanagementplan: termin, abnahme fehlt",
+        "Durchführungsauftrag: termin, abnahme fehlt",
+        "Meilenstein Durchführungsfreigabe (mit Checkliste Durchführu: termin, abnahme fehlt"
+      ]
+    },
+    {
+      "id": "K-PO-1",
+      "zustand": "offen",
+      "details": [
+        "Monatsverteilung fehlt"
+      ]
+    },
+    {
+      "id": "K-KM-1",
+      "zustand": "offen",
+      "details": []
+    },
+    {
+      "id": "K-RI-2",
+      "zustand": "offen",
+      "details": []
+    }
+  ],
+  "reife": {
+    "zustand": "entwurf_offen",
+    "blocker": 11,
+    "pia_status": "laufend"
+  },
+  "pia_status": "laufend",
+  "rag_stand": {
+    "verfuegbar": true,
+    "letzte_suche": {
+      "revision": 1,
+      "n_aussagen": 4,
+      "abschnitte": [
+        "ausgangslage",
+        "eckdaten",
+        "personalaufwand"
+      ]
+    },
+    "treffer": 8,
+    "projekte": 6,
+    "neue_themen": 1,
+    "bericht": {
+      "modell": "voyage-3",
+      "verglichen": 30,
+      "inkompatibel": 0,
+      "ohne_vektor": 0,
+      "nicht_freigegeben": 0,
+      "nur_extern_freigegeben": true
+    },
+    "zeit": "2026-10-15T16:01:57",
+    "grund": ""
+  },
+  "docx": "Synthetik-B_korrektur_widerspruch.docx"
+}
