@@ -11,6 +11,7 @@ Deterministisch berechnet, kein Modell. Jeder Vorschlag:
 Eine rechnerische Verteilung ist ein Vorschlag, keine zugesagte
 Ressourcenplanung; die Bestätigung der Vorgesetzten bleibt offen.
 """
+import re
 from datetime import date, timedelta
 
 from app.domains.method import vorlagenzuordnung as vz
@@ -51,10 +52,12 @@ def monatsverteilung(answers, meta):
               if z.get("_herkunft") not in ("system", "vorlage", "berechnet")}
     ops = []
     for z in (answers.get("personalaufwand") or {}).get("extracted") or []:
-        try:
-            pt = float(str(z.get("aufwand", "")).replace(",", "."))
-        except ValueError:
+        # Die Zahl, auch wenn sie mit Einheit kommt («45 Personentage») – ein
+        # echtes Modell liefert das so, und dann fehlte der Vorschlag ganz.
+        m = re.search(r"\d+(?:[.,]\d+)?", str(z.get("aufwand", "")))
+        if not m:
             continue
+        pt = float(m.group().replace(",", "."))
         if pt <= 0:
             continue
         rolle = z.get("rolle", "")

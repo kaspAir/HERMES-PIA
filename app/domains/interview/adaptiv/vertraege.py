@@ -45,6 +45,9 @@ MAX_FELD = 600
 MAX_THEMA = 80
 
 _ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Personentage mit Einheit: «45», «45 PT», «45 Personentage», «4,5 Tage».
+_PT = re.compile(r"\s*(\d+(?:[.,]\d+)?)\s*(?:PT|Personentage?|Personen-Tage?|Arbeitstage?|Tage?)?\.?\s*",
+                 re.IGNORECASE)
 _SCHLUESSEL = re.compile(r"^A-\d{4}$")
 
 
@@ -149,6 +152,15 @@ def _pruefe_ziele(ziele, katalog, hinweise):
                 felder[k] = t
                 felder[f"{k}_unvollstaendig"] = True
                 continue
+            if (abschnitt == "personalaufwand" and k == "aufwand") or weiterer_monat \
+                    or (abschnitt == "projektorganisation" and k.startswith("monat_")):
+                # Die Spalte heisst «Aufwand in PT» – die Einheit steht im Kopf,
+                # nicht in der Zelle. Ein echtes Modell liefert «45 Personentage»
+                # (dev, 15.10.2026); nur eine eindeutige Zahl mit PT-Einheit wird
+                # zur Zahl, alles andere bleibt, wie es gesagt wurde.
+                m = _PT.fullmatch(t)
+                if m:
+                    t = m.group(1).replace(",", ".")
             felder[k] = t
         eintrag = {"abschnitt": abschnitt, "felder": felder}
         # «Begründet nicht anwendbar» ist ein eigener Zustand – nicht leer und

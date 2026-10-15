@@ -1,0 +1,1461 @@
+{
+  "fall": "A",
+  "titel": "Ablösung der Registeranwendung (Beispielamt, erfunden)",
+  "session_id": 18,
+  "gespraech": [
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Lass uns mit «Synthetik A – Ablösung Registeranwendung» beginnen. Worum geht es bei diesem Vorhaben? Erzähl mir vom Anlass, vom Problem, das gelöst werden soll, und was Du schon weisst – so ausführlich, wie Du magst.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Das Beispielamt betreibt seit vierzehn Jahren eine Registeranwendung. Der Hersteller hat angekündigt, die Wartung Ende 2028 einzustellen – das ist noch nicht schriftlich bestätigt. Daten werden doppelt erfasst, weil die Schnittstelle zum Gebäuderegister fehlt. Die Initialisierung soll am 1. Februar 2027 beginnen und am 30. Juni 2027 abgeschlossen sein.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Sollen wir in der Initialisierung untersuchen, ob und in welchem Umfang der bestehende Datenbestand der vierzehn Jahre alten Registeranwendung auf Vollständigkeit und Qualität analysiert werden muss – und diesen Untersuchungsbedarf als Ziel der Initialisierung aufnehmen?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Ziel der Initialisierung ist eine Studie mit mindestens zwei Lösungsvarianten und einer Empfehlung, Priorität Muss, gemessen daran, dass der Auftraggeber die Studie abnimmt. Zweites Ziel: der Datenbestand ist auf Qualität und Umfang untersucht, Priorität Hoch, Messgrösse ist ein Bericht zur Datenqualität.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "konkretisieren",
+      "text": "Du hast als zweites Ziel eine Datenqualitätsuntersuchung aufgenommen – wer auf Seite des Auftraggebers würde dafür zur Verfügung stehen, und wie viele Personentage schätzt du dafür ein?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Ich rechne für mich als Projektleiter mit 45 Personentagen, der Auftraggeber mit 8 Tagen, dazu eine Fachperson aus der Abteilung mit 20 Tagen.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Siehst du ein Risiko darin, dass Schnittstellen zu Drittsystemen oder externen Stellen noch nicht vollständig bekannt oder die zuständigen Ansprechpersonen noch nicht geklärt sind – und sollen wir das in der Initialisierung als Untersuchungsauftrag aufnehmen?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Risiko: die Fachleute sind im Frühling durch die Jahresabschlüsse stark belastet. Wahrscheinlichkeit mittel, Auswirkung hoch. Massnahme: Workshops früh fix planen. Verantwortlich ist die Projektleitung, Termin Ende Februar 2027.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "rueckspiegeln",
+      "text": "Ich würde für den Terminplan festhalten: 8 Ergebnisse werden zwischen dem 01.02.2027 und dem 30.06.2027 terminiert, mit Abnahme durch den Auftraggeber. Soll ich das so übernehmen, oder möchtest du einzelne Termine anpassen?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Ja, das stimmt so.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Sollen wir in der Initialisierung klären, ob und wie der IT-Betrieb in das Vorhaben einzubinden ist, und ob die zukünftigen Betriebskosten als Rahmenbedingung oder als Risiko aufzunehmen sind?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Vorgabe der Stammorganisation: die Lösung muss im kantonalen Rechenzentrum betrieben werden können.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Sollen wir in der Initialisierung untersuchen, welche Qualitätsdimensionen (z. B. Vollständigkeit, Eindeutigkeit, Aktualität) für den bestehenden Datenbestand geprüft werden müssen, und wie die Abnahme eines entsprechenden Datenqualitätsberichts geregelt werden soll?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Besondere Sachmittel brauchen wir nicht, Arbeitsplätze sind vorhanden.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "erkunden",
+      "text": "Sollen wir in der Initialisierung klären, welche internen Stakeholder – etwa betroffene Fachstellen oder die Personalvertretung – frühzeitig einzubeziehen sind und wie die Kommunikation mit ihnen während der Initialisierungsphase gestaltet werden soll?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Die Mitarbeitenden informiere ich monatlich in der Teamsitzung, den Auftraggeber alle zwei Wochen in einer kurzen Besprechung.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "vorschlag",
+      "text": "Für die Projektorganisation brauche ich noch eine Monatsverteilung der geplanten Personentage. Ich würde vorschlagen, dass wir im Rahmen der Initialisierung einen groben Ressourcenplan erarbeiten, der die Personentage auf die einzelnen Monate aufteilt – abgestimmt auf die Phasenplanung. Soll ich das so aufnehmen?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Ja, mach bitte einen Vorschlag.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "vorschlag",
+      "text": "Ich würde vorschlagen, die Monatsverteilung der Personentage als Untersuchungsauftrag in die Initialisierung aufzunehmen: Im Rahmen der Initialisierungsphase wird ein grober Ressourcenplan erarbeitet, der die geplanten Personentage der Projektbeteiligten auf die einzelnen Monate verteilt und mit der Phasenplanung aus Kapitel 3.1 abgestimmt ist. Soll ich das so aufnehmen?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Ja, mach bitte einen Vorschlag.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "rueckspiegeln",
+      "text": "Habe ich dich richtig verstanden: Im Rahmen der Initialisierungsphase wird ein grober Ressourcenplan erarbeitet, der die geplanten Personentage der Projektbeteiligten auf die einzelnen Monate verteilt und mit der Phasenplanung abgestimmt ist – soll ich das so aufnehmen?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Ja, das stimmt so.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "konkretisieren",
+      "text": "Sollen wir in der Initialisierung untersuchen, welche Abhängigkeiten zur Schnittstelle des Gebäuderegisters bestehen – also ob Schnittstelle, Datenformat und zuständige Stellen bereits bekannt und dokumentiert sind – und diesen Sachverhalt als Rahmenbedingung oder Risiko im PIA abbilden?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Dazu weiss ich im Moment nichts Genaueres – bitte als offenen Punkt führen.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "konkretisieren",
+      "text": "Gibt es in deinem Vorhaben eine Systemkomponente oder ein Produkt, dessen Wartungseinstellung bisher nur mündlich angekündigt wurde – und sollen wir in der Initialisierung untersuchen, welche Konsequenzen eine Verzögerung oder Änderung dieser Ankündigung auf Zielsetzung und Terminrahmen hätte?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Dazu weiss ich im Moment nichts Genaueres – bitte als offenen Punkt führen.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "konkretisieren",
+      "text": "Die Schnittstelle zum Gebäuderegister – inklusive Datenformat und zuständige Stellen – ist noch ungeklärt. Sollen wir in der Initialisierung untersuchen, welche Schnittstellen zu Umsystemen bestehen oder fehlen, wer auf Gegenseite verantwortlich ist, und wie eine vollständige Schnittstellenübersicht als Grundlage für die Lösungsvarianten erarbeitet werden soll?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Dazu weiss ich im Moment nichts Genaueres – bitte als offenen Punkt führen.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "konkretisieren",
+      "text": "Du hast das Thema Schnittstellen zweimal als offenen Punkt markiert – sollen wir in der Initialisierung trotzdem gezielt untersuchen, welche Schnittstellen die Registeranwendung zu anderen Systemen hat oder braucht, wer die jeweiligen Gegenstellen verantwortet, und wie das in die Lösungsvarianten einfliessen soll, oder soll dieses Thema vollständig offengelassen werden?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Dazu weiss ich im Moment nichts Genaueres – bitte als offenen Punkt führen.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "konkretisieren",
+      "text": "Sollen wir in der Initialisierung untersuchen, nach welchen Kriterien und mit welcher Methode die Datenqualität der bestehenden Registeranwendung geprüft wird, damit das Ergebnis als Grundlage für den Variantenvergleich dienen kann?",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "aktion": null,
+      "text": "Dazu weiss ich im Moment nichts Genaueres – bitte als offenen Punkt führen.",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "aktion": "konkretisieren",
+      "text": "Sollen wir in der Initialisierung untersuchen, ob die bisher nur mündlich angekündigte Wartungseinstellung des Herstellers schriftlich bestätigt werden muss, bevor bestimmte Projektentscheide – etwa zur bevorzugten Lösungsvariante oder zum Terminrahmen – gefällt werden können?",
+      "status": "verarbeitet"
+    }
+  ],
+  "aussagen": [
+    {
+      "schluessel": "A-0001",
+      "inhalt": "Das Beispielamt betreibt seit vierzehn Jahren eine Registeranwendung.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "gesamtvorhaben",
+      "ziele": [
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0002",
+      "inhalt": "Der Hersteller der Registeranwendung hat angekündigt, die Wartung Ende 2028 einzustellen. Diese Ankündigung ist noch nicht schriftlich bestätigt.",
+      "art": "annahme",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "gesamtvorhaben",
+      "ziele": [
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0003",
+      "inhalt": "Daten werden doppelt erfasst, weil die Schnittstelle zum Gebäuderegister fehlt.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "gesamtvorhaben",
+      "ziele": [
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0004",
+      "inhalt": "Die Initialisierung beginnt am 1. Februar 2027.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "eckdaten",
+          "felder": {
+            "start_initialisierung": "2027-02-01"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0005",
+      "inhalt": "Die Initialisierung soll am 30. Juni 2027 abgeschlossen sein.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "eckdaten",
+          "felder": {
+            "ende_initialisierung": "2027-06-30"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0006",
+      "inhalt": "Vorschlag Terminplan: 8 Ergebnisse zwischen 01.02.2027 und 30.06.2027 terminiert, Abnahme durch den AG",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Stakeholder Liste",
+            "termin": "03.03.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Studie",
+            "termin": "09.05.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Rechtsgrundlagenanalyse",
+            "termin": "09.04.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Schutzbedarfsanalyse",
+            "termin": "09.04.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen; Liste Projektentscheide Führung)",
+            "termin": "16.05.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Entscheid Auftraggeber"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Projektmanagementplan",
+            "termin": "08.06.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Durchführungsauftrag",
+            "termin": "23.06.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Meilenstein Durchführungsfreigabe (mit Checkliste Durchführungsfreigabe; Liste Projektentscheide Steuerung)",
+            "termin": "30.06.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Entscheid Auftraggeber"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0007",
+      "inhalt": "Ziel der Initialisierung ist eine Studie mit mindestens zwei Lösungsvarianten und einer Empfehlung.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "ziele",
+          "felder": {
+            "kategorie": "Vorgehensziel",
+            "beschreibung": "Studie mit mindestens zwei Lösungsvarianten und einer Empfehlung liegt vor.",
+            "messgroesse": "Abnahme der Studie durch den Auftraggeber.",
+            "prioritaet": "Muss"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0008",
+      "inhalt": "Zweites Ziel der Initialisierung: Der Datenbestand der bestehenden Registeranwendung ist auf Qualität und Umfang untersucht. Messgrösse ist ein Bericht zur Datenqualität. Priorität Hoch.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "ziele",
+          "felder": {
+            "kategorie": "Vorgehensziel",
+            "beschreibung": "Der Datenbestand der bestehenden Registeranwendung ist auf Qualität und Umfang untersucht.",
+            "messgroesse": "Bericht zur Datenqualität liegt vor.",
+            "prioritaet": "Hoch"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0009",
+      "inhalt": "Projektleiter: 45 Personentage für die Initialisierung.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "personalaufwand",
+          "felder": {
+            "rolle": "Projektleiter",
+            "aufwand": "45 Personentage"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0010",
+      "inhalt": "Auftraggeber: 8 Personentage für die Initialisierung.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "personalaufwand",
+          "felder": {
+            "rolle": "Auftraggeber",
+            "aufwand": "8 Personentage"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0011",
+      "inhalt": "Eine Fachperson aus der Abteilung (namentlich nicht genannt) ist mit 20 Personentagen für die Initialisierung eingeplant.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "personalaufwand",
+          "felder": {
+            "rolle": "Fachperson (Abteilung)",
+            "aufwand": "20 Personentage"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0012",
+      "inhalt": "Risiko: Die Fachleute sind im Frühling durch die Jahresabschlüsse stark belastet. Eintrittswahrscheinlichkeit mittel, Auswirkung hoch. Massnahme: Workshops früh fix planen. Verantwortlich: Projektleitung. Termin für Massnahme: Ende Februar 2027.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "risiken",
+          "felder": {
+            "beschreibung": "Fachleute sind im Frühling durch Jahresabschlüsse stark belastet und stehen dem Projekt eingeschränkt zur Verfügung.",
+            "ew": "Mittel = 2",
+            "ag": "Hoch = 3",
+            "massnahmen": "Workshops früh fix planen.",
+            "verantwortung": "Projektleitung",
+            "termin": "2027-02-28"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0013",
+      "inhalt": "Vorgabe der Stammorganisation: Die Lösung muss im kantonalen Rechenzentrum betrieben werden können.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "gesamtvorhaben",
+      "ziele": [
+        {
+          "abschnitt": "rahmenbedingungen",
+          "felder": {
+            "vorgaben": "Stammorganisation",
+            "beschreibung": "Die Lösung muss im kantonalen Rechenzentrum betrieben werden können."
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0014",
+      "inhalt": "Besondere Sachmittel werden nicht benötigt; Arbeitsplätze sind vorhanden.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "sachmittel",
+          "felder": {
+            "bezeichnung": "Arbeitsplätze",
+            "beschreibung": "Bestehende Arbeitsplätze sind vorhanden; keine besonderen Sachmittel erforderlich."
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0015",
+      "inhalt": "Der Projektleiter informiert die Mitarbeitenden monatlich in der Teamsitzung über den Projektstand.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "kommunikation",
+          "felder": {
+            "empfaenger": "Mitarbeitende",
+            "verantwortlich": "Projektleiter",
+            "inhalt": "Projektstand",
+            "medium": "Teamsitzung",
+            "termin": "Monatlich"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0016",
+      "inhalt": "Der Projektleiter informiert den Auftraggeber alle zwei Wochen in einer kurzen Besprechung über den Projektstand.",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "kommunikation",
+          "felder": {
+            "empfaenger": "Auftraggeber",
+            "verantwortlich": "Projektleiter",
+            "inhalt": "Projektstand",
+            "medium": "Besprechung",
+            "termin": "Alle zwei Wochen"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0017",
+      "inhalt": "Der Benutzer hat zugestimmt, dass ein grober Ressourcenplan mit Monatsverteilung der Personentage erarbeitet werden soll. Die konkrete Verteilung (monatliche Aufschlüsselung je Rolle) ist noch offen und wird als nächster Schritt vorgeschlagen.",
+      "art": "unbekannt",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": []
+    },
+    {
+      "schluessel": "A-0018",
+      "inhalt": "Im Rahmen der Initialisierungsphase wird ein grober Ressourcenplan erarbeitet, der die geplanten Personentage der Projektbeteiligten auf die einzelnen Monate verteilt und mit der Phasenplanung abgestimmt ist.",
+      "art": "interpretation",
+      "herkunft": "system",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "ziele",
+          "felder": {
+            "kategorie": "Vorgehensziel",
+            "beschreibung": "Ein grober Ressourcenplan liegt vor, der die geplanten Personentage der Projektbeteiligten auf die einzelnen Monate der Initialisierung verteilt und mit der Phasenplanung abgestimmt ist.",
+            "messgroesse": "Vorliegender, abgestimmter Ressourcenplan mit monatlicher Aufschlüsselung je Rolle",
+            "prioritaet": "Mittel"
+          }
+        },
+        {
+          "abschnitt": "projektorganisation",
+          "felder": {
+            "rolle_person": "Alle Projektbeteiligten (Monatsverteilung offen)"
+          }
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0019",
+      "inhalt": "Ob Schnittstelle, Datenformat und zuständige Stellen zum Gebäuderegister bereits bekannt und dokumentiert sind, ist im Moment nicht bekannt. Soll als offener Punkt geführt werden.",
+      "art": "unbekannt",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "rahmenbedingungen",
+          "felder": {}
+        },
+        {
+          "abschnitt": "risiken",
+          "felder": {}
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0020",
+      "inhalt": "Es ist nicht bekannt, welche Konsequenzen eine Verzögerung oder Änderung der bisher nur mündlich angekündigten Wartungseinstellung auf Zielsetzung und Terminrahmen hätte. Soll als offener Punkt geführt werden.",
+      "art": "unbekannt",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        },
+        {
+          "abschnitt": "risiken",
+          "felder": {}
+        }
+      ]
+    },
+    {
+      "schluessel": "A-0021",
+      "inhalt": "Ob und wie in der Initialisierung eine vollständige Schnittstellenübersicht (Umsysteme, Datenformate, verantwortliche Stellen auf Gegenseite) erarbeitet werden soll, ist noch offen. Soll als offener Punkt geführt werden.",
+      "art": "unbekannt",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": []
+    },
+    {
+      "schluessel": "A-0022",
+      "inhalt": "Welche Kriterien und welche Methode für die Prüfung der Datenqualität der bestehenden Registeranwendung in der Initialisierung angewendet werden sollen, ist nicht bekannt. Soll als offener Punkt geführt werden.",
+      "art": "unbekannt",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "status": "aktiv",
+      "bezug": "initialisierung",
+      "ziele": [
+        {
+          "abschnitt": "ziele",
+          "felder": {}
+        },
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        }
+      ]
+    }
+  ],
+  "konflikte": [],
+  "themen": [
+    {
+      "thema": "Datenqualität und Datenmigration",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 2,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Migration der Datenbestände wurde deutlich unterschätzt. Rund ein Drittel der Datensätze war unvollständig oder doppelt erfasst. Die Bereinigung band zwei Fachpersonen über ein halbes Jahr. Die Mehrkosten betrugen CHF 380'000.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        },
+        {
+          "chunk_id": 3,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Datenbestände früh auf Qualität und Umfang untersuchen, bevor über eine Lösung entschieden wird. Die Untersuchung gehört in die erste Phase, nicht in die Realisierung.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Schnittstellenklärung mit Gegenstellen",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 4,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Das Bewilligungssystem der Beispielstadt hatte Schnittstellen zum Grundbuch, zum Gebäuderegister und zur Finanzbuchhaltung. Keine davon war dokumentiert.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        },
+        {
+          "chunk_id": 5,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Schnittstellen waren der grösste Unsicherheitsfaktor. Zwei Schnittstellen mussten neu entwickelt werden, weil die Gegenstellen ihre Formate inzwischen geändert hatten. Die Einführung verzögerte sich um vier Monate.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        },
+        {
+          "chunk_id": 6,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Schnittstellen und ihre Verantwortlichen früh erheben und mit den Gegenstellen abstimmen.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        }
+      ]
+    },
+    {
+      "thema": "Betriebliche Abhängigkeiten und Betriebskosten",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 29,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Der Betrieb kannte die Anwendung bei der Einführung kaum. Betriebskosten waren nicht budgetiert und überstiegen die Erwartung um CHF 120'000 pro Jahr.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-10 Betrieb und Übergabe"
+        }
+      ]
+    },
+    {
+      "thema": "Methodenaussage HERMES 5.1 – Voranalyse und Projektauftrag",
+      "uebertragbarkeit": "nicht_uebernehmen",
+      "regel": "R2",
+      "status": "erledigt",
+      "quellen": [
+        {
+          "chunk_id": 14,
+          "abschnitt": "Vorgehen nach HERMES 5.1",
+          "auszug": "2 Vorgehen nach HERMES 5.1 Nach der Voranalyse folgte der Projektauftrag. Die Voranalyse war zwingend vor dem Projektauftrag abzuschliessen. Der Phasenbericht der Initialisierung wurde dem Projektausschuss vorgelegt.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-05 Erneuerung Fallführung"
+        }
+      ]
+    },
+    {
+      "thema": "Datenmigration und Datenqualität: Aufwand früh einplanen",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 2,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Migration der Datenbestände wurde deutlich unterschätzt. Rund ein Drittel der Datensätze war unvollständig oder doppelt erfasst. Die Bereinigung band zwei Fachpersonen über ein halbes Jahr. Die Mehrkosten betrugen CHF 380'000.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        },
+        {
+          "chunk_id": 3,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Datenbestände früh auf Qualität und Umfang untersuchen, bevor über eine Lösung entschieden wird. Die Untersuchung gehört in die erste Phase, nicht in die Realisierung.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Undokumentierte oder fehlende Schnittstellen als Risiko",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 4,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Das Bewilligungssystem der Beispielstadt hatte Schnittstellen zum Grundbuch, zum Gebäuderegister und zur Finanzbuchhaltung. Keine davon war dokumentiert.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        }
+      ]
+    },
+    {
+      "thema": "Frühzeitiger Einbezug betroffener Stakeholder und Personalvertretung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 8,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Personalvertretung wurde erst nach dem Konzept einbezogen. Daraus entstand Widerstand, der die Umsetzung um ein halbes Jahr verzögerte. Unklare Rollen am gemeinsamen Schalter führten zu Doppelarbeit.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-03 Zusammenlegung Schalterdienste"
+        },
+        {
+          "chunk_id": 9,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Personalvertretung und Mitarbeitende von Beginn an einbeziehen. Rollen und Abläufe am gemeinsamen Schalter früh klären.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-03 Zusammenlegung Schalterdienste"
+        }
+      ]
+    },
+    {
+      "thema": "Betriebskosten und Betriebseinbezug bei der Ablösung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 29,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Der Betrieb kannte die Anwendung bei der Einführung kaum. Betriebskosten waren nicht budgetiert und überstiegen die Erwartung um CHF 120'000 pro Jahr.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-10 Betrieb und Übergabe"
+        }
+      ]
+    },
+    {
+      "thema": "Datenqualität und Datenmigration als Risiko der Initialisierung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 2,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Migration der Datenbestände wurde deutlich unterschätzt. Rund ein Drittel der Datensätze war unvollständig oder doppelt erfasst. Die Bereinigung band zwei Fachpersonen über ein halbes Jahr. Die Mehrkosten betrugen CHF 380'000.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        },
+        {
+          "chunk_id": 3,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Datenbestände früh auf Qualität und Umfang untersuchen, bevor über eine Lösung entschieden wird. Die Untersuchung gehört in die erste Phase, nicht in die Realisierung.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Schnittstelle zum Gebäuderegister als Unsicherheitsfaktor",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 4,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Das Bewilligungssystem der Beispielstadt hatte Schnittstellen zum Grundbuch, zum Gebäuderegister und zur Finanzbuchhaltung. Keine davon war dokumentiert.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        },
+        {
+          "chunk_id": 5,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Schnittstellen waren der grösste Unsicherheitsfaktor. Zwei Schnittstellen mussten neu entwickelt werden, weil die Gegenstellen ihre Formate inzwischen geändert hatten. Die Einführung verzögerte sich um vier Monate.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        },
+        {
+          "chunk_id": 6,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Schnittstellen und ihre Verantwortlichen früh erheben und mit den Gegenstellen abstimmen.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        }
+      ]
+    },
+    {
+      "thema": "Stakeholder-Einbindung und Akzeptanz",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 8,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Personalvertretung wurde erst nach dem Konzept einbezogen. Daraus entstand Widerstand, der die Umsetzung um ein halbes Jahr verzögerte. Unklare Rollen am gemeinsamen Schalter führten zu Doppelarbeit.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-03 Zusammenlegung Schalterdienste"
+        }
+      ]
+    },
+    {
+      "thema": "Noch nicht schriftlich bestätigte Wartungseinstellung als Risiko",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 1,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Die Fachanwendung für das Personenregister des Beispielamts war zwölf Jahre im Betrieb. Der Hersteller kündigte die Wartung an. Im Projektauftrag wurde die Ablösung innerhalb von achtzehn Monaten vorgesehen.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Betriebskosten der Nachfolgelösung als Rahmenbedingung oder Risiko",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 29,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Der Betrieb kannte die Anwendung bei der Einführung kaum. Betriebskosten waren nicht budgetiert und überstiegen die Erwartung um CHF 120'000 pro Jahr.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-10 Betrieb und Übergabe"
+        }
+      ]
+    },
+    {
+      "thema": "Datenqualität und Datenmigration: Frühe Untersuchung des Datenbestands",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 2,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Migration der Datenbestände wurde deutlich unterschätzt. Rund ein Drittel der Datensätze war unvollständig oder doppelt erfasst. Die Bereinigung band zwei Fachpersonen über ein halbes Jahr. Die Mehrkosten betrugen CHF 380'000.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        },
+        {
+          "chunk_id": 3,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Datenbestände früh auf Qualität und Umfang untersuchen, bevor über eine Lösung entschieden wird. Die Untersuchung gehört in die erste Phase, nicht in die Realisierung.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Schnittstellenklärung: Fehlende oder undokumentierte Schnittstellen zu Umsystemen",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 4,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Das Bewilligungssystem der Beispielstadt hatte Schnittstellen zum Grundbuch, zum Gebäuderegister und zur Finanzbuchhaltung. Keine davon war dokumentiert.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        },
+        {
+          "chunk_id": 6,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Schnittstellen und ihre Verantwortlichen früh erheben und mit den Gegenstellen abstimmen.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        }
+      ]
+    },
+    {
+      "thema": "Einbezug der Betriebsorganisation in die Initialisierung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 28,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Eine neue Anwendung sollte dem Betrieb übergeben werden. Die Betriebsorganisation war im Projekt nicht vertreten.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-10 Betrieb und Übergabe"
+        },
+        {
+          "chunk_id": 29,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Der Betrieb kannte die Anwendung bei der Einführung kaum. Betriebskosten waren nicht budgetiert und überstiegen die Erwartung um CHF 120'000 pro Jahr.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-10 Betrieb und Übergabe"
+        }
+      ]
+    },
+    {
+      "thema": "Stakeholder-Einbezug und Akzeptanz: Betroffene Stellen frühzeitig identifizieren",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 8,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Personalvertretung wurde erst nach dem Konzept einbezogen. Daraus entstand Widerstand, der die Umsetzung um ein halbes Jahr verzögerte. Unklare Rollen am gemeinsamen Schalter führten zu Doppelarbeit.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-03 Zusammenlegung Schalterdienste"
+        }
+      ]
+    },
+    {
+      "thema": "Schnittstellenerhebung zum Gebäuderegister und weiteren Gegenstellen",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 4,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Das Bewilligungssystem der Beispielstadt hatte Schnittstellen zum Grundbuch, zum Gebäuderegister und zur Finanzbuchhaltung. Keine davon war dokumentiert.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        },
+        {
+          "chunk_id": 6,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Schnittstellen und ihre Verantwortlichen früh erheben und mit den Gegenstellen abstimmen.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        }
+      ]
+    },
+    {
+      "thema": "Datenqualität und Datenmigration als eigenständiges Untersuchungsziel",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 2,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Migration der Datenbestände wurde deutlich unterschätzt. Rund ein Drittel der Datensätze war unvollständig oder doppelt erfasst. Die Bereinigung band zwei Fachpersonen über ein halbes Jahr. Die Mehrkosten betrugen CHF 380'000.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        },
+        {
+          "chunk_id": 3,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Datenbestände früh auf Qualität und Umfang untersuchen, bevor über eine Lösung entschieden wird. Die Untersuchung gehört in die erste Phase, nicht in die Realisierung.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Schriftliche Bestätigung des Wartungsendes als Rahmenbedingung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "gefragt",
+      "quellen": [
+        {
+          "chunk_id": 1,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Die Fachanwendung für das Personenregister des Beispielamts war zwölf Jahre im Betrieb. Der Hersteller kündigte die Wartung an. Im Projektauftrag wurde die Ablösung innerhalb von achtzehn Monaten vorgesehen.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Datenqualität und Migrationsaufwand der bestehenden Registeranwendung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 2,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Migration der Datenbestände wurde deutlich unterschätzt. Rund ein Drittel der Datensätze war unvollständig oder doppelt erfasst. Die Bereinigung band zwei Fachpersonen über ein halbes Jahr. Die Mehrkosten betrugen CHF 380'000.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Schnittstellendokumentation zum Gebäuderegister",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 4,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Das Bewilligungssystem der Beispielstadt hatte Schnittstellen zum Grundbuch, zum Gebäuderegister und zur Finanzbuchhaltung. Keine davon war dokumentiert.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        }
+      ]
+    },
+    {
+      "thema": "Verfügbarkeit von Fachpersonen in ressourcenkritischen Perioden",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 11,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Fachleute der Bewilligungsabteilung waren in der Hochsaison kaum verfügbar. Workshops mussten mehrfach verschoben werden. Die Anforderungen blieben dadurch lange unvollständig.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-04 Digitale Gesuchseingabe"
+        }
+      ]
+    },
+    {
+      "thema": "Einbezug relevanter Stakeholder und Betrieb in der Initialisierung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "bestaetigt",
+      "quellen": [
+        {
+          "chunk_id": 8,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Personalvertretung wurde erst nach dem Konzept einbezogen. Daraus entstand Widerstand, der die Umsetzung um ein halbes Jahr verzögerte. Unklare Rollen am gemeinsamen Schalter führten zu Doppelarbeit.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-03 Zusammenlegung Schalterdienste"
+        },
+        {
+          "chunk_id": 29,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Der Betrieb kannte die Anwendung bei der Einführung kaum. Betriebskosten waren nicht budgetiert und überstiegen die Erwartung um CHF 120'000 pro Jahr.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-10 Betrieb und Übergabe"
+        }
+      ]
+    },
+    {
+      "thema": "Schutzbedarf und Informationssicherheit der Registeranwendung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 22,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Eine Fachanwendung verarbeitete besonders schützenswerte Personendaten. Der Schutzbedarf war nicht erhoben.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-08 Informationssicherheit Fachanwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Datenqualität und Migrationsaufwand des bestehenden Datenbestands",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 2,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Migration der Datenbestände wurde deutlich unterschätzt. Rund ein Drittel der Datensätze war unvollständig oder doppelt erfasst. Die Bereinigung band zwei Fachpersonen über ein halbes Jahr. Die Mehrkosten betrugen CHF 380'000.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Schnittstellendokumentation als Grundlage für Lösungsvarianten",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 4,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Das Bewilligungssystem der Beispielstadt hatte Schnittstellen zum Grundbuch, zum Gebäuderegister und zur Finanzbuchhaltung. Keine davon war dokumentiert.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        }
+      ]
+    },
+    {
+      "thema": "Stakeholdereinbezug und Akzeptanz bei betroffenen Stellen",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 8,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Personalvertretung wurde erst nach dem Konzept einbezogen. Daraus entstand Widerstand, der die Umsetzung um ein halbes Jahr verzögerte. Unklare Rollen am gemeinsamen Schalter führten zu Doppelarbeit.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-03 Zusammenlegung Schalterdienste"
+        }
+      ]
+    },
+    {
+      "thema": "Verfügbarkeit von Fachpersonen bei saisonaler Belastung",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 11,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Fachleute der Bewilligungsabteilung waren in der Hochsaison kaum verfügbar. Workshops mussten mehrfach verschoben werden. Die Anforderungen blieben dadurch lange unvollständig.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-04 Digitale Gesuchseingabe"
+        }
+      ]
+    },
+    {
+      "thema": "Schnittstellenerhebung Gebäuderegister und weitere Drittsysteme",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 4,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Das Bewilligungssystem der Beispielstadt hatte Schnittstellen zum Grundbuch, zum Gebäuderegister und zur Finanzbuchhaltung. Keine davon war dokumentiert.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        },
+        {
+          "chunk_id": 5,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Schnittstellen waren der grösste Unsicherheitsfaktor. Zwei Schnittstellen mussten neu entwickelt werden, weil die Gegenstellen ihre Formate inzwischen geändert hatten. Die Einführung verzögerte sich um vier Monate.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        },
+        {
+          "chunk_id": 6,
+          "abschnitt": "Empfehlung",
+          "auszug": "3 Empfehlung Schnittstellen und ihre Verantwortlichen früh erheben und mit den Gegenstellen abstimmen.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-02 Ersatz Bewilligungssystem"
+        }
+      ]
+    },
+    {
+      "thema": "Datenmigration: Qualität und Vollständigkeit des Datenbestands",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 2,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Migration der Datenbestände wurde deutlich unterschätzt. Rund ein Drittel der Datensätze war unvollständig oder doppelt erfasst. Die Bereinigung band zwei Fachpersonen über ein halbes Jahr. Die Mehrkosten betrugen CHF 380'000.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-01 Ablösung Registeranwendung"
+        }
+      ]
+    },
+    {
+      "thema": "Betriebsorganisation: Einbezug und Betriebskosten",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 28,
+          "abschnitt": "Ausgangslage",
+          "auszug": "1 Ausgangslage Eine neue Anwendung sollte dem Betrieb übergeben werden. Die Betriebsorganisation war im Projekt nicht vertreten.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-10 Betrieb und Übergabe"
+        },
+        {
+          "chunk_id": 29,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Der Betrieb kannte die Anwendung bei der Einführung kaum. Betriebskosten waren nicht budgetiert und überstiegen die Erwartung um CHF 120'000 pro Jahr.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-10 Betrieb und Übergabe"
+        }
+      ]
+    },
+    {
+      "thema": "Rechtliche Aufbewahrungsfristen und Archivierungsanforderungen",
+      "uebertragbarkeit": "nutzbar",
+      "regel": "R1",
+      "status": "kandidat",
+      "quellen": [
+        {
+          "chunk_id": 17,
+          "abschnitt": "Erkenntnisse",
+          "auszug": "2 Erkenntnisse Die Archivierungsanforderungen und die rechtlichen Aufbewahrungsfristen wurden erst spät geklärt. Ein Teil der Lösung musste umgebaut werden.",
+          "korpus_version": "synthetisch-2026-10-15",
+          "projekt": "Synthetik-06 Archivlösung Akten"
+        }
+      ]
+    }
+  ],
+  "kriterien": [
+    {
+      "id": "K-AL-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-ECK-START",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-ECK-ENDE",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-ZI-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-PA-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-RI-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-AL-2",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-ZI-2",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-RB-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-PA-2",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-SM-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-KO-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-TE-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-PO-1",
+      "zustand": "konflikt",
+      "details": [
+        "ag: 3.1 = 8 PT, Kap. 5 = 0 PT",
+        "pl: 3.1 = 45 PT, Kap. 5 = 0 PT",
+        "fachperson (abteilung): 3.1 = 20 PT, Kap. 5 = 0 PT"
+      ]
+    },
+    {
+      "id": "K-KM-1",
+      "zustand": "erfuellt",
+      "details": []
+    },
+    {
+      "id": "K-RI-2",
+      "zustand": "erfuellt",
+      "details": []
+    }
+  ],
+  "reife": {
+    "zustand": "entwurf_offen",
+    "blocker": 1,
+    "pia_status": "laufend"
+  },
+  "pia_status": "laufend",
+  "rag_stand": {
+    "verfuegbar": true,
+    "letzte_suche": {
+      "revision": 14,
+      "n_aussagen": 18,
+      "abschnitte": [
+        "ausgangslage",
+        "eckdaten",
+        "kommunikation",
+        "personalaufwand",
+        "rahmenbedingungen",
+        "risiken",
+        "sachmittel",
+        "ziele"
+      ]
+    },
+    "treffer": 8,
+    "projekte": 4,
+    "neue_themen": 4,
+    "bericht": {
+      "modell": "voyage-3",
+      "verglichen": 30,
+      "inkompatibel": 0,
+      "ohne_vektor": 0,
+      "nicht_freigegeben": 0,
+      "nur_extern_freigegeben": true
+    },
+    "zeit": "2026-10-15T15:46:19",
+    "grund": ""
+  },
+  "abschlussbericht": {
+    "bereit": false,
+    "blocker": [
+      {
+        "id": "K-PO-1",
+        "beschreibung": "Monatsverteilung der Personentage stimmt mit Kapitel 3.1 überein",
+        "zustand": "konflikt",
+        "details": [
+          "ag: 3.1 = 8 PT, Kap. 5 = 0 PT",
+          "pl: 3.1 = 45 PT, Kap. 5 = 0 PT",
+          "fachperson (abteilung): 3.1 = 20 PT, Kap. 5 = 0 PT"
+        ]
+      }
+    ],
+    "annahmen": [
+      "Der Hersteller der Registeranwendung hat angekündigt, die Wartung Ende 2028 einzustellen. Diese Ankündigung ist noch nicht schriftlich bestätigt."
+    ],
+    "korrekturen": 0,
+    "vertiefungen_offen": [],
+    "unbestaetigt": [],
+    "hinweis": "Fertigstellen heisst: die Projektleitung hält den Auftrag für vollständig. Es ist keine Prüfung, keine Abnahme und keine Freigabe – diese erfolgen durch die zuständigen Personen und stehen im Dokument-Protokoll erst, wenn sie stattgefunden haben."
+  },
+  "docx": "Synthetik-A_vollstaendig.docx"
+}

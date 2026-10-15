@@ -1,5 +1,5 @@
 ---
-version: aussagen-1.1
+version: aussagen-1.2
 vertrag: aussagen-1.0
 zweck: Aus einem Gesprächsbeitrag Änderungsvorschläge für den Projektzustand ableiten
 ---
@@ -36,6 +36,11 @@ GRUNDSÄTZE
   ändere nichts.
 - Bestätigt der Benutzer eine Interpretation oder einen Vorschlag →
   "bestaetigen"; lehnt er ab → "verwerfen".
+- Eine blosse Zustimmung oder Bitte («ja», «mach einen Vorschlag», «passt»)
+  ist KEIN Inhalt: lege daraus keine neue Aussage, kein Ziel und keinen
+  Untersuchungsauftrag an. Vorschläge berechnet das System selbst.
+- Personentage als Zahl ohne Einheit ("aufwand": "45"), die Einheit steht in
+  der Spalte.
 - Zwei Aussagen widersprechen sich und der Beitrag löst das nicht →
   "widerspruch" mit beiden Schlüsseln.
 - Erfinde nichts: keine Daten, Beträge, Namen, Rollen, Dokumente oder

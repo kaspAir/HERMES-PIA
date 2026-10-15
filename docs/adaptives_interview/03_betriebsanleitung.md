@@ -44,11 +44,10 @@ diese Datei nur für ihre Stufe und nach der geteilten Datei; `git reset` berüh
 Nach jeder Änderung die Stufe neu starten (`bash ~/bin/hermes/hermes_ctl.sh start dev`) –
 der laufende Prozess liest Umgebungsvariablen nur beim Start.
 
-**Befund (bitte prüfen):** dev meldet den Sprachmodellweg «direkt», obwohl die
-dev-Stufenkonfiguration `PSEUDO_UMGEHEN` nicht setzt. Er kommt deshalb sehr wahrscheinlich
-aus der geteilten `.env` – dann gilt er auch für test, int und prod. Empfehlung:
-`PSEUDO_UMGEHEN=1` und den Anbieterschlüssel für den Direktbetrieb in
-`~/.hermes-env/dev.env` verschieben. Nicht von mir geprüft (kein Serverzugang).
+**Befund (15.10.2026, nur Variablennamen gelesen):** `PSEUDO_UMGEHEN` steht in der
+geteilten `~/methodos/.env`, die alle Stufen laden. Ob der Direktmodus auf test, int und prod
+wirkt, hängt vom Wert ab. Empfehlung: `PSEUDO_UMGEHEN=1` aus der geteilten Datei entfernen
+und nur in `~/.hermes-env/dev.env` setzen.
 
 ## Schalter
 
@@ -105,6 +104,8 @@ Freigabe: dev (15.10.2026). **Nicht** für test, integration oder main.
 `/admin/korpus/bestand`. Ausgabe je Bereich: Dokumente, Chunks, Modelle und Vektorlängen,
 Korpusversionen und Zeitraum, Methodenversion, extern freigegebene Chunks, Kompatibilität
 mit dem vorgesehenen Modell. Bestehende Bestände nicht löschen und nicht neu laden.
+
+**Bestand am 15.10.2026, 17:20:** dev, test, int je 0 Chunks; prod ohne Korpustabelle.
 
 **Synthetischer Korpus – getrennt vom Bestand:** `python scripts/ingest_synthetischer_korpus.py
 --trocken`, dann `--ausfuehren`. Zehn erfundene Vorhaben (`tools/korpus_synthetisch.py`),
