@@ -24,6 +24,9 @@ from app.domains.interview.adaptiv.vollstaendigkeit import profil
 # Priorität (kleiner = früher). Wesentliche Konflikte und Lücken für die
 # Beauftragung zuerst, dann weitere Klärungen, zuletzt Vertiefungen
 # (Auftrag Abschnitt 9).
+# Kriterien, deren Vorschlag das System berechnet (vorschlaege.FUER_KRITERIUM).
+BERECHENBAR = ("K-PO-1", "K-TE-1")
+
 PRIO = {
     "start": -1,
     "klaeren": 0,
@@ -220,6 +223,13 @@ def vorlagenfrage(aktion):
         return f"Habe ich richtig verstanden: {a.get('inhalt', '')}?"
     if art == "vorschlag":
         kr = ktx.get("kriterium") or {}
+        if kr.get("id") in BERECHENBAR:
+            # Diesen Vorschlag berechnet das System, sobald die Grundlage da ist.
+            # Ihn als Untersuchungsauftrag anzubieten, lud ein echtes Modell ein,
+            # ein Ziel zu erfinden (dev, 15.10.2026).
+            return (f"Für «{kr.get('beschreibung', '')}» rechne ich Dir einen Vorschlag aus, "
+                    f"sobald die Grundlage vollständig ist: Start und Ende der Initialisierung "
+                    f"und die Personentage je Rolle. Was davon fehlt noch?")
         return (f"Zu «{kr.get('beschreibung', '')}» ist noch nichts bekannt. Soll ich einen "
                 f"Vorschlag machen, oder nehmen wir die Klärung als Untersuchungsauftrag in die "
                 f"Initialisierung auf?")

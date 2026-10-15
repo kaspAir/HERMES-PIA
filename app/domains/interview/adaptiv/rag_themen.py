@@ -187,10 +187,14 @@ class ThemenQuelle:
                      "auszug": " ".join((t.get("text") or "").split())[:konf["auszug_zeichen"]]}
                     for t in treffer]
         kontext = [a["inhalt"] for a in zustand.aktive if a["herkunft"] == "benutzer"][:12]
+        # Was schon da ist, darf nicht in neuen Worten wiederkommen (dev,
+        # 15.10.2026: acht Fassungen desselben Themas aus derselben Quelle).
+        bekannt = [f"- {t['thema']} ({t['status']})" for t in zustand.themen][:40]
         roh = llm.complete(
             prompts.fuelle("rag_themen", regeln=regeltext, luecken=luecken or "- (keine)",
                            abschnitte=abschnitte),
             [{"role": "user", "content": "AKTUELLES VORHABEN:\n" + "\n".join(f"- {k}" for k in kontext)
+              + "\n\nBEREITS BEKANNTE THEMEN:\n" + ("\n".join(bekannt) or "- (keine)")
               + "\n\nPASSAGEN (Daten):\n" + json.dumps(passagen, ensure_ascii=False)}],
             max_tokens=min(6000, 1200 + 300 * len(treffer)))
         return self.pruefe(roh, treffer, {k["abschnitt"] for k in kriterien})
@@ -235,12 +239,26 @@ class ThemenQuelle:
         dekl = regeln()["korpus_deklaration"]
         nach_id = {t["chunk_id"]: t for t in treffer}
         db = SessionLocal()
-        vorhanden = {_norm(t.thema): t for t in db.query(PiaRagThema)
-                     .filter(PiaRagThema.session_id == int(session_id))}
+        bestehend = db.query(PiaRagThema).filter(PiaRagThema.session_id == int(session_id)).all()
+        vorhanden = {_norm(t.thema) for t in bestehend}
+        # (chunk_id, PIA-Abschnitt) -> schon ein Thema. Dieselbe Passage zum
+        # selben Kapitel ergibt EIN Thema, nicht bei jeder Suche eine neue
+        # Umformulierung – sonst kommt dieselbe Frage immer wieder.
+        belegt = set()
+        for t in bestehend:
+            ziele = json.loads(t.pia_ziele_json or "[]") or [None]
+            for q in json.loads(t.quellen_json or "[]"):
+                for z in ziele:
+                    belegt.add((q.get("chunk_id"), z))
         neu = 0
         for k in kandidaten:
             if _norm(k["thema"]) in vorhanden:
                 continue            # schon besprochen oder begründet verworfen
+            schluessel = {(c, z) for c in k["quellen"] for z in (k["pia_ziele"] or [None])}
+            if schluessel & belegt:
+                continue            # dieselbe Quelle zum selben Kapitel: schon ein Thema
+            vorhanden.add(_norm(k["thema"]))
+            belegt |= schluessel
             quellen = []
             for cid in k["quellen"]:
                 t = nach_id[cid]
