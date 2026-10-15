@@ -9,7 +9,7 @@ Kennzeichnung in diesem Bericht:
 **[I]** implementiert · **[T]** automatisiert geprüft · **[D]** auf dev tatsächlich
 nachgewiesen · **[O]** offen
 
-Stand dieses Berichts: **auf dev ist noch nichts nachgewiesen** – siehe Abschnitt 4.
+Stand dieses Berichts: auf dev laufen V0.43.1 und die Datenwege; der echte RAG- und Interviewnachweis fehlt noch (Schlüssel) – siehe Abschnitt 4.
 
 ## 1. Adaptives Interview und PIA
 
@@ -58,9 +58,10 @@ Stand dieses Berichts: **auf dev ist noch nichts nachgewiesen** – siehe Abschn
   Kompatibilität.
 - **[I][T]** Synthetischer Korpus (zehn erfundene Vorhaben) mit eigener Korpusversion und
   Freigabe-Kennzeichen; Ladeskript mit Trockenlauf und Token-Grenze.
-- **[O] Bestand auf den Stufen nicht geprüft.** Ein SSH-Zugang zum Server wurde mir in
-  dieser Sitzung verwehrt (der Host trägt auch die Produktion). Ich nehme über den Bestand
-  nichts an.
+- **[D] Bestand auf allen Stufen geprüft** (15.10.2026, 17:20, schreibgeschützt, nur
+  Zählwerte): dev, test und int haben die Korpustabelle, aber **0 Chunks**; prod hat **keine
+  Korpustabelle**. Es gibt nirgends einen Bestand, der zu erhalten wäre; eine
+  Kompatibilitätsprüfung vorhandener Embeddings entfällt deshalb.
 - **Befund Quellordner** (lokal, ausserhalb des Repositorys): 197 pseudonymisierte Texte
   früherer Aufträge; in 36 Dateien meldet die Klarnamen-Sperre 78 Verdachtsstellen, 12
   Dateien sind praktisch leer. Diese Daten sind für den Direktmodus **nicht** freigegeben und
@@ -93,7 +94,18 @@ sie sind für diese Änderung nicht gelaufen. Zuordnung AT01–AT26:
 
 ## 4. Auf dev nachgewiesen
 
-**Noch nichts.** Vorbereitet sind:
+- **[D] Deploy V0.43.1** (`ac35d1b`) auf dev, über das Jenkins-Deploy-Skript; Sicherung
+  vorab automatisch (`methodos-dev.db.vor-deploy-ac35d1b-20261015-172031`).
+- **[D] Datenwege** laut `/health`: Sprachmodell «direkt», Embeddings «aus – VOYAGE_API_KEY
+  fehlt», Spracherkennung «aus».
+- **Vorfall beim ersten Deploy (V0.43.0):** zehn parallel startende Worker migrierten
+  gleichzeitig, einer scheiterte an «duplicate column name»; dev war einige Minuten nicht
+  erreichbar, bis der Watchdog neu startete. Daten unberührt (Migration rein additiv,
+  Sicherung vorab). Behoben in V0.43.1: Migration unter Dateisperre, belegt mit
+  `test_migration_parallel` unter Python 3.9 (ohne Sperre 2 von 3 Läufen rot, mit Sperre
+  5 von 5 grün).
+
+**Noch nicht nachgewiesen** – es fehlt der serverseitige Voyage-Schlüssel. Vorbereitet sind:
 
 1. `~/.hermes-env/dev.env` mit `VOYAGE_API_KEY` anlegen (nur serverseitig), dev neu starten.
 2. `python scripts/korpus_bestand.py ~/methodos-dev/data/methodos-dev.db` – Bestand dokumentieren.
@@ -107,10 +119,11 @@ sie sind für diese Änderung nicht gelaufen. Zuordnung AT01–AT26:
 
 ## 5. Offen
 
-- Bestand auf den Stufen, echter RAG-Abruf, echter Interviewdurchlauf, Word-Dateien aus dem
+- Echter RAG-Abruf, echter Interviewdurchlauf, Word-Dateien aus dem
   echten Lauf (Abschnitt 4).
-- Herkunft des direkten Sprachmodellwegs auf dev (vermutlich geteilte `.env` → dann auch
-  test/int/prod), siehe Betriebsanleitung.
+- Direkter Sprachmodellweg: `PSEUDO_UMGEHEN` steht in der geteilten `.env`, die alle Stufen
+  laden (nur Variablennamen gelesen). Ob er auf test/int/prod wirkt, hängt vom Wert ab –
+  Entscheid des Betreibers, siehe Betriebsanleitung.
 - Render-Prüfung in Word (kein Word/LibreOffice auf dem Entwicklungsrechner).
 - Fachliche Abnahme: Abschlussprofil, Übertragungsregeln, Terminlage, Prompts.
 - Spracherkennung über eine Schutzschicht.
