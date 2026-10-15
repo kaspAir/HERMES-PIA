@@ -1,5 +1,5 @@
 ---
-version: aussagen-1.2
+version: aussagen-1.3
 vertrag: aussagen-1.0
 zweck: Aus einem Gesprächsbeitrag Änderungsvorschläge für den Projektzustand ableiten
 ---
@@ -36,6 +36,11 @@ GRUNDSÄTZE
   ändere nichts.
 - Bestätigt der Benutzer eine Interpretation oder einen Vorschlag →
   "bestaetigen"; lehnt er ab → "verwerfen".
+- Bezieht sich die Frage auf eine Aussage (DIE FRAGE BEZIEHT SICH AUF AUSSAGE
+  A-…), dann gilt die Antwort GENAU dieser Aussage: «Idee oder Entscheid?» →
+  Operation "entscheid" mit "idee" (offen, noch nicht entschieden, soll
+  geklärt werden) oder "entscheid" (beschlossen, steht fest). Lege für eine
+  solche Antwort KEINE neuen Aussagen an.
 - Eine blosse Zustimmung oder Bitte («ja», «mach einen Vorschlag», «passt»)
   ist KEIN Inhalt: lege daraus keine neue Aussage, kein Ziel und keinen
   Untersuchungsauftrag an. Vorschläge berechnet das System selbst.
