@@ -61,6 +61,18 @@ def _wiederholungen(nachrichten, ziel_id):
     return zaehler
 
 
+# Harte Obergrenze je Punkt – unabhängig davon, ob sich daneben etwas bewegt.
+# Der Wiederholungsschutz zählt nur Fragen OHNE Fortschritt; legt das Modell
+# bei jeder Antwort irgendeine neue Aussage an, zählt das als Fortschritt, und
+# dieselbe Rückfrage kam auf dev 19 Mal (15.10.2026).
+HOECHSTENS_JE_PUNKT = 3
+
+
+def _anzahl_gefragt(nachrichten, ziel_id):
+    return sum(1 for m in nachrichten if m.get("rolle") == "system" and m.get("art") == "frage"
+               and (m.get("bezug") or {}).get("ziel") == ziel_id)
+
+
 def _schon_gefragt(nachrichten, ziel_id, aktion):
     """Wurde zu diesem Punkt schon einmal mit dieser Aktion gefragt?"""
     return any(m.get("rolle") == "system" and m.get("aktion") == aktion
@@ -197,8 +209,9 @@ def naechste_aktion(aussagen, konflikte, themen, kriterien, nachrichten, bezug_u
         return (x["prio"], 0 if x.get("unterart") == "rag" else 1, x.get("reihe", 99), x["ziel"])
 
     for kand in sorted(alle, key=ordnung):
-        if kand["ziel"] not in ("start", "bezug") and \
-                _wiederholungen(nachrichten, kand["ziel"]) >= grenze:
+        if kand["ziel"] not in ("start", "bezug") and (
+                _wiederholungen(nachrichten, kand["ziel"]) >= grenze
+                or _anzahl_gefragt(nachrichten, kand["ziel"]) >= HOECHSTENS_JE_PUNKT):
             zurueckgestellt.append(kand["ziel"])
             continue
         kand["zurueckgestellt"] = zurueckgestellt

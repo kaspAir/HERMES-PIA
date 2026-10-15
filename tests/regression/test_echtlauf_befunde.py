@@ -151,3 +151,41 @@ def test_frage_prompt_verbietet_eigene_werte():
     from app.domains.interview.adaptiv import prompts
     text = prompts.fuelle("frage")
     assert "Schlage NIE selbst Werte vor" in text and "heute" in text
+
+
+def test_antwort_auf_idee_oder_entscheid_wird_erkannt():
+    """6. Befund (Testlauf dev, V0.44.0): 19 Mal dieselbe Rückfrage «Idee oder
+    Entscheid?», obwohl jede Antwort eindeutig war. Formulierungen aus dem Lauf."""
+    from app.domains.interview.adaptiv.dienst import entscheid_aus_antwort as e
+    assert e("Es ist eine offene Frage – genau das soll die Initialisierung klären. "
+             "Intern haben wir noch keinen Entscheid gefällt.") == "idee"
+    assert e("Keine der beiden Richtungen ist vorentschieden.") == "idee"
+    assert e("Das ist bereits entschieden, der Gemeinderat hat es beschlossen.") == "entscheid"
+    assert e("Ja, das ist richtig.") is None                 # nicht eindeutig -> nicht raten
+
+
+def test_code_verbucht_die_antwort_wenn_das_modell_es_versaeumt(app):
+    from tests.regression.adaptiv_hilfen import ModellDouble, dienst
+    erst = ops(neu("Es soll geklärt werden, ob die Fachanwendung ersetzt wird",
+                   ("ausgangslage", {}), entscheid="unklar"))
+    andere = ops(neu("Das Ergebnis ist eine Entscheidungsgrundlage", ("ziele", {})))
+    d = dienst(app, ModellDouble(aussagen=[erst, andere]))
+    sid = neue_session(app)
+    d.starte(sid)
+    d.beitrag(sid, "Es soll geklärt werden, ob die Fachanwendung ersetzt wird.", anfrage_id="e1")
+    d.zustand.setze_session(sid, naechste_aktion_json={
+        "aktion": "rueckspiegeln", "unterart": "entscheid", "ziel": "A-0001",
+        "frage": "Idee oder Entscheid?"})
+    d.beitrag(sid, "Das ist eine offene Frage, noch nicht entschieden.", anfrage_id="e2")
+    z = d.zustand.lade(sid, False)
+    assert {a["schluessel"]: a["entscheid"] for a in z.aussagen}["A-0001"] == "idee"
+
+
+def test_hoechstens_drei_fragen_je_punkt():
+    aussagen = [{"schluessel": "A-0001", "herkunft": "benutzer", "status": "aktiv", "art": "benutzerangabe",
+                 "bestaetigt": True, "ziele": [{"abschnitt": "ausgangslage"}], "entscheid": "unklar"}]
+    dreimal = [{"rolle": "system", "art": "frage", "aktion": "rueckspiegeln",
+                "bezug": {"ziel": "A-0001", "bearbeitet": True}} for _ in range(3)]
+    zweimal = dreimal[:2]
+    assert planer.naechste_aktion(aussagen, [], [], [], zweimal)["ziel"] == "A-0001"
+    assert planer.naechste_aktion(aussagen, [], [], [], dreimal)["aktion"] == "abschluss"
