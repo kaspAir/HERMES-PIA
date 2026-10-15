@@ -83,12 +83,22 @@ def _table_rows(table):
     verbundene Zellen entfernt)."""
     rows = []
     for row in table.rows:
-        seen, cells = set(), []
-        for cell in row.cells:
-            if id(cell._tc) in seen:      # verbundene Zellen nur einmal
+        # Direkt aus dem XML: `row.cells` übergeht Zellen, die in einem
+        # Inhaltssteuerelement liegen (<w:sdt><w:sdtContent><w:tc>) – genau die
+        # Auswahlfelder EW/AG der Vorlage. Die Zeile wurde dadurch kürzer als der
+        # Kopf, und Bewertungen wurden geraten statt gelesen (dev, 15.10.2026).
+        cells = []
+        for kind in row._tr.iterchildren():
+            if kind.tag == qn("w:tc"):
+                tcs = [kind]
+            elif kind.tag == qn("w:sdt"):
+                tcs = [tc for inhalt in kind.iterchildren(qn("w:sdtContent"))
+                       for tc in inhalt.iterchildren(qn("w:tc"))]
+            else:
                 continue
-            seen.add(id(cell._tc))
-            cells.append(_cell_text(cell))
+            for tc in tcs:
+                texts = [t.text or "" for t in tc.iter(f"{_W_NS}t")]
+                cells.append(re.sub(r"\s+", " ", "".join(texts)).strip())
         rows.append(cells)
     return rows
 
@@ -318,7 +328,7 @@ def _parse_kosten(rows):
 _STUFEN = {"tief": 1, "gering": 1, "niedrig": 1, "mittel": 2, "hoch": 3}
 
 
-def _stufe(text):
+def _stufe(text, nackt=True):
     """Zahlenwert einer Stufe – aus «Hoch = 3» wie aus «Hoch». Sonst None.
 
     Die Vorlage führt die Stufen MIT Zahlenwert («Niedrig = 1»). Diese Form
@@ -326,6 +336,11 @@ def _stufe(text):
     deshalb auf die Schätzung über die Risikozahl zurück.
     """
     t = _norm(text)
+    # Nackte Stufe «1»–«3» (ältere Dokumente aus dem bisherigen Ablauf): eindeutig.
+    if t in ("1", "2", "3"):
+        # Nur, wo die Spalte feststeht: im Ausweichzweig könnte eine
+        # Risikozahl «2» sonst als Stufe gelesen werden.
+        return int(t) if nackt else None
     if "=" in t:
         rechts = t.rsplit("=", 1)[1].strip()
         if rechts.isdigit():
@@ -365,7 +380,7 @@ def _parse_risiken(rows):
             # Datenzeile kürzer als der Kopf (leere SDT-Dropdown-Zellen verschieben
             # die Spalten) -> Felder inhaltlich statt über Indizes bestimmen.
             beschreibung = max(cells[1:] if len(cells) > 1 else cells, key=len, default="").strip()
-            stufen = [_stufe(c) for c in cells if _stufe(c) is not None]
+            stufen = [_stufe(c, nackt=False) for c in cells if _stufe(c, nackt=False) is not None]
             ew = stufen[0] if len(stufen) > 0 else None
             ag = stufen[1] if len(stufen) > 1 else None
             # Risikozahl = einstellige Zahl (1-9); cells[0] ist die Nr.-Spalte ("01").

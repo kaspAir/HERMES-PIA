@@ -676,6 +676,13 @@ class GenerationService:
                 cell_idx = col_offset + start_idx
                 if cell_idx < len(all_cells):
                     val = data.get(col_id, '')
+                    # Auswahlspalten tragen den Wert der Vorlage («Mittel = 2»),
+                    # auch wenn eine Zahl oder Kurzform angeliefert wurde – sonst
+                    # liest die Präsentation die Bewertung nicht (dev, 15.10.2026).
+                    vokabular = (col_defs.get(col_id) or {}).get('vocabulary')
+                    if vokabular and str(val or '').strip():
+                        from app.domains.method.vorlagenzuordnung import auswahlwert
+                        val = auswahlwert(vokabular, val) or val
                     _set_tc_text(all_cells[cell_idx], str(val) if val else '')
 
             tbl_el.insert(insert_pos + idx, new_row)

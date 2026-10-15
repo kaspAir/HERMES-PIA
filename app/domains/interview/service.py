@@ -597,6 +597,14 @@ class InterviewService:
                     for k in ("ew", "ag", "massnahmen"):
                         if not r.get(k) and est.get(k):
                             r[k] = est[k]
+                # Bewertungen immer als Werte der Vorlage («Mittel = 2»), nie als
+                # nackte Zahl: sonst kann die Präsentation sie nicht lesen und
+                # lässt Risiken aus der Matrix fallen (dev, 15.10.2026: 4 von 6).
+                from app.domains.method.vorlagenzuordnung import auswahlwert
+                for k, vokabular in (("ew", "eintrittswahrscheinlichkeit"),
+                                     ("ag", "auswirkungsgrad")):
+                    if str(r.get(k) or "").strip():
+                        r[k] = auswahlwert(vokabular, r[k]) or r[k]
                 if not str(r.get("verantwortung", "")).strip():
                     r["verantwortung"] = "Projektleiter"
                 if not str(r.get("termin", "")).strip():
