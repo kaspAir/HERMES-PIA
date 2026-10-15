@@ -14,6 +14,7 @@ Personenname landet also in der Datenbank und kann über die RAG-Suche in ein
 neues Projektdokument gelangen. Deshalb prüft dieses Skript vorher auf typische
 Restmuster und bricht ab. `--trotzdem` übergeht die Sperre bewusst.
 """
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -72,13 +73,22 @@ def _klarnamen_verdacht(text):
     return treffer
 
 
-def main(directory, ersetzen=False, trotzdem=False):
+def main(directory, ersetzen=False, trotzdem=False, extern_freigegeben=False,
+         neutrale_namen=False):
     app = create_app()
     rag = app.rag_service
-    if not rag.available:
-        print("FEHLER: PSEUDO_BASIS_URL ist nicht gesetzt – ohne die "
-              "Pseudonymisierungsschicht wird nichts eingebettet.")
+    if rag is None or not rag.available:
+        print("FEHLER: kein Embedding-Weg konfiguriert (Schutzschicht oder ausdrücklich "
+              "direkt) – es wird nichts eingebettet.")
         return 1
+    if rag.embedder.modus == "direkt" and not extern_freigegeben:
+        print("FEHLER: Embeddings laufen DIREKT (ohne Pseudonymisierung). Laden nur mit "
+              "--extern-freigegeben, wenn die Daten ausdrücklich zur externen "
+              "Verarbeitung freigegeben sind.")
+        return 1
+    # Beim Laden vieler Dokumente greift die Ratenbegrenzung des Anbieters:
+    # geduldiger warten als im Gespräch.
+    rag.embedder.wiederholungen, rag.embedder.wartezeit = 8, 10
 
     files = sorted(Path(directory).glob("*.txt"))
     if not files:
@@ -128,6 +138,11 @@ def main(directory, ersetzen=False, trotzdem=False):
                 skipped += 1
                 continue
             projekt = f.stem.replace("_pseudo", "")
+            if neutrale_namen:
+                # Dateinamen tragen echte Projektkuerzel; sie gingen sonst als
+                # Quellenangabe in Prompts. Die Kennung ist stabil (Hash), die
+                # Zuordnung bleibt beim Betreiber.
+                projekt = "PIA-" + hashlib.sha256(f.stem.encode("utf-8")).hexdigest()[:8]
             # Strukturierte Initialisierungs-Dauer (Wochen) je Seed erfassen, damit sie
             # neuen Projekten als Vergleichswert dient (beratender Dauer-Vorschlag).
             from app.domains.interview.service import _parse_dauer_wochen
@@ -139,7 +154,8 @@ def main(directory, ersetzen=False, trotzdem=False):
                                     init_dauer_wochen=round(dauer) if dauer else None,
                                     methodenversion=deklaration.get("methodenversion"),
                                     methodenversion_herkunft=deklaration.get("herkunft"),
-                                    korpus_version=korpus_version)
+                                    korpus_version=korpus_version,
+                                    extern_freigegeben=extern_freigegeben)
             if n:
                 docs += 1
                 chunks += n
@@ -157,8 +173,10 @@ if __name__ == "__main__":
     schalter = {a for a in sys.argv[1:] if a.startswith("--")}
     if not argumente:
         print('Aufruf: python scripts/ingest_seed_corpus.py "<verzeichnis>" '
-              '[--ersetzen] [--trotzdem]')
+              '[--ersetzen] [--trotzdem] [--extern-freigegeben] [--neutrale-namen]')
         sys.exit(2)
     sys.exit(main(argumente[0],
                   ersetzen="--ersetzen" in schalter,
-                  trotzdem="--trotzdem" in schalter))
+                  trotzdem="--trotzdem" in schalter,
+                  extern_freigegeben="--extern-freigegeben" in schalter,
+                  neutrale_namen="--neutrale-namen" in schalter))

@@ -187,3 +187,23 @@ def test_banner_nennt_den_direkten_embedding_weg(leere_app):
     assert "Ohne Pseudonymisierung (Direktmodus)" in seite
     assert "Korpus- und Suchtexte" in seite
     assert "nur aus" in seite and "freigegebenen Korpusteilen" in seite
+
+
+def test_ratenbegrenzung_wartet_und_wiederholt_denselben_weg(monkeypatch):
+    """Voyage begrenzt Anfragen je Minute (429). Warten und erneut – nie
+    auf einen anderen Weg ausweichen."""
+    class Antwort429(_Antwort):
+        status_code = 429
+        headers = {"Retry-After": "1"}
+
+    antworten = [Antwort429(), Antwort429(), _Antwort()]
+    urls, pausen = [], []
+
+    def fake_post(url, **kw):
+        urls.append(url)
+        return antworten.pop(0)
+    monkeypatch.setattr("app.domains.corpus.embeddings.requests.post", fake_post)
+    monkeypatch.setattr("app.domains.corpus.embeddings.time.sleep", pausen.append)
+    e = VoyageEmbedder(api_key="k")
+    assert e.embed(["x"]) == [[0.1, 0.2]]
+    assert urls == [VOYAGE_URL] * 3 and pausen == [1.0, 1.0]
