@@ -306,11 +306,19 @@ def _vorlage(*teile):
     return Path(BASE_DIR, "app", "templates", *teile).read_text(encoding="utf-8")
 
 
+def _diktat_js():
+    """Die Diktatlogik lag bis 15.10.2026 inline in interview.html; seither
+    teilen beide Interview-Oberflächen app/static/js/diktat.js."""
+    from pathlib import Path
+    from app.config import BASE_DIR
+    return Path(BASE_DIR, "app", "static", "js", "diktat.js").read_text(encoding="utf-8")
+
+
 def test_diktat_nimmt_nach_dem_stopp_noch_stille_auf():
     """Wer auf Stopp klickt, tut das direkt nach dem letzten Wort. Ohne Nachlauf
     schneidet Whisper das Wortende ab – das darf nicht dem Mandanten aufgebuerdet
     werden ('bitte kurz nachschweigen'), sondern muss die Anwendung leisten."""
-    interview = _vorlage("interview.html")
+    interview = _diktat_js()
     zuordnung = _vorlage("partials", "methoden_zuordnung.html")
     # Der Nachlauf ist gross genug, dass ein ausklingendes Wort sicher drin ist.
     for text in (interview, zuordnung):
@@ -322,7 +330,10 @@ def test_diktat_nimmt_nach_dem_stopp_noch_stille_auf():
 
 def test_weiter_wartet_auch_waehrend_des_nachlaufs():
     """Sonst ginge die Antwort ab, bevor das letzte Segment ueberhaupt aufgenommen ist."""
-    assert "if (nachlauf || sending || sendQueue.length)" in _vorlage("interview.html")
+    assert "if (nachlauf || sending || sendQueue.length)" in _diktat_js()
+    # Beide Oberflächen laden die gemeinsame Datei.
+    for vorlage in ("interview.html", "interview_adaptiv.html"):
+        assert "js/diktat.js" in _vorlage(vorlage)
 
 
 # ---- Prompt-Echo und Wiederholungsschleife ------------------------------- #

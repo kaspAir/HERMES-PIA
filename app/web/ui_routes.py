@@ -346,6 +346,10 @@ def interview_start():
         created_by=projektleiter,
     )
     _wrap_in_projektstruktur(session, projektleiter)
+    # Neue Aufträge laufen im adaptiven Interview. Abschaltbar (INTERVIEW_ADAPTIV=0),
+    # dann bleibt der bisherige abschnittsweise Ablauf.
+    if current_app.config.get("INTERVIEW_ADAPTIV", True):
+        current_app.adaptiv_service.starte(session.id)
     return redirect(url_for("ui.interview_workspace", session_id=session.id))
 
 
@@ -378,6 +382,12 @@ def _wrap_in_projektstruktur(session, projektleiter):
 def interview_workspace(session_id):
     svc = current_app.interview_service
     session = _load_session(session_id)
+    # Adaptives Interview: eigene Oberfläche. MUSS vor current_state() stehen –
+    # das alte current_state() ruft beim blossen Seitenaufruf das Modell und
+    # schreibt; die adaptive Ansicht liest nur.
+    if getattr(session, "modus", None) == "adaptiv":
+        from app.web.adaptiv_routes import render_adaptiv
+        return render_adaptiv(session)
     state = svc.current_state(session)
     sections = svc.section_summary(session)
     preview = svc.preview_data(session)

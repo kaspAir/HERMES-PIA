@@ -9,6 +9,7 @@
   <link rel="apple-touch-icon"
         href="{{ url_for('static', filename='img/hermes-pia-logo.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block kopf %}{% endblock %}
   {%- if current_branding %}
   <style>
     :root {

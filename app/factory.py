@@ -30,6 +30,7 @@ from app.shared.logging import configure_logging, register_request_logging
 from app.shared.version import get_version
 from app.web.auth import current_user
 from app.web.ui_routes import bp as ui_bp
+import app.web.adaptiv_routes  # noqa: F401,E402 – Endpunkte am selben Blueprint
 
 
 def _migrate_db(engine):

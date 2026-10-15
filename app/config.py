@@ -38,6 +38,11 @@ class Config:
     # setzen (TESTLAUF=1 in der .env).
     TESTLAUF = os.environ.get("TESTLAUF", "0") == "1"
 
+    # Adaptives Interview für NEUE Aufträge (Standard). Bestehende Sessions
+    # behalten ihren Ablauf; mit INTERVIEW_ADAPTIV=0 starten auch neue im
+    # bisherigen abschnittsweisen Interview (Rückfallweg).
+    INTERVIEW_ADAPTIV = os.environ.get("INTERVIEW_ADAPTIV", "1") == "1"
+
     # Skills (Laufzeit-Steuerung der LLM-Aufrufe). Layout: base/ + mandant-<id>/.
     # Kanonische Quelle ist das Skills-Repo; per scripts/sync_skills.py hierher
     # gespiegelt. Fehlt der Ordner, arbeitet die App wie ohne Skills.

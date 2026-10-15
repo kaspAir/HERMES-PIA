@@ -1,0 +1,21 @@
+{# Laufender Qualitätshinweis (Invarianten) – von BEIDEN Interview-
+   Oberflächen eingebunden. Erwartet: qualitaet. #}
+{% if qualitaet and (qualitaet.muss or qualitaet.vorbehalte) %}
+{# Laufende Invarianten-Pruefung: waehrend der Erstellung nur ein HINWEIS.
+   Verbindlich wird sie erst vor der Ausgabe (Briefing Abschnitt 4.1). #}
+<details class="qualitaet-hinweis">
+  <summary>
+    Qualitätsprüfung: {{ qualitaet.muss|length }} zu beheben,
+    {{ qualitaet.vorbehalte|length }} Vorbehalt(e)
+    {%- if qualitaet.hinweise %}, {{ qualitaet.hinweise|length }} Hinweis(e){% endif %}
+  </summary>
+  <ul>
+    {% for b in qualitaet.muss %}
+    <li><strong>{{ b.fundstelle }}</strong> {{ b.meldung }} <code>{{ b.regel }}</code></li>
+    {% endfor %}
+    {% for b in qualitaet.vorbehalte %}
+    <li>{{ b.fundstelle }} {{ b.meldung }} <code>{{ b.regel }}</code></li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
