@@ -121,3 +121,33 @@ def test_ersetzung_mit_korrektursignal_bleibt_korrektur(app):
     z = d.zustand.lade(sid, False)
     assert {a["schluessel"]: a["status"] for a in z.aussagen} == {"A-0001": "ersetzt", "A-0002": "aktiv"}
     assert not [k for k in z.konflikte if k["status"] == "offen"]
+
+
+def _kriterium(kid, abschnitt):
+    return {"id": kid, "abschnitt": abschnitt, "zustand": "unbekannt", "gewicht": "wesentlich",
+            "beschreibung": kid, "aktion": "erkunden", "details": [], "vorlagenfrage": ""}
+
+
+def test_unbekanntes_wird_hoechstens_einmal_angeboten():
+    """5. Befund (Testlauf dev): «weiss ich noch nicht» zum Enddatum – und
+    HERMES PIA fragte rund achtmal weiter. Jetzt: ein Angebot, dann offen."""
+    aussagen = [{"schluessel": "A-0001", "herkunft": "benutzer", "status": "aktiv", "art": "benutzerangabe",
+                 "bestaetigt": True, "ziele": [{"abschnitt": "ausgangslage"}], "entscheid": None}]
+    kriterien = [_kriterium("K-ZI-1", "ziele")]
+    erst = planer.naechste_aktion(aussagen, [], [], kriterien, [])
+    assert erst["aktion"] == "vorschlag" and erst["ziel"] == "K-ZI-1"
+    gefragt = [{"rolle": "system", "aktion": "vorschlag", "bezug": {"ziel": "K-ZI-1"}}]
+    assert planer.naechste_aktion(aussagen, [], [], kriterien, gefragt)["aktion"] == "abschluss"
+
+
+def test_eckdaten_werden_nicht_vorgeschlagen():
+    aussagen = [{"schluessel": "A-0001", "herkunft": "benutzer", "status": "aktiv", "art": "benutzerangabe",
+                 "bestaetigt": True, "ziele": [{"abschnitt": "ausgangslage"}], "entscheid": None}]
+    kriterien = [_kriterium("K-ECK-ENDE", "eckdaten")]
+    assert planer.naechste_aktion(aussagen, [], [], kriterien, [])["aktion"] == "abschluss"
+
+
+def test_frage_prompt_verbietet_eigene_werte():
+    from app.domains.interview.adaptiv import prompts
+    text = prompts.fuelle("frage")
+    assert "Schlage NIE selbst Werte vor" in text and "heute" in text

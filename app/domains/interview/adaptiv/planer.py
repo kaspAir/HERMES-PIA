@@ -61,6 +61,12 @@ def _wiederholungen(nachrichten, ziel_id):
     return zaehler
 
 
+def _schon_gefragt(nachrichten, ziel_id, aktion):
+    """Wurde zu diesem Punkt schon einmal mit dieser Aktion gefragt?"""
+    return any(m.get("rolle") == "system" and m.get("aktion") == aktion
+               and (m.get("bezug") or {}).get("ziel") == ziel_id for m in nachrichten)
+
+
 def kandidaten(aussagen, konflikte, themen, kriterien, nachrichten, bezug_unklar=""):
     """Alle möglichen nächsten Aktionen mit Priorität und Begründung."""
     k = []
@@ -134,8 +140,16 @@ def kandidaten(aussagen, konflikte, themen, kriterien, nachrichten, bezug_unklar
         if e["zustand"] in ("erfuellt", "nicht_anwendbar", "konflikt", "zurueckgestellt"):
             continue
         if e["zustand"] == "unbekannt":
-            # Der Benutzer weiss es nicht: Vorschlag oder Untersuchungsauftrag
-            # anbieten – nicht dieselbe Frage erneut stellen.
+            # Der Benutzer weiss es nicht: EINMAL anbieten, es als offenen Punkt
+            # oder Untersuchungsauftrag zu führen – dann nie wieder fragen.
+            # Jedes weitere «weiss ich nicht» legte eine neue Aussage an, die als
+            # Fortschritt zählte; so fragte HERMES PIA im Testlauf auf dev rund
+            # achtmal nach dem Enddatum (15.10.2026).
+            # Eckdaten der Initialisierung (Start, Ende) kann niemand
+            # «vorschlagen» und nicht die Initialisierung selbst untersuchen:
+            # sie bleiben offener Punkt, ohne Angebot.
+            if e["abschnitt"] == "eckdaten" or _schon_gefragt(nachrichten, e["id"], "vorschlag"):
+                continue
             k.append({"aktion": "vorschlag", "prio": PRIO["vorschlag"], "ziel": e["id"],
                       "abschnitt": e["abschnitt"],
                       "begruendung": f"«{e['beschreibung']}» ist noch nicht bekannt",
