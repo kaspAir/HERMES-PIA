@@ -238,6 +238,25 @@ class ZustandService:
                         erg.verworfen.append((op, "Aussage inzwischen nicht mehr aktiv"))
                         continue
                     ziele = op.get("ziele") or json.loads(alt.ziele_json or "[]")
+                    if op.get("als_widerspruch"):
+                        # Kein Korrektursignal im Beitrag: die neue Angabe ersetzt
+                        # die alte NICHT still. Beide bleiben, der Widerspruch ist
+                        # offen, bis der Benutzer sagt, welche gilt (AT05).
+                        nach = neue(op["inhalt"], op["art"], op["herkunft"], op["bestaetigt"],
+                                    ziele, op.get("thema") or alt.thema,
+                                    op.get("bezug") or alt.bezug,
+                                    op.get("entscheid") or alt.entscheid, op.get("beleg"))
+                        db.flush()
+                        k = PiaKonflikt(session_id=s.id,
+                                        aussagen_json=json.dumps([alt.schluessel, nach.schluessel]),
+                                        beschreibung=(f"«{alt.inhalt[:140]}» und «{nach.inhalt[:140]}» "
+                                                      f"passen nicht zusammen."),
+                                        quelle="gespraech", status="offen",
+                                        revision_erkannt=revision)
+                        db.add(k)
+                        db.flush()
+                        erg.konflikte_neu.append(k.id)
+                        continue
                     nach = neue(op["inhalt"], op["art"], op["herkunft"], op["bestaetigt"],
                                 ziele, op.get("thema") or alt.thema,
                                 op.get("bezug") or alt.bezug,

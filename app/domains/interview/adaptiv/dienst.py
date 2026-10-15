@@ -15,6 +15,7 @@ Die gewählte nächste Aktion wird gespeichert. `ansicht()` liest nur.
 """
 import json
 import logging
+import re
 import time
 
 from app.domains.interview.adaptiv import prompts
@@ -38,6 +39,21 @@ log = logging.getLogger("hermes.adaptiv")
 # ganze Verlauf: der gespeicherte Zustand trägt das Wissen; die letzten
 # Wortwechsel geben nur den Ton und vermeiden Wiederholungen.
 VERLAUF_FUER_FRAGE = 4
+
+# Woran eine ausdrückliche Korrektur zu erkennen ist. Bewusst eng: lieber
+# einmal zu viel nachfragen («welche Angabe gilt?») als still überschreiben.
+_KORREKTUR = re.compile(
+    r"\b(korrektur|korrigier\w*|berichtig\w*|stimmt (so )?nicht|nicht richtig|falsch|"
+    r"sondern|statt|anstatt|stattdessen|vielmehr|richtig ist|es gilt|gilt jetzt|"
+    r"neu gilt|ge(ä|ae)ndert|(ä|ae)nder\w*|aktualisier\w*|doch nicht|nicht mehr)\b"
+    # Gegenüberstellung «X, nicht Y» / «nicht im März»
+    r"|,\s*nicht\b|\bnicht (im|am|ab|bis|in|für|fuer|zum|zur)\b",
+    re.IGNORECASE)
+
+
+def korrektursignal(text):
+    """Sagt der Beitrag ausdrücklich, dass eine frühere Angabe nicht mehr gilt?"""
+    return bool(_KORREKTUR.search(text or ""))
 
 
 class BeitragFehler(Exception):
@@ -319,6 +335,13 @@ class AdaptivesInterview:
             max_tokens=self._token_bedarf(text, z))
 
         pruef = pruefe_aussagen_antwort(roh, katalog, *z.fuer_vertrag())
+        if not korrektur_von and not korrektursignal(text):
+            # Das Modell darf eine Angabe nur ersetzen, wenn der Benutzer
+            # korrigiert. Sonst ist es ein Widerspruch, und der bleibt sichtbar
+            # (dev, 15.10.2026: «höchstens 4 Tage» ersetzte still «10 Tage»).
+            for op in pruef.gueltig:
+                if op.get("op") == "korrektur":
+                    op["als_widerspruch"] = True
         tarife = tarife or {}
         erg = self.zustand.wende_an(session_id, pruef.gueltig, nachricht_id=n["id"],
                                     nachher=self._projektions_hook(methode, tarife))

@@ -277,6 +277,7 @@ def main(argv=None):
     p.add_argument("--ausfuehren", action="store_true")
     p.add_argument("--preise", help="in=<USD/Mio>,out=<USD/Mio>,emb=<USD/Mio>")
     p.add_argument("--budget-usd", type=float, default=10.0)
+    p.add_argument("--faelle", default="A,B", help="welche Fälle, z.B. «B» (Standard «A,B»)")
     a = p.parse_args(argv)
 
     from app.factory import create_app
@@ -300,7 +301,8 @@ def main(argv=None):
         gesamt = {"gestartet": datetime.now().isoformat(timespec="seconds"),
                   "budget_usd": a.budget_usd, "preise_usd_pro_mio": preise,
                   "datenwege": v["datenwege"], "faelle": []}
-        for fall in (lauf_a, lauf_b):
+        gewaehlt = {f.strip().upper() for f in a.faelle.split(",")}
+        for fall in [f for k, f in (("A", lauf_a), ("B", lauf_b)) if k in gewaehlt]:
             if not kasse.reicht_fuer_schritt():
                 gesamt["faelle"].append({"abbruch": "Budgetgrenze vor Fallbeginn"})
                 break
