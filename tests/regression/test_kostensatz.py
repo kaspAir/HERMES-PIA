@@ -25,10 +25,14 @@ def app(tmp_path):
     SessionLocal.remove()
 
 
-def test_default_tarife_ohne_eintrag(app):
+def test_ohne_eintrag_gibt_es_keinen_kostensatz(app):
+    """Erwartung angepasst (15.10.2026): früher lieferte diese Abfrage
+    1200/1800 CHF als Standard. Ohne Eintrag gibt es keinen Satz –
+    Auftrag Abschnitt 4.2, «Keine erfundenen Tarife»."""
     with app.app_context():
         t = app.projekt_service.effective_tarife(org_id=1)
-        assert t == {"intern": 1200, "extern": 1800}
+        assert t == {"intern": None, "extern": None}
+        assert app.projekt_service.tarif_herkunft(org_id=1) is None
 
 
 def test_org_tagessatz(app):
@@ -75,5 +79,6 @@ def test_kosten_breakdown_nutzt_custom_tarife():
     ]}}
     rows = svc._kosten_breakdown([], answers, tarife={"intern": 2000, "extern": 3000})
     text = {r["phase"]: r["betrag"] for r in rows}
-    assert text["Interne Personalkosten (gem. Kap. 3.1)"] == "20000"   # 10 × 2000
-    assert text["Externe Fachexpertise"] == "15000"                    # 5 × 3000
+    # Die Postenbezeichnung trägt jetzt ihre Berechnungsgrundlage.
+    assert text["Interne Personalkosten (gem. Kap. 3.1) (10 PT × 2000 CHF)"] == "20000"
+    assert text["Externe Fachexpertise (5 PT × 3000 CHF)"] == "15000"

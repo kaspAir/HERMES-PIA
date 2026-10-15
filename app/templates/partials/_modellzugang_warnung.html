@@ -1,0 +1,36 @@
+{# Warnungen zum Modellzugang – von BEIDEN Interview-Oberflächen eingebunden,
+   damit sie nie auseinanderlaufen. Erwartet: pseudo_aus, llm_available;
+   `datenwege` kommt aus dem Kontextprozessor (app/domains/llm/datenweg.py). #}
+{% set dw = datenwege or {} %}
+{% set llm_direkt = pseudo_aus or (dw.llm and dw.llm.modus == 'direkt') %}
+{% set emb_direkt = dw.embeddings and dw.embeddings.modus == 'direkt' %}
+{% if llm_direkt or emb_direkt %}
+{# Direktmodus: KEINE Pseudonymisierung. Muss sichtbar bleiben – sonst landen
+   irgendwann echte Personendaten ungeschuetzt beim Anbieter, ohne dass es
+   jemand merkt. #}
+<div class="warnbanner" role="alert" data-datenweg="direkt">
+  <strong>Ohne Pseudonymisierung (Direktmodus).</strong>
+  {% if llm_direkt %}Texte für das Sprachmodell{% endif %}{% if llm_direkt and emb_direkt %} und {% endif %}{% if emb_direkt %}Korpus- und Suchtexte für die Vergleichsprojekte (Embeddings){% endif %}
+  gehen <em>ungeschützt</em> an den Anbieter. Nur mit synthetischen, geeignet
+  öffentlichen oder ausdrücklich zur externen Verarbeitung freigegebenen Daten
+  verwenden – keine vertraulichen oder personenbezogenen Projektunterlagen.
+  {% if emb_direkt %}Vergleichsprojekte stammen in diesem Modus nur aus
+  ausdrücklich freigegebenen Korpusteilen.{% endif %}
+  Der Zustand steht unter <a href="{{ url_for('ui.health') }}">/health</a>.
+</div>
+{% endif %}
+{% if not llm_available %}
+{# Ohne Weg zum Sprachmodell wird nichts formuliert und nichts extrahiert.
+   Frueher lief das still weiter - der Rohtext landete im Dokument und niemand
+   konnte erkennen, warum. Diese Warnung darf nicht wegklickbar sein. #}
+<div class="warnbanner" role="alert">
+  <strong>Achtung: Die Texte werden derzeit nicht aufbereitet.</strong>
+  Es ist kein Weg zu einem Sprachmodell konfiguriert (weder Schutzschicht noch
+  ausdrücklicher Direktzugang). Ihr Diktat wird <em>unverändert</em> übernommen –
+  ohne Umformulierung, ohne Vorschläge und ohne Komplexitätseinschätzung.
+  Konfiguration prüfen: Schutzschicht (<code>PSEUDO_BASIS_URL</code> bzw.
+  <code>SCHUTZSCHICHT_LLM_URL</code>) oder ausdrücklicher Direktzugang
+  (<code>PSEUDO_UMGEHEN=1</code> mit Schlüssel). Der Zustand steht unter
+  <a href="{{ url_for('ui.health') }}">/health</a>.
+</div>
+{% endif %}

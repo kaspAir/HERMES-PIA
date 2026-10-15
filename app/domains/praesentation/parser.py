@@ -317,8 +317,28 @@ def _parse_kosten(rows):
 
 _STUFEN = {"tief": 1, "gering": 1, "niedrig": 1, "mittel": 2, "hoch": 3}
 
-# Risikozahl -> plausible (EW, AG)-Position, falls EW/AG-Zellen leer sind.
-_RISIKOZAHL_POS = {9: (3, 3), 6: (2, 3), 4: (2, 2), 3: (1, 3), 2: (1, 2), 1: (1, 1)}
+
+def _stufe(text):
+    """Zahlenwert einer Stufe – aus «Hoch = 3» wie aus «Hoch». Sonst None.
+
+    Die Vorlage führt die Stufen MIT Zahlenwert («Niedrig = 1»). Diese Form
+    kannte der Parser nicht; jede Bewertung aus der echten Vorlage fiel
+    deshalb auf die Schätzung über die Risikozahl zurück.
+    """
+    t = _norm(text)
+    if "=" in t:
+        rechts = t.rsplit("=", 1)[1].strip()
+        if rechts.isdigit():
+            return int(rechts)
+        t = t.split("=", 1)[0].strip()
+    return _STUFEN.get(t)
+
+
+# Risikozahl -> (EW, AG), falls EW/AG-Zellen leer sind – NUR wo eindeutig.
+# 6 kann (2,3) oder (3,2) sein, 3 und 2 ebenso: eine Position daraus wäre eine
+# Bewertung, die niemand vorgenommen hat. Solche Risiken stehen in der Tabelle,
+# aber nicht in der Matrix.
+_RISIKOZAHL_POS = {9: (3, 3), 4: (2, 2), 1: (1, 1)}
 
 
 def _parse_risiken(rows):
@@ -337,15 +357,15 @@ def _parse_risiken(rows):
 
         if len(cells) == len(header):
             beschreibung = _get(i_beschr)
-            ew = _STUFEN.get(_norm(_get(i_ew)))
-            ag = _STUFEN.get(_norm(_get(i_ag)))
+            ew = _stufe(_get(i_ew))
+            ag = _stufe(_get(i_ag))
             zahl = _num(_get(i_zahl))
             massnahmen = _get(i_massn)
         else:
             # Datenzeile kürzer als der Kopf (leere SDT-Dropdown-Zellen verschieben
             # die Spalten) -> Felder inhaltlich statt über Indizes bestimmen.
             beschreibung = max(cells[1:] if len(cells) > 1 else cells, key=len, default="").strip()
-            stufen = [_STUFEN[_norm(c)] for c in cells if _norm(c) in _STUFEN]
+            stufen = [_stufe(c) for c in cells if _stufe(c) is not None]
             ew = stufen[0] if len(stufen) > 0 else None
             ag = stufen[1] if len(stufen) > 1 else None
             # Risikozahl = einstellige Zahl (1-9); cells[0] ist die Nr.-Spalte ("01").

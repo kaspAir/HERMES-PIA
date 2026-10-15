@@ -29,3 +29,22 @@ class InterviewSession(Base, GovernanceMixin):
     last_snapshot_json = Column(Text, default="{}")
     # Verknüpfung in die Projektstruktur: Ergebnis-Knoten im Modul Projektsteuerung.
     ergebnis_id = Column(Integer, nullable=True)
+
+    # ---- Adaptives Interview (additiv; ältere Sessions bleiben unverändert) ---- #
+    # NULL/"abschnitt" = bisheriger abschnittsweiser Ablauf; "adaptiv" = neuer.
+    modus = Column(String(20), nullable=True)
+    # Zustandsrevision: jede Änderung am gemeinsamen Zustand zählt hoch. Eine
+    # verspätete Antwort, die auf einer älteren Revision beruht, überschreibt
+    # nichts Neueres (Auftrag Abschnitt 8.3/12).
+    revision = Column(Integer, nullable=True, default=0)
+    # Gespeicherte nächste Gesprächsaktion: ein Reload zeigt dieselbe Frage.
+    naechste_aktion_json = Column(Text, nullable=True)
+    # Noch ausstehende Verarbeitungsschritte nach einem Beitrag.
+    ausstehend_json = Column(Text, nullable=True)
+    # Interner Bearbeitungszustand – NICHT Prüfung, Abnahme oder Freigabe.
+    pia_status = Column(String(30), nullable=True)
+    # Stand der Themensuche im Korpus (letzte Anfrage, Verfügbarkeit).
+    rag_stand_json = Column(Text, nullable=True)
+    # Sicherung der Dokumentdaten VOR der Umstellung einer bestehenden Session
+    # auf das adaptive Interview – Grundlage des Rückfallwegs (Auftrag 12).
+    answers_vor_umstellung_json = Column(Text, nullable=True)

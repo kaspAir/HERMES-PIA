@@ -1,0 +1,406 @@
+# =====================================================================
+# Vorlagenzuordnung: PIA_HERMESPIA.docx -> Datenfelder, Quellen, Regeln
+# =====================================================================
+#
+# Diese Datei ist die verbindliche Brücke zwischen der Word-Vorlage und dem,
+# was HERMES PIA erfasst, prüft und ausgibt. Sie steht ÜBER method.yaml, alten
+# Katalogen und Modellwissen: wo sie etwas festlegt, gilt es.
+#
+# Der Test tests/regression/test_vorlagenzuordnung.py liest die Referenzdatei
+# selbst und vergleicht sie mit dieser Zuordnung. Wer die Vorlage austauscht,
+# bekommt dort einen roten Test statt einer still veralteten Zuordnung.
+#
+# HERKUNFT jeder Regel (Feld `herkunft`):
+#   vorlage              Struktur oder Vorgabewert der Word-Vorlage
+#   ergebnisbeschreibung HERMES-2022-Ergebnisbeschreibung des PIA
+#   produktentscheid     Entscheidung von HERMES PIA – KEIN HERMES-Gebot
+#   organisation         Konfiguration der Organisation bzw. des Projekts
+#   benutzer             projektspezifische Angabe im Interview
+#
+# ANWENDBARKEIT ist vom Vorhandensein in der Vorlage getrennt: ein Feld der
+# Vorlage ist nicht automatisch für jede Organisation verpflichtend.
+
+zuordnung:
+  version: "1.0.0"
+  stand: "2026-10-15"
+
+vorlage:
+  referenz: "template/referenz/PIA_HERMESPIA.docx"
+  sha256: "2b02548eb801b78af9fa1f65afdad4ae16ce18048e2a42bead533f009a700e9d"
+  # Die Erzeugung arbeitet auf der .dotx. Sie ist strukturell identisch mit der
+  # Referenz (gleiche Kapitel, Tabellen, Zeilen, Inhaltssteuerelemente,
+  # Auswahlwerte, Fussnoten, Abschnitte); abweichend sind nur die
+  # zwischengespeicherten Werte der Dateinamen-Felder in den Fusszeilen.
+  erzeugung: "template/projektinitialisierungsauftrag.dotx"
+  abschnitte:
+    - { bis: "Deckblatt",              ausrichtung: hoch }
+    - { bis: "4.1 Ergebnisse und Termine", ausrichtung: hoch }
+    - { bis: "7 Risiken",              ausrichtung: quer }   # Kap. 5, 6, 7
+    - { bis: "8 Dokument-Protokoll",   ausrichtung: hoch }
+  # Formatvorlagen, an denen Beispiele und Hilfstexte erkannt werden.
+  stile:
+    beispiel: "HTabBeispiel85ptF"
+    hilfe: "HHilfstextfarbigkursiv105ptF"
+    tabellentext: "HTabText85pt"
+    tabellentitel: "HTabTit65pt"
+
+# ---------------------------------------------------------------------
+# Auswahlwerte – exakt die Einträge der Inhaltssteuerelemente
+# ---------------------------------------------------------------------
+# «Auswählen» und «Wählen Sie ein Element aus.» sind Platzhalter des
+# Steuerelements, keine Werte.
+vokabulare:
+  dokument_status:
+    herkunft: vorlage
+    werte: ["in Arbeit", "geprüft", "fertiggestellt", "abgenommen"]
+    vorgabe: "in Arbeit"
+    # Interne Bearbeitungszustände von HERMES PIA (laufend, Entwurf mit
+    # offenen Punkten, bereit zur Prüfung, fertiggestellt) sind davon
+    # getrennt. «geprüft» und «abgenommen» setzt nur ein tatsächlicher
+    # Vorgang, nie ein Export oder ein bestandener Softwaretest.
+  klassifizierung:
+    herkunft: vorlage
+    werte: ["Nicht klassifiziert", "INTERN", "VERTRAULICH", "GEHEIM"]
+    vorgabe: "Nicht klassifiziert"
+  zielkategorie:
+    herkunft: vorlage
+    fussnote: 2
+    werte: ["Systemziel", "Vorgehensziel"]
+  prioritaet:
+    herkunft: vorlage
+    fussnote: 3
+    werte: ["Tief", "Mittel", "Hoch", "Muss"]
+  eintrittswahrscheinlichkeit:
+    herkunft: vorlage
+    werte:
+      - { label: "Niedrig = 1", wert: 1 }
+      - { label: "Mittel = 2",  wert: 2 }
+      - { label: "Hoch = 3",    wert: 3 }
+  auswirkungsgrad:
+    herkunft: vorlage
+    werte:
+      - { label: "Tief = 1",   wert: 1 }
+      - { label: "Mittel = 2", wert: 2 }
+      - { label: "Hoch = 3",   wert: 3 }
+
+# Ältere Sessions speichern Werte aus der früheren method.yaml. Abgebildet wird
+# nur, was EINDEUTIG dasselbe meint. «in Pruefung» ist nicht «geprüft», und
+# «freigegeben» ist nicht «abgenommen» – solche Werte bleiben unverändert und
+# werden als nicht zuordenbar gemeldet, statt geraten.
+altwerte:
+  eintrittswahrscheinlichkeit: { "Tief": "Niedrig = 1", "Niedrig": "Niedrig = 1", "Mittel": "Mittel = 2", "Hoch": "Hoch = 3" }
+  auswirkungsgrad:             { "Tief": "Tief = 1", "Niedrig": "Tief = 1", "Mittel": "Mittel = 2", "Hoch": "Hoch = 3" }
+  klassifizierung:             { "Intern": "INTERN", "Vertraulich": "VERTRAULICH", "Geheim": "GEHEIM" }
+  dokument_status:             { "in Arbeit": "in Arbeit" }
+
+fussnoten:
+  2: "Systemziel, Vorgehensziel"
+  3: "Tief, Mittel, Hoch, Muss"
+  4: "Risikozahl = Eintrittswahrscheinlichkeit x Auswirkungsgrad"
+
+# ---------------------------------------------------------------------
+# Deckblatt
+# ---------------------------------------------------------------------
+deckblatt:
+  - { feld: projektname,         label: "Projektname / Projektnummer", quelle: [benutzer, organisation], anwendbarkeit: immer, ausgabe: "Deckblatt Titel, Kopfzeile" }
+  - { feld: bearbeitungsdatum,   label: "Bearbeitungsdatum",  quelle: [organisation], anwendbarkeit: immer, ausgabe: "Deckblatt", regel: "Datum des Exports; technischer Zeitstempel, keine fachliche Aussage" }
+  - { feld: version,             label: "Version",            quelle: [organisation], anwendbarkeit: immer, ausgabe: "Deckblatt, Fusszeile", regel: "aus der Änderungskontrolle; erster Entwurf 0.1" }
+  - { feld: status,              label: "Dokument Status",    quelle: [organisation], anwendbarkeit: immer, vokabular: dokument_status, ausgabe: "Deckblatt" }
+  - { feld: klassifizierung,     label: "Klassifizierung",    quelle: [benutzer, organisation], anwendbarkeit: immer, vokabular: klassifizierung, ausgabe: "Deckblatt, Fusszeile" }
+  - { feld: autor,               label: "Autor/-in",          quelle: [benutzer], anwendbarkeit: immer, ausgabe: "Deckblatt" }
+  - { feld: projektleiter,       label: "Projektleiter/in",   quelle: [benutzer], anwendbarkeit: immer, ausgabe: "Deckblatt" }
+  - { feld: auftraggeber,        label: "Auftraggeber/in",    quelle: [benutzer], anwendbarkeit: immer, ausgabe: "Deckblatt" }
+  - { feld: verwaltungseinheit,  label: "Verwaltungseinheit", quelle: [benutzer, organisation], anwendbarkeit: immer, ausgabe: "Deckblatt, Kopfzeile" }
+  - { feld: geschaeftsbereich,   label: "Geschäftsbereich",   quelle: [benutzer, organisation], anwendbarkeit: organisation, ausgabe: "Deckblatt, Kopfzeile" }
+  - { feld: innenauftragsnummer, label: "Innenauftragsnr.",   quelle: [organisation], anwendbarkeit: organisation, ausgabe: "Deckblatt" }
+  - { feld: projektnummer,       label: "Projektnummer",      quelle: [organisation], anwendbarkeit: organisation, ausgabe: "Deckblatt" }
+  - { feld: pfct_bund,           label: "PFCT Bund",          quelle: [organisation], anwendbarkeit: organisation, ausgabe: "Deckblatt", regel: "nur Bundesorganisationen; sonst leer, nicht erfunden" }
+  # Geschlecht/Anrede: NICHT aus dem Namen abgeleitet (Auftrag Abschnitt 10).
+  # Die Vorlage führt neutrale Bezeichnungen («Projektleiter/in»); eine
+  # abweichende Bezeichnung entsteht nur aus einer ausdrücklichen Angabe.
+
+# ---------------------------------------------------------------------
+# Kapitel
+# ---------------------------------------------------------------------
+# tabelle.kopf:        Spaltenbeschriftungen in Vorlagenreihenfolge
+# tabelle.spalten:     Datenfeld je Spalte (methode: method.yaml-Spalten-ID)
+# vorbelegung:         Zeilen der Vorlage, die als Vorgabe stehen bleiben
+# basiszeilen:         Zeilen, deren erste Spalte fest ist und deren übrige
+#                      Spalten aus dem Projekt kommen
+# beispiele:           Zeilen der Vorlage, die NIE ins fertige Dokument gehören
+# platzhalterzeilen:   leere Eingabezeilen der Vorlage («…», «#»)
+kapitel:
+
+  - id: einleitung_zweck
+    nummer: "0.1"
+    titel: "Ziel und Zweck des Dokuments"
+    typ: fester_text
+    herkunft: vorlage
+    regel: "Text der Vorlage unverändert; nicht umformulieren"
+
+  - id: referenzierte_dokumente
+    nummer: "0.2"
+    titel: "Referenzierte Dokumente"
+    typ: tabelle
+    anwendbarkeit: wenn_vorhanden
+    tabelle:
+      kopf: ["Nr.", "Name", "Nummer / Link"]
+      spalten: [nr, name, link]
+    platzhalterzeilen: ["[1] | … | #"]
+    regel: >
+      Nur tatsächlich genannte oder belegte Dokumente. Ein vom Benutzer genannter
+      Link bleibt stehen; ein vom System erzeugter Link wird nicht erfunden.
+
+  - id: mitgeltende_unterlagen
+    nummer: "0.3"
+    titel: "Mitgeltende Unterlagen"
+    typ: tabelle
+    anwendbarkeit: wenn_vorhanden
+    tabelle:
+      kopf: ["Name", "Nummer / Link"]
+      spalten: [name, link]
+    platzhalterzeilen: ["… | #"]
+    regel: "wie 0.2"
+
+  - id: definitionen
+    nummer: "0.4"
+    titel: "Definitionen und Abkürzungen"
+    typ: tabelle
+    anwendbarkeit: immer
+    tabelle:
+      kopf: ["Abkürzung", "Bedeutung"]
+      spalten: [abkuerzung, bedeutung]
+    vorbelegung:
+      herkunft: vorlage
+      zeilen:
+        - { abkuerzung: "CHF",       bedeutung: "Schweizer Franken" }
+        - { abkuerzung: "ICT / IKT", bedeutung: "Informations- und Kommunikationstechnologie" }
+        - { abkuerzung: "IT",        bedeutung: "Informationstechnologie" }
+        - { abkuerzung: "PT",        bedeutung: "Personentage" }
+        - { abkuerzung: "AG",        bedeutung: "Auftraggeber" }
+        - { abkuerzung: "PL",        bedeutung: "Projektleiter" }
+
+  - id: vorgaben_methoden
+    nummer: "0.5"
+    titel: "Vorgaben, Methoden und Werkzeuge"
+    typ: tabelle
+    anwendbarkeit: immer
+    tabelle:
+      kopf: ["Titel", "Vorgabe / Methode / Werkzeug", "Version"]
+      spalten: [titel, vorgabe, version]
+    vorbelegung:
+      herkunft: vorlage
+      zeilen:
+        - { titel: "Projektmanagementmethode", vorgabe: "HERMES",                           version: "Aktuell gültige Version" }
+        - { titel: "Beschaffung",              vorgabe: "Gemäss Vorgabe Stammorganisation", version: "" }
+        - { titel: "Dokumentenablage",         vorgabe: "Gemäss Vorgabe Stammorganisation", version: "" }
+        - { titel: "Reporting",                vorgabe: "Gemäss Vorgabe Stammorganisation", version: "" }
+    # In der Vorlage stehen diese beiden Zeilen gemischt: erste Spalte normal,
+    # zweite im Beispielstil. Die Werte sind Beispiele, die Zeilentitel nicht.
+    beispiele:
+      - { titel: "Dokumentation",      vorgabe: "MS Office Palette gem. Vorlage" }
+      - { titel: "Prozesse / Abläufe", vorgabe: "MS PowerPoint, Visio" }
+
+  - id: ausgangslage
+    nummer: "1"
+    titel: "Ausgangslage"
+    typ: freitext
+    anwendbarkeit: immer
+    hilfstext: "Anlass für die Projektinitialisierung beschreiben"
+    regel: >
+      Kohärenter Sachtext aus den erfassten Aussagen: Anlass, Problem, Kontext,
+      gesicherte Angaben und wesentliche Unsicherheiten. Eine offene Lösung wird
+      nicht als beschlossen dargestellt; Unbestätigtes bleibt als solches erkennbar.
+
+  - id: ziele
+    nummer: "2.1"
+    titel: "Ziele der Phase Initialisierung"
+    typ: tabelle
+    anwendbarkeit: immer
+    tabelle:
+      kopf: ["Nr.", "Kategorie", "Beschreibung", "Messgrösse", "Priorität"]
+      spalten: [nr, kategorie, beschreibung, messgroesse, prioritaet]
+      auswahl: { kategorie: zielkategorie, prioritaet: prioritaet }
+    beispiele:
+      - { beschreibung: "Welche Bedeutung und Konsequenzen hat der Ersatz des Systems XY?", messgroesse: "Nutzwertanalyse" }
+      - { beschreibung: "Wer steht zur Verfügung? Mit welcher Erfahrung, Verfügbarkeit, Rolle?", messgroesse: "Verfügbarkeit, Terminplan" }
+    regel: >
+      Keine Pflicht, je Kategorie ein Ziel zu führen – die Vorlage verlangt das
+      nicht (frühere Prüfregel war unbelegt und entfällt).
+
+  - id: rahmenbedingungen
+    nummer: "2.2"
+    titel: "Rahmenbedingungen"
+    typ: tabelle
+    anwendbarkeit: immer
+    einleitungstext: "Das Projekt hält folgende Vorgaben und Rahmenbedingungen der Stammorganisation ein:"
+    tabelle:
+      kopf: ["Nr.", "Vorgaben", "Beschreibung"]
+      spalten: [nr, vorgaben, beschreibung]
+    vorbelegung:
+      herkunft: vorlage
+      zeilen:
+        - { nr: "01", vorgaben: "Anwendung von HERMES", beschreibung: "Version HERMES 2022" }
+    beispiele:
+      - { vorgaben: "Vorgaben für die Durchführung", beschreibung: "z.B. Kostenrahmen, Ecktermine" }
+      - { vorgaben: "ISO9001" }
+    regel: >
+      Verbindliche Vorgaben von Annahmen unterscheiden. Ein vom Benutzer genannter
+      Zeit- oder Kostenrahmen bleibt stehen.
+
+  - id: personalaufwand
+    nummer: "3.1"
+    titel: "Personalaufwand"
+    typ: tabelle
+    anwendbarkeit: immer
+    einleitungstext: "Geschätzter Personalaufwand für Phase Initialisierung (Details in Kapitel 5):"
+    tabelle:
+      kopf: ["Rolle", "Name", "Aufwand in PT"]
+      spalten: [rolle, name, aufwand]
+      einheit: { aufwand: PT }
+    basiszeilen:
+      herkunft: vorlage
+      schluessel: rolle
+      zeilen: ["AG", "PL"]
+    regel: "PT, nicht Geld. Personen nur, wenn genannt; keine erfundenen Fachpersonen."
+
+  - id: sachmittel
+    nummer: "3.2"
+    titel: "Sachmittel"
+    typ: tabelle
+    anwendbarkeit: wenn_relevant
+    tabelle:
+      kopf: ["Bezeichnung", "Beschreibung", "Quantität"]
+      spalten: [bezeichnung, beschreibung, quantitaet]
+    beispiele:
+      - { bezeichnung: "Raum", beschreibung: "Raum mit Projektarbeitsstation", quantitaet: "1" }
+      - { bezeichnung: "IT-Infrastruktur" }
+      - { bezeichnung: "Arbeitsplatz" }
+      - { bezeichnung: "Workstation" }
+      - { bezeichnung: "Spezifische Software" }
+
+  - id: kosten
+    nummer: "3.3"
+    titel: "Kosten (in CHF inkl. MwSt.)"
+    typ: tabelle
+    anwendbarkeit: immer
+    einleitungstext: "Geschätzte Kosten für Phase Initialisierung"
+    tabelle:
+      kopf: ["Phase", "Betrag"]
+      spalten: [phase, betrag]
+      einheit: { betrag: CHF }
+    basiszeilen:
+      herkunft: vorlage
+      schluessel: phase
+      zeilen: ["Initialisierungsphase"]
+    regel: >
+      Nur Kosten der Initialisierung. Berechnung aus PT × hinterlegtem Kostensatz
+      (Organisation/Projekt); ohne hinterlegten Satz KEIN Betrag, sondern ein
+      offener Punkt. Keine erfundenen Tarife oder Steuersätze. Ein Gesamtbudget
+      des Vorhabens ist kein Initialisierungsbudget.
+
+  - id: termine
+    nummer: "4.1"
+    titel: "Ergebnisse und Termine"
+    typ: tabelle
+    anwendbarkeit: immer
+    einleitungstext: "Terminierte Ergebnisse der Phase Initialisierung:"
+    tabelle:
+      kopf: ["Nr.", "Lieferergebnisse (abnahmerelevant)", "Liefertermin", "Abnahme durch (Rolle)", "Prüfmethode"]
+      spalten: [nr, ergebnis, termin, abnahme, pruefmethode]
+    basiszeilen:
+      herkunft: vorlage
+      schluessel: ergebnis
+      # Die acht sichtbaren Einträge der Vorlage. Sie sind keine Behauptung einer
+      # abschliessenden Ergebnisliste; Erweiterungen brauchen Begründung, fachliche
+      # Grundlage und Bestätigung. Ein RAG-Treffer erzeugt keine Zeile.
+      zeilen:
+        - "Stakeholder Liste"
+        - "Studie"
+        - "Rechtsgrundlagenanalyse"
+        - "Schutzbedarfsanalyse"
+        - "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen; Liste Projektentscheide Führung)"
+        - "Projektmanagementplan"
+        - "Durchführungsauftrag"
+        - "Meilenstein Durchführungsfreigabe (mit Checkliste Durchführungsfreigabe; Liste Projektentscheide Steuerung)"
+    beispiele:
+      - { ergebnis: "Studie", pruefmethode: "Schriftlicher Review" }
+    enddatum:
+      text: "Geplantes Enddatum der Phase Initialisierung: tt.mm.jjjj"
+      platzhalter: "tt.mm.jjjj"
+    regel: >
+      Ein Ergebnis zu terminieren heisst nicht, seinen Inhalt schon zu erstellen.
+      Kein Liefertermin ohne Startdatum oder genannten Termin; «heute» ist kein
+      Startdatum.
+
+  - id: projektorganisation
+    nummer: "5"
+    titel: "Projektorganisation und Personal"
+    typ: tabelle
+    anwendbarkeit: immer
+    einleitungstext: "Personalressourcen gem. Kapitel 3.1 pro Monat (in PT)"
+    tabelle:
+      kopf: ["Rolle / Person", "Monat 1", "Monat 2", "Monat 3", "Monat 4", "Monat 5",
+             "Monat 6", "Monat 7", "Monat 8", "Monat 9", "Bestätigung Vorgesetzter"]
+      spalten: [rolle_person, monat_1, monat_2, monat_3, monat_4, monat_5,
+                monat_6, monat_7, monat_8, monat_9, bestaetigung]
+    summenzeile: { label: "Total", herkunft: vorlage }
+    beispiele:
+      - { rolle_person: "AG / Hans Meier" }
+      - { rolle_person: "PL / Petra Fischer" }
+    fortsetzung:
+      herkunft: produktentscheid
+      regel: >
+        Neun Spalten sind keine vorgeschriebene Phasendauer. Dauert die Phase länger,
+        folgt eine Fortsetzungstabelle mit denselben Spalten (Monat 10–18 usw.).
+        Keine stille Kappung. Monatssummen je Rolle müssen Kap. 3.1 entsprechen,
+        sonst Widerspruch. Eine rechnerische Verteilung ist ein Vorschlag, keine
+        zugesagte Ressourcenplanung; die Bestätigung Vorgesetzter bleibt offen,
+        bis sie tatsächlich vorliegt.
+
+  - id: kommunikation
+    nummer: "6"
+    titel: "Kommunikation"
+    typ: tabelle
+    anwendbarkeit: immer
+    hilfstext: "Reporting während der Phase Initialisierung, Information Auftraggeber, Information der betroffenen Stellen und Stakeholder."
+    tabelle:
+      kopf: ["Empfänger", "Verantwortlich", "Ziel / Inhalt", "Mittel / Medium", "Termin"]
+      spalten: [empfaenger, verantwortlich, inhalt, medium, termin]
+    beispiele:
+      - { empfaenger: "Alle Mitarbeitenden", verantwortlich: "Auftraggeber", medium: "Flyer (per mail)" }
+    regel: >
+      Wird nicht deshalb übergangen, weil eine frühere Konfiguration es als
+      optional führte. Anwendbarkeit und ausreichende Bearbeitung werden beurteilt.
+
+  - id: risiken
+    nummer: "7"
+    titel: "Risiken"
+    typ: tabelle
+    anwendbarkeit: immer
+    einleitungstext: "Risiken der Phase Initialisierung:"
+    tabelle:
+      kopf: ["Nr.", "Risikobeschreibung", "Eintrittswahrscheinlichkeit", "Auswirkungsgrad",
+             "Risikozahl", "Massnahmen", "Verantwortung", "Termin"]
+      spalten: [nr, beschreibung, ew, ag, risikozahl, massnahmen, verantwortung, termin]
+      auswahl: { ew: eintrittswahrscheinlichkeit, ag: auswirkungsgrad }
+      nummernformat: "PR{nr:02d}"
+    risikozahl:
+      fussnote: 4
+      herkunft: vorlage
+      regel: "EW × AG über die Zahlenwerte der Auswahl; unbekannt ist null, nicht 0 und nicht Tief"
+    beispiele:
+      - { beschreibung: "Jurist für Phase Initialisierung nicht verfügbar", ausgeblendet: true }
+
+  - id: dokument_protokoll
+    nummer: "8"
+    titel: "Dokument-Protokoll"
+    typ: protokolle
+    protokolle:
+      - { id: aenderungskontrolle, titel: "Änderungskontrolle", kopf: ["Version", "Name", "Datum", "Bemerkungen"] }
+      - { id: pruefung,            titel: "Prüfung",            kopf: ["Version", "Name", "Datum", "Bemerkungen"] }
+      - { id: freigabe,            titel: "Freigabe",           kopf: ["Version", "Name", "Datum", "Bemerkungen"] }
+    regel: >
+      Nur tatsächlich erfolgte Vorgänge. Ein Export oder ein bestandener
+      Softwaretest ist keine Prüfung und keine Freigabe; Prüfung und Freigabe
+      bleiben leer, bis sie tatsächlich stattgefunden haben.

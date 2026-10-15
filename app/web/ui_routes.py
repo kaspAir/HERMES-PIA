@@ -3,6 +3,7 @@ import io
 import json
 import logging
 from datetime import date, datetime
+from pathlib import Path
 
 from flask import (
     Blueprint, abort, current_app, g, jsonify, redirect, render_template, request,
@@ -53,9 +54,23 @@ def _pseudonymisierung_aus():
     stand dieselbe getattr-Abfrage an drei Stellen - und driftete auseinander,
     sobald eine davon einen anderen Client sah.
     """
-    return (bool(current_app.config.get("PSEUDO_UMGEHEN"))
-            and bool(current_app.config.get("ANTHROPIC_API_KEY"))
-            and not (current_app.config.get("PSEUDO_BASIS_URL") or "").strip())
+    from app.domains.llm import datenweg
+    return datenweg.bestimme(current_app.config)["llm"]["modus"] == datenweg.DIREKT
+
+
+def _datenwege():
+    """Die tatsächlichen Datenwege für Anzeige und /health (ohne Schlüssel)."""
+    from app.domains.llm import datenweg
+    return datenweg.oeffentlich(datenweg.bestimme(current_app.config))
+
+
+@bp.app_context_processor
+def _datenwege_fuer_vorlagen():
+    """Jede Seite kennt die tatsächlichen Datenwege (für das Warnbanner)."""
+    try:
+        return {"datenwege": _datenwege()}
+    except Exception:      # noqa: BLE001 – Anzeige darf keine Seite verhindern
+        return {"datenwege": None}
 
 
 @bp.get("/health")
@@ -80,6 +95,8 @@ def health():
             # Formulierung, keine Extraktion, keine Komplexitaetseinschaetzung.
             "textformulierung_aktiv": bool(llm),
         },
+        # Je Übermittlung: schutzschicht | direkt | aus – so, wie es ist.
+        "datenwege": _datenwege(),
     })
 
 
@@ -97,6 +114,15 @@ def _load_session(session_id):
     if not user.is_super_admin and session.org_id != user.org_id:
         abort(403)
     return session
+
+
+def _nur_bisheriger_ablauf(session):
+    """Die Schreibwege des bisherigen Interviews arbeiten direkt auf den
+    Dokumentdaten. Bei einer adaptiven Session würden sie die Projektion am
+    Zustand vorbei überschreiben (Auftrag 12: neue Daten nicht durch einen
+    alten Ablauf beschädigen) – deshalb abgewiesen."""
+    if getattr(session, "modus", None) == "adaptiv":
+        abort(409, description="Diese Session nutzt das adaptive Interview.")
 
 
 def _load_projekt(projekt_id):
@@ -346,6 +372,10 @@ def interview_start():
         created_by=projektleiter,
     )
     _wrap_in_projektstruktur(session, projektleiter)
+    # Neue Aufträge laufen im adaptiven Interview. Abschaltbar (INTERVIEW_ADAPTIV=0),
+    # dann bleibt der bisherige abschnittsweise Ablauf.
+    if current_app.config.get("INTERVIEW_ADAPTIV", True):
+        current_app.adaptiv_service.starte(session.id)
     return redirect(url_for("ui.interview_workspace", session_id=session.id))
 
 
@@ -378,6 +408,12 @@ def _wrap_in_projektstruktur(session, projektleiter):
 def interview_workspace(session_id):
     svc = current_app.interview_service
     session = _load_session(session_id)
+    # Adaptives Interview: eigene Oberfläche. MUSS vor current_state() stehen –
+    # das alte current_state() ruft beim blossen Seitenaufruf das Modell und
+    # schreibt; die adaptive Ansicht liest nur.
+    if getattr(session, "modus", None) == "adaptiv":
+        from app.web.adaptiv_routes import render_adaptiv
+        return render_adaptiv(session)
     state = svc.current_state(session)
     sections = svc.section_summary(session)
     preview = svc.preview_data(session)
@@ -387,6 +423,7 @@ def interview_workspace(session_id):
         "interview.html",
         session=session, state=state, sections=sections, preview=preview, method=method,
         projekt=projekt,
+        adaptiv_verfuegbar=bool(current_app.config.get("INTERVIEW_ADAPTIV")),
         stt_available=getattr(current_app.transcriber, "available", False),
         # Ohne Pseudonymisierungsdienst wird NICHT formuliert. Das muss sichtbar
         # sein: sonst diktiert der Projektleiter ein ganzes Interview und merkt
@@ -413,6 +450,7 @@ def _tarife_for_session(session):
 @permission_required("write")
 def interview_answer(session_id):
     session = _load_session(session_id)
+    _nur_bisheriger_ablauf(session)
     raw_text = request.form.get("raw_text", "").strip()
     try:
         current_app.interview_service.submit_answer(
@@ -426,6 +464,7 @@ def interview_answer(session_id):
 @permission_required("write")
 def interview_reprocess(session_id):
     session = _load_session(session_id)
+    _nur_bisheriger_ablauf(session)
     current_app.interview_service.reprocess(session_id, tarife=_tarife_for_session(session))
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
@@ -434,6 +473,7 @@ def interview_reprocess(session_id):
 @permission_required("write")
 def interview_followup(session_id):
     session = _load_session(session_id)
+    _nur_bisheriger_ablauf(session)
     risk_id = request.form.get("risk_id", "")
     accepted = request.form.get("accepted", "0") == "1"
     raw_text = request.form.get("raw_text", "").strip() or None
@@ -1574,6 +1614,7 @@ def interview_edit(session_id, section_id):
     """Bearbeiten: Freitext mit vorgeladenem Inhalt; Tabellen werden zurückgesetzt."""
     svc = current_app.interview_service
     session = _load_session(session_id)
+    _nur_bisheriger_ablauf(session)
     section = svc._section_by_id(svc._effective_method(session), section_id)
     if not section:
         return "Abschnitt nicht gefunden", 404
@@ -1588,7 +1629,7 @@ def interview_edit(session_id, section_id):
 @permission_required("write")
 def interview_edit_save(session_id, section_id):
     """Speichert den bearbeiteten Freitext und lässt ihn neu formulieren."""
-    _load_session(session_id)
+    _nur_bisheriger_ablauf(_load_session(session_id))
     raw_text = request.form.get("raw_text", "").strip()
     current_app.interview_service.update_free_text(session_id, section_id, raw_text)
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
@@ -1674,6 +1715,23 @@ def _pruefe_vor_ausgabe(session, answers, buf):
 # ===================================================================== #
 # Verwaltung: Betreiber (Super-Admin) – Organisationseinheiten          #
 # ===================================================================== #
+
+@bp.get("/admin/korpus/bestand")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_korpus_bestand():
+    """Bestand des RAG-Korpus dieser Stufe – nur lesend, nur für den Betreiber.
+
+    Dieselbe Auswertung wie scripts/korpus_bestand.py; enthält Zählwerte und
+    Metadaten, keine Korpustexte."""
+    from app.domains.corpus.bestand import bestand, pfad_aus_url
+    pfad = pfad_aus_url(current_app.config.get("DATABASE_URL"))
+    if not pfad:
+        return jsonify({"gefunden": False, "grund": "Nur SQLite wird ausgewertet"}), 200
+    daten = bestand(pfad, modell=current_app.config.get("VOYAGE_MODEL"))
+    daten["datenbank"] = Path(pfad).name           # kein Serverpfad nach aussen
+    daten["datenwege"] = _datenwege()
+    return jsonify(daten)
+
 
 @bp.get("/admin/organisationen")
 @roles_required(ROLE_SUPER_ADMIN)

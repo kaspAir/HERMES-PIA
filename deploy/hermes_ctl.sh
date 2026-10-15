@@ -70,7 +70,11 @@ hp_config() {
           # er ein Weg, Nachweise zu erzeugen, die keine sind. Eine Einstellung, die
           # je Stufe verschieden sein MUSS, gehoert in die Stufenkonfiguration und
           # nicht in eine geteilte Datei.
-          HP_EXTRA_ENV="TESTLAUF=1" ;;
+          #
+          # EMBEDDING_DIREKT=1 (Entscheid 15.10.2026, nur dev): Embeddings ohne
+          # Schutzschicht direkt an Voyage. Wirkt nur zusammen mit VOYAGE_API_KEY
+          # aus der Stufen-Datei (HP_STUFEN_ENV) – der Schluessel steht nie hier.
+          HP_EXTRA_ENV="TESTLAUF=1 EMBEDDING_DIREKT=1" ;;
     *) echo "Unbekannte Umgebung: ${1:-<leer>} (prod|test|int|dev)" >&2; return 2 ;;
   esac
 }
@@ -107,6 +111,11 @@ hp_launch() {
   # Stufenspezifisches ZULETZT: es muss die gemeinsame Datei uebersteuern
   # koennen, nicht umgekehrt.
   [ -n "$HP_EXTRA_ENV" ] && eval "export $HP_EXTRA_ENV"
+  # Stufeneigene Schluessel (z.B. VOYAGE_API_KEY nur fuer dev): ausserhalb des
+  # Repositorys und ausserhalb des Stufenverzeichnisses (git reset --hard
+  # beruehrt sie nie), nur fuer DIESE Stufe geladen.
+  local stufen_env="$HOME_DIR/.hermes-env/$1.env"
+  [ -f "$stufen_env" ] && . "$stufen_env"
   set +a
   (
     cd "$HP_DIR" || exit 1
@@ -207,6 +216,38 @@ hp_bootstrap_dev_proxy() {   # einmaliger PHP-Proxy fuer dev.hermespia.ch (8001 
   fi
 }
 
+# Konsistente Sicherung der Stufen-Datenbank (SQLite-Backup-API, auch im
+# WAL-Betrieb korrekt) VOR dem Neustart – der Neustart fuehrt die additive
+# Migration aus. Schlaegt die Sicherung fehl, bricht der Deploy ab: ohne
+# Sicherung keine Migration. Behalten werden die letzten 5 Sicherungen.
+hp_sichern() {   # <env> [anlass]
+  hp_config "${1:-}" || return 2
+  [ -n "$HP_DB" ] || { echo "Sicherung: $1 hat keine eigene Datenbankdatei – uebersprungen"; return 0; }
+  [ -f "$HP_DB" ] || { echo "Sicherung: $HP_DB existiert noch nicht – nichts zu sichern"; return 0; }
+  local ziel; ziel="$HP_DB.vor-${2:-deploy}-$(date '+%Y%m%d-%H%M%S')"
+  "$VENV/bin/python" -c 'import sqlite3,sys; q=sqlite3.connect(sys.argv[1]); z=sqlite3.connect(sys.argv[2]); q.backup(z); z.close(); q.close()' "$HP_DB" "$ziel" \
+    || { echo "SICHERUNG FEHLGESCHLAGEN ($HP_DB) – Deploy abgebrochen" >&2; return 1; }
+  echo "Sicherung: $ziel"
+  hp_log OK "$1: Datenbank gesichert -> $ziel"
+  ls -1t "$HP_DB".vor-* 2>/dev/null | tail -n +6 | while read -r alt; do rm -f "$alt"; done
+}
+
+# Rueckweg: gesicherten Stand zurueckholen. Der aktuelle Stand wird NICHT
+# geloescht, sondern daneben abgelegt (.vor-rueckweg-…). Den Code setzt der
+# Rueckweg nicht zurueck – dafuer den Merge auf develop rueckgaengig machen
+# und neu deployen (siehe docs/adaptives_interview/03_betriebsanleitung.md).
+hp_wiederherstellen() {   # <env> <sicherungsdatei>
+  hp_config "${1:-}" || return 2
+  local quelle="${2:-}"
+  [ -n "$HP_DB" ] && [ -f "$quelle" ] || { echo "Aufruf: wiederherstellen <env> <sicherungsdatei>" >&2; return 2; }
+  hp_stop "$1"
+  [ -f "$HP_DB" ] && mv "$HP_DB" "$HP_DB.vor-rueckweg-$(date '+%Y%m%d-%H%M%S')"
+  rm -f "$HP_DB-wal" "$HP_DB-shm"
+  cp -p "$quelle" "$HP_DB" || return 1
+  hp_log OK "$1: Datenbank aus $quelle wiederhergestellt"
+  hp_start "$1"
+}
+
 hp_deploy() {   # <env> [repo] [venv]
   hp_config "${1:-}" || return 2
   local env="$1" repo="${2:-$REPO_URL_DEFAULT}"
@@ -217,6 +258,8 @@ hp_deploy() {   # <env> [repo] [venv]
       && git reset --hard "origin/$HP_BRANCH" )
   ( cd "$HP_DIR" && . "$VENV/bin/activate" && pip install -r requirements.txt -q )
   hp_install_self "$HP_DIR/deploy/hermes_ctl.sh"   # Watchdog aus frischem Checkout aktualisieren
+  local sha; sha=$(cd "$HP_DIR" && git rev-parse --short HEAD 2>/dev/null || echo neu)
+  hp_sichern "$env" "deploy-$sha" || return 1
   hp_start "$env"
 }
 
@@ -226,5 +269,7 @@ case "${1:-}" in
   stop)     shift; hp_stop "$@" ;;
   watchdog) hp_watchdog ;;
   health)   shift; if hp_health "${1:-}"; then echo OK; else echo DOWN; exit 1; fi ;;
-  *) echo "Usage: hermes_ctl.sh {deploy|start|stop|watchdog|health} [env] [repo] [venv]" >&2; exit 2 ;;
+  sichern)  shift; hp_sichern "$@" ;;
+  wiederherstellen) shift; hp_wiederherstellen "$@" ;;
+  *) echo "Usage: hermes_ctl.sh {deploy|start|stop|watchdog|health|sichern|wiederherstellen} [env] [...]" >&2; exit 2 ;;
 esac

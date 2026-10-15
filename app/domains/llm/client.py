@@ -74,6 +74,12 @@ def _text_aus_antwort(data):
 _ANBIETER_URL = "https://api.anthropic.com/v1/messages"
 
 
+# Vom Anbieter gemeldeter Verbrauch dieses Prozesses (alle Clients, auch die
+# kurzlebigen Ableger). Grundlage der Kostenkontrolle bei Testläufen – die
+# Tokens zählt der Anbieter, nicht wir.
+VERBRAUCH = {"aufrufe": 0, "input_tokens": 0, "output_tokens": 0}
+
+
 class LLMClient:
     def __init__(self, basis_url=None, model=None, anwendung="hermes-pia",
                  mandant="standard", projekt=None, timeout=90, anbieter_key=""):
@@ -175,6 +181,10 @@ class LLMClient:
             raise PseudoAntwortUnlesbar(
                 f"Antwort ist kein JSON: {(resp.text or '')[:200]!r}") from None
 
+        nutzung = data.get("usage") or {}
+        VERBRAUCH["aufrufe"] += 1
+        VERBRAUCH["input_tokens"] += int(nutzung.get("input_tokens") or 0)
+        VERBRAUCH["output_tokens"] += int(nutzung.get("output_tokens") or 0)
         text = _text_aus_antwort(data)
         if not text.strip():
             # NICHT stillschweigend '' zurueckgeben: der Aufrufer wuerde daraus

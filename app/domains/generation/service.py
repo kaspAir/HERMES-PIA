@@ -11,6 +11,7 @@ Platzhalter im Template:
   HTabBeispiel85ptF               → Beispiel-Tabellenzeile (wird gelöscht)
 """
 import copy
+import re
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -86,14 +87,36 @@ _SPALTEN_ALIAS = {
 
 
 def _risk_num(value):
-    """Wandelt eine Risikostufe (Tief/Mittel/Hoch oder Zahl) in eine Zahl."""
+    """Zahlenwert einer Risikostufe – oder None, wenn er unbekannt ist.
+
+    Gelesen werden die Vorlagenwerte («Niedrig = 1», «Hoch = 3»), ihre
+    Kurzform, ältere Freiformwerte und Zahlen. Früher lieferte diese Funktion
+    für «Niedrig = 1» eine 0 – die echten Auswahlwerte der Vorlage rechneten
+    also nie –, und eine 0 für jeden unbekannten Wert. Unbekannt ist aber nicht
+    null: eine Risikozahl aus einem fehlenden Faktor sähe aus wie eine
+    Bewertung, die niemand vorgenommen hat.
+    """
+    if value is None:
+        return None
     s = _normalize(str(value))
+    if not s:
+        return None
+    m = re.search(r"=\s*(\d+)\s*$", s)
+    if m:
+        return int(m.group(1))
     if s in RISK_LEVELS:
         return RISK_LEVELS[s]
     try:
         return int(str(value).strip())
     except (ValueError, TypeError):
-        return 0
+        return None
+
+
+def _produkt(zahlen):
+    ergebnis = 1
+    for z in zahlen:
+        ergebnis *= z
+    return ergebnis
 
 
 class GenerationService:
@@ -104,7 +127,8 @@ class GenerationService:
         data = self.methods.get(method_id)
         return Path(data['_dir']) / data['method']['template']
 
-    def generate(self, method_id, session_answers, metadata, changelog=None, nachweis=None):
+    def generate(self, method_id, session_answers, metadata, changelog=None, nachweis=None,
+                 offene_punkte=None):
         """
         Füllt die .dotx-Vorlage und gibt das fertige Dokument als BytesIO zurück.
 
@@ -127,8 +151,10 @@ class GenerationService:
             self._fill_aenderungskontrolle(doc, changelog)
         self._delete_style(doc, STYLE_HELP)
         self._delete_style(doc, STYLE_EXAMPLE)
+        if offene_punkte:
+            self._append_offene_punkte(doc, offene_punkte)
         if nachweis:
-            self._append_nachweis(doc, nachweis)
+            self._append_nachweis(doc, nachweis, metadata.get('nachweis_einleitung'))
 
         buf = BytesIO()
         doc.save(buf)
@@ -163,7 +189,7 @@ class GenerationService:
     # ------------------------------------------------------------------ #
 
     def generate_into_template(self, template_bytes, method, session_answers,
-                               metadata, changelog=None, nachweis=None):
+                               metadata, changelog=None, nachweis=None, offene_punkte=None):
         """Füllt die hochgeladene Kundenvorlage mit den Interview-Inhalten.
 
         Kernprinzip: Es werden AUSSCHLIESSLICH Kapitel befüllt, für die es
@@ -177,8 +203,10 @@ class GenerationService:
         self._fill_cover(doc, metadata)        # best effort – no-op bei fremden Labels
         self._fill_headers(doc, metadata)
         self._fill_body_foreign(doc, method, session_answers, metadata)
+        if offene_punkte:
+            self._append_offene_punkte(doc, offene_punkte)
         if nachweis:
-            self._append_nachweis(doc, nachweis)
+            self._append_nachweis(doc, nachweis, metadata.get('nachweis_einleitung'))
         buf = BytesIO()
         doc.save(buf)
         buf.seek(0)
@@ -285,10 +313,9 @@ class GenerationService:
             for col in cols:
                 cid, expr = col.get('id', ''), col.get('computed', '')
                 if expr and not data.get(cid):
-                    res = 1
-                    for p in expr.split('*'):
-                        res *= _risk_num(data.get(p.strip()))
-                    data[cid] = str(res) if res else ''
+                    faktoren = [_risk_num(data.get(p.strip())) for p in expr.split('*')]
+                    data[cid] = ('' if any(f is None for f in faktoren)
+                                 else str(_produkt(faktoren)))
             if name_by_role:
                 nr = _normalize(str(data.get('rolle', '')))
                 nm = name_by_role.get(nr)
@@ -459,7 +486,10 @@ class GenerationService:
                     sect = sections[current_sid]
                     if sect.get('type') == 'table':
                         extracted = session_answers[current_sid].get('extracted') or []
-                        self._fill_table(el, sect, extracted, metadata)
+                        if current_sid == 'projektorganisation':
+                            self._fill_monatstabellen(el, sect, extracted, metadata)
+                        else:
+                            self._fill_table(el, sect, extracted, metadata)
                     current_sid = None
             elif tag == 'sdt':
                 current_sid = None
@@ -487,6 +517,52 @@ class GenerationService:
                 if _tag(children[j]) in (STYLE_H1, STYLE_H2, 'tbl'):
                     break
 
+    # Monate je Tabelle in Kap. 5 – so viele Spalten trägt die Vorlage.
+    MONATE_JE_TABELLE = 9
+
+    def _fill_monatstabellen(self, tbl_el, sect, rows, metadata=None):
+        """Kap. 5 – mit Fortsetzungstabellen, wenn die Phase länger als neun Monate dauert.
+
+        Neun Monatsspalten sind keine vorgeschriebene Phasendauer
+        (vorlagenzuordnung.yaml). Früher gingen Monat 10 und folgende still
+        verloren. Jetzt folgt je weitere neun Monate eine Kopie der Tabelle mit
+        umbeschrifteten Monatsspalten («Monat 10» …) und dem Hinweis
+        «Fortsetzung»; die Bestätigung der Vorgesetzten steht nur in der ersten.
+        """
+        n = self.MONATE_JE_TABELLE
+        hoechster = max([int(k.split('_')[1]) for r in rows if isinstance(r, dict)
+                         for k in r if re.fullmatch(r'monat_\d+', k)] or [0])
+        bloecke = max(1, -(-hoechster // n))
+        vorlage = copy.deepcopy(tbl_el) if bloecke > 1 else None
+        self._fill_table(tbl_el, sect, rows, metadata)
+        anker = tbl_el
+        for b in range(1, bloecke):
+            erster = b * n + 1
+            letzter = min(hoechster, (b + 1) * n)
+            verschoben = []
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                neu = {'rolle_person': r.get('rolle_person', '')}
+                for j in range(1, n + 1):
+                    wert = r.get(f'monat_{b * n + j}')
+                    if wert not in (None, ''):
+                        neu[f'monat_{j}'] = wert
+                verschoben.append(neu)
+            kopie = copy.deepcopy(vorlage)
+            hinweis = etree.Element(f'{{{W}}}p')
+            _set_p_text(hinweis, f'Fortsetzung: Monate {erster} bis {letzter} (in PT)')
+            anker.addnext(hinweis)
+            hinweis.addnext(kopie)
+            self._fill_table(kopie, sect, verschoben, metadata)
+            kopfzeile = next((tr for tr in kopie if tr.tag == f'{{{W}}}tr'), None)
+            if kopfzeile is not None:
+                for tc in _row_cells(kopfzeile):
+                    m = re.fullmatch(r'\s*Monat\s+(\d+)\s*', _tc_text(tc))
+                    if m:
+                        _set_tc_text(tc, f'Monat {b * n + int(m.group(1))}')
+            anker = kopie
+
     def _match_section(self, heading, sections):
         # Umlaut-tolerant vergleichen: Vorlage schreibt "Abkürzungen",
         # die method.yaml transkribiert als "Abkuerzungen" (ASCII).
@@ -507,19 +583,7 @@ class GenerationService:
 
         # Rolle -> Personenname (Projektleiter/Auftraggeber), wo bekannt, plus
         # geschlechtsgerechte Rollenbezeichnung (Projektleiter/in, Auftraggeber/in).
-        md = metadata or {}
-        name_by_role = {}
-        gendered_label = {}
-        pl_name = md.get('projektleiter', '')
-        ag_name = md.get('auftraggeber', '')
-        if pl_name:
-            name_by_role.update({r: pl_name for r in PL_ROLLEN})
-            pl_lbl = 'Projektleiterin' if md.get('projektleiter_weiblich') else 'Projektleiter'
-            gendered_label.update({r: pl_lbl for r in PL_ROLLEN})
-        if ag_name:
-            name_by_role.update({r: ag_name for r in AG_ROLLEN})
-            ag_lbl = 'Auftraggeberin' if md.get('auftraggeber_weiblich') else 'Auftraggeber'
-            gendered_label.update({r: ag_lbl for r in AG_ROLLEN})
+        name_by_role, gendered_label = _name_role_maps(metadata)
 
         has_nr = any(c.get('id') == 'nr' for c in section.get('columns', []))
         columns = [c['id'] for c in section.get('columns', []) if c.get('id') != 'nr']
@@ -556,10 +620,10 @@ class GenerationService:
                 expr = col.get('computed', '')
                 if expr and not data.get(cid):
                     parts = [p.strip() for p in expr.split('*')]
-                    result = 1
-                    for p in parts:
-                        result *= _risk_num(data.get(p))
-                    data[cid] = str(result) if result else ''
+                    faktoren = [_risk_num(data.get(p)) for p in parts]
+                    # Ein unbekannter Faktor macht das Produkt unbekannt.
+                    data[cid] = ('' if any(f is None for f in faktoren)
+                                 else str(_produkt(faktoren)))
 
             # Personenname + geschlechtsgerechte Rolle eintragen, wo die Rolle
             # bekannt ist und eine Name-Spalte existiert (z.B. Personalaufwand-
@@ -597,6 +661,10 @@ class GenerationService:
             start_idx = 0
             if has_nr and all_cells:
                 nr_txt = f'{idx + 1:02d}'
+                # Die Risiken führt die Vorlage als «PR01», «PR02» …
+                # (vorlagenzuordnung.yaml: nummernformat).
+                if section.get('id') == 'risiken':
+                    nr_txt = f'PR{idx + 1:02d}'
                 if section.get('id') == 'referenzierte_dokumente':
                     self._set_tc_bookmark(all_cells[0], f'[{nr_txt}]', f'ref_{nr_txt}')
                 else:
@@ -721,7 +789,9 @@ class GenerationService:
         """Ersetzt den Platzhalter 'tt.mm.jjjj' beim geplanten Enddatum durch den
         spätesten Liefertermin aus den Ergebnissen/Terminen (Kap. 4.1)."""
         termine = (session_answers.get("termine") or {}).get("extracted") or []
-        last = _max_termin(termine)
+        # Ein ausdrücklich genanntes Phasenende (adaptives Interview) gilt vor
+        # dem spätesten Liefertermin – dieser ist nur ein Rückschluss.
+        last = session_answers.get("_enddatum") or _max_termin(termine)
         if not last:
             return
         for p_el in doc.element.body.iter(f'{{{W}}}p'):
@@ -734,7 +804,41 @@ class GenerationService:
     # Nachweis-Anhang (Transparenz: Herkunft der Angaben)                  #
     # ------------------------------------------------------------------ #
 
-    def _append_nachweis(self, doc, nachweis):
+    def _append_offene_punkte(self, doc, punkte):
+        """Anhang eines Entwurfs: was noch fehlt oder ungeklärt ist.
+
+        Ein Entwurf mit Lücken ist zulässig – aber die Lücken stehen im
+        Dokument und nicht nur in der Oberfläche (Auftrag Abschnitt 9).
+        """
+        doc.add_paragraph()
+        head = doc.add_paragraph()
+        run = head.add_run("Offene Punkte")
+        run.bold = True
+        run.font.size = Pt(14)
+        doc.add_paragraph(
+            "Diese Punkte sind im Interview noch nicht geklärt oder nicht bestätigt. Was hier steht, "
+            "ist nicht Teil der vereinbarten Inhalte. Der Anhang entfällt, sobald die Punkte "
+            "geklärt sind."
+        )
+        table = doc.add_table(rows=1, cols=3)
+        try:
+            table.style = 'Table Grid'
+        except KeyError:
+            pass
+        for cell, text in zip(table.rows[0].cells, ("Punkt", "Art", "Zustand")):
+            cell.text = ""
+            cell.paragraphs[0].add_run(text).bold = True
+        for p in punkte:
+            cells = table.add_row().cells
+            cells[0].text = p.get("punkt", "")
+            cells[1].text = p.get("art", "")
+            cells[2].text = p.get("zustand", "")
+        widths = (Inches(4.4), Inches(1.3), Inches(1.3))
+        for row in table.rows:
+            for cell, width in zip(row.cells, widths):
+                cell.width = width
+
+    def _append_nachweis(self, doc, nachweis, einleitung=None):
         """Hängt am Dokumentende eine Tabelle an, die je Abschnitt Herkunft und
         Begründung der Angaben ausweist (Interview vs. von HERMES PIA kombiniert)."""
         doc.add_paragraph()  # Abstand
@@ -742,11 +846,11 @@ class GenerationService:
         run = head.add_run("Nachweis – Herkunft der Angaben")
         run.bold = True
         run.font.size = Pt(14)
-        doc.add_paragraph(
+        doc.add_paragraph(einleitung or (
             "Diese Übersicht weist je Abschnitt aus, ob die Angaben vom Projektleiter im "
             "Interview stammen oder von HERMES PIA kombiniert wurden – jeweils mit Begründung. "
             "Der Anhang dient der Nachvollziehbarkeit und kann für die finale Fassung entfernt werden."
-        )
+        ))
 
         table = doc.add_table(rows=1, cols=3)
         try:
@@ -1031,17 +1135,28 @@ def _row_cells(row_el):
     return cells
 
 
+def _rollenbezeichnung(md, wer):
+    """Die Bezeichnung einer Rolle – neutral, solange nichts ausdrücklich angegeben ist.
+
+    Früher galt «nicht weiblich» als «männlich»: bei unbekanntem Geschlecht
+    stand «Projektleiter». Das ist dieselbe Annahme, die der Auftrag vom
+    15.10.2026 (Abschnitt 10) untersagt, nur stiller. Neutral ist die Form der
+    Vorlage («Projektleiter/in»); eine andere Form nur bei ausdrücklicher Angabe.
+    """
+    stamm = {'projektleiter': 'Projektleiter', 'auftraggeber': 'Auftraggeber'}[wer]
+    g = md.get(f'{wer}_geschlecht') or ('w' if md.get(f'{wer}_weiblich') else 'u')
+    return {'w': f'{stamm}in', 'm': stamm}.get(g, f'{stamm}/in')
+
+
 def _name_role_maps(metadata):
-    """Rolle→Personenname und Rolle→geschlechtsgerechte Bezeichnung (aus Metadaten)."""
+    """Rolle→Personenname und Rolle→Bezeichnung (aus Metadaten)."""
     md = metadata or {}
     name_by_role, gendered = {}, {}
     pl, ag = md.get('projektleiter', ''), md.get('auftraggeber', '')
     if pl:
         name_by_role.update({r: pl for r in PL_ROLLEN})
-        lbl = 'Projektleiterin' if md.get('projektleiter_weiblich') else 'Projektleiter'
-        gendered.update({r: lbl for r in PL_ROLLEN})
+        gendered.update({r: _rollenbezeichnung(md, 'projektleiter') for r in PL_ROLLEN})
     if ag:
         name_by_role.update({r: ag for r in AG_ROLLEN})
-        lbl = 'Auftraggeberin' if md.get('auftraggeber_weiblich') else 'Auftraggeber'
-        gendered.update({r: lbl for r in AG_ROLLEN})
+        gendered.update({r: _rollenbezeichnung(md, 'auftraggeber') for r in AG_ROLLEN})
     return name_by_role, gendered

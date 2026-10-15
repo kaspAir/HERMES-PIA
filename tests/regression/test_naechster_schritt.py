@@ -255,6 +255,10 @@ def test_die_leitfragen_sind_fragen(app):
 
 
 def test_das_interview_zeigt_die_frage_und_nennt_die_herkunft(app):
+    # Prüft die BISHERIGE, abschnittsweise Oberfläche. Seit 15.10.2026 starten
+    # neue Aufträge adaptiv; der bisherige Ablauf bleibt für bestehende
+    # Sessions und als Rückfallweg (INTERVIEW_ADAPTIV=0) – und wird hier so geprüft.
+    app.config["INTERVIEW_ADAPTIV"] = False
     c, projekt = _client_mit_projekt(app)
     erg = app.projekt_service.ergebnisse(projekt.id)[0]
     sid = app.interview_service.session_for_ergebnis(erg.id).id

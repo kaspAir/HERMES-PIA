@@ -18,6 +18,7 @@ import app.domains.qualitaet.models    # noqa: F401 – Pruefprotokoll-Tabelle r
 import app.domains.freigabe.models      # noqa: F401 – Checkliste/Entscheid registrieren
 import app.domains.dokumentenkopf.models  # noqa: F401 – Kopfdaten registrieren
 import app.domains.testlauf.models   # noqa: F401 – Testlauf registrieren
+import app.domains.interview.adaptiv.models  # noqa: F401 – adaptives Interview
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
 from app.domains.praesentation.service import PraesentationService
@@ -29,6 +30,7 @@ from app.shared.logging import configure_logging, register_request_logging
 from app.shared.version import get_version
 from app.web.auth import current_user
 from app.web.ui_routes import bp as ui_bp
+import app.web.adaptiv_routes  # noqa: F401,E402 – Endpunkte am selben Blueprint
 
 
 def _migrate_db(engine):
@@ -49,6 +51,14 @@ def _migrate_db(engine):
         ("start_datum",         "VARCHAR(20)"),
         ("org_id",              "INTEGER"),
         ("ergebnis_id",         "INTEGER"),
+        # Adaptives Interview (additiv, 15.10.2026)
+        ("modus",               "VARCHAR(20)"),
+        ("revision",            "INTEGER"),
+        ("naechste_aktion_json", "TEXT"),
+        ("ausstehend_json",     "TEXT"),
+        ("pia_status",          "VARCHAR(30)"),
+        ("rag_stand_json",      "TEXT"),
+        ("answers_vor_umstellung_json", "TEXT"),
     ]
     with engine.connect() as conn:
         for col, dtype in new_cols:
@@ -99,6 +109,16 @@ def _migrate_db(engine):
             with engine.connect() as conn:
                 conn.execute(text("ALTER TABLE corpus_chunks ADD COLUMN init_dauer_wochen INTEGER"))
                 conn.commit()
+        # Nachweisfelder (15.10.2026) – additiv; Bestandschunks bleiben NULL.
+        with engine.connect() as conn:
+            for spalte, typ in (("extern_freigegeben", "BOOLEAN"),
+                                ("dokument_hash", "VARCHAR(64)"), ("chunk_nr", "INTEGER"),
+                                ("methodenversion", "VARCHAR(40)"),
+                                ("methodenversion_herkunft", "VARCHAR(120)"),
+                                ("korpus_version", "VARCHAR(40)")):
+                if spalte not in cc_cols:
+                    conn.execute(text(f"ALTER TABLE corpus_chunks ADD COLUMN {spalte} {typ}"))
+            conn.commit()
 
     # Die Checkliste traegt seit V0.35.1 dieselbe Aenderungskontrolle wie die
     # uebrigen Ergebnisse.
@@ -165,42 +185,52 @@ def create_app(config_class=None):
     # Services aus der Konfiguration aufbauen ("Konfiguration vor Programmierung").
     app.method_service = MethodService(app.config["METHODS_DIR"])
     app.catalog_service = CatalogService(app.config["CATALOGS_DIR"])
-    # Beide Wege – Chat UND Embeddings – laufen durch die Pseudonymisierungs-
-    # schicht; der Anbieterschlüssel liegt dort, nicht hier.
-    pseudo_url = (app.config.get("PSEUDO_BASIS_URL") or "").rstrip("/")
+    # Datenwege je Übermittlung (Sprachmodell, Embeddings) – ausdrücklich aus der
+    # Konfiguration, nie aus einem Ausfall abgeleitet (app/domains/llm/datenweg.py).
+    from app.domains.llm import datenweg
+    wege = datenweg.bestimme(app.config)
+    app.datenwege = wege
     pseudo_anwendung = app.config.get("PSEUDO_ANWENDUNG", "hermes-pia")
     pseudo_mandant = app.config.get("PSEUDO_MANDANT", "standard")
-    # Ohne konfigurierten Dienst gibt es KEINEN LLM-Client – nicht etwa einen
-    # Ausweichweg zum Anbieter. Die Anwendung arbeitet dann rein deterministisch,
-    # genau wie früher ohne Anbieterschlüssel.
-    # Direktmodus nur, wenn AUSDRUECKLICH verlangt UND ein Schluessel da ist.
-    direkt_key = (app.config.get("ANTHROPIC_API_KEY", "")
-                  if app.config.get("PSEUDO_UMGEHEN") else "")
-    if pseudo_url:
-        llm_client = LLMClient(
-            basis_url=f"{pseudo_url}/anthropic",
-            model=app.config.get("LLM_MODEL"),
-            anwendung=pseudo_anwendung,
-            mandant=pseudo_mandant,
-        )
-    elif direkt_key:
+    for hinweis in wege["hinweise"]:
+        app.logger.warning("DATENWEG: %s", hinweis)
+    # Ohne Weg gibt es KEINEN LLM-Client – nicht etwa einen Ausweichweg zum
+    # Anbieter. Die Anwendung arbeitet dann rein deterministisch.
+    if wege["llm"]["modus"] == datenweg.SCHUTZSCHICHT:
+        llm_client = LLMClient(basis_url=wege["llm"]["url"], model=app.config.get("LLM_MODEL"),
+                               anwendung=pseudo_anwendung, mandant=pseudo_mandant)
+    elif wege["llm"]["modus"] == datenweg.DIREKT:
         app.logger.warning(
             "PSEUDONYMISIERUNG ABGESCHALTET (PSEUDO_UMGEHEN=1): LLM-Aufrufe gehen "
-            "DIREKT an den Anbieter. Nur fuer die Entwicklung mit Testdaten.")
-        llm_client = LLMClient(model=app.config.get("LLM_MODEL"), anbieter_key=direkt_key)
+            "DIREKT an den Anbieter. Nur fuer die Entwicklung mit freigegebenen Daten.")
+        llm_client = LLMClient(model=app.config.get("LLM_MODEL"),
+                               anbieter_key=wege["llm"]["schluessel"])
     else:
         llm_client = None
+    emb = wege["embeddings"]
+    if emb["modus"] == datenweg.DIREKT:
+        app.logger.warning(
+            "EMBEDDINGS DIREKT (EMBEDDING_DIREKT=1): Korpus- und Suchtexte gehen ohne "
+            "Pseudonymisierung an Voyage. Das RAG nutzt nur extern freigegebene Passagen.")
     app.rag_service = RagService(VoyageEmbedder(
-        basis_url=f"{pseudo_url}/voyage" if pseudo_url else "",
+        basis_url=emb["url"] if emb["modus"] == datenweg.SCHUTZSCHICHT else "",
+        api_key=emb["schluessel"] if emb["modus"] == datenweg.DIREKT else None,
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),
         anwendung=pseudo_anwendung,
         mandant=pseudo_mandant,
-    ) if pseudo_url else None)
+    ) if emb["modus"] != datenweg.AUS else None)
     app.projekt_service = ProjektService()
     app.interview_service = InterviewService(
         app.method_service, app.catalog_service, llm_client, rag=app.rag_service,
         projekt_service=app.projekt_service,
     )
+    # Adaptives Interview: derselbe Modell-Client, derselbe RAG-Dienst (kein
+    # zweiter, unverbundener Korpus). Ohne Embedding-Zugang meldet die
+    # Themenquelle sich als nicht verfügbar – das Interview läuft weiter.
+    from app.domains.interview.adaptiv.dienst import AdaptivesInterview
+    from app.domains.interview.adaptiv.rag_themen import ThemenQuelle
+    app.adaptiv_service = AdaptivesInterview(
+        app.interview_service, llm=llm_client, themen=ThemenQuelle(app.rag_service))
     app.generation_service = GenerationService(app.method_service)
     # Kopfdaten: die zwoelf Angaben, die JEDES Dokument im Kopf traegt.
     # Die Anrede wird einmal geschaetzt und danach gepflegt - nicht bei jedem

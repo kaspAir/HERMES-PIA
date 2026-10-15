@@ -1,0 +1,140 @@
+{
+  "fall": "F-01",
+  "pruefungen": [
+    {
+      "pruefung": "Einstiegsfrage steht",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Gespräch und Erkenntnisse nebeneinander",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Aktualisierung ohne Seiten-Reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Neue Aussagen tragen «Neu»",
+      "ok": true,
+      "detail": "10 markiert"
+    },
+    {
+      "pruefung": "Status steht als Text",
+      "ok": true,
+      "detail": "Interpretation – noch zu bestätigen, Vorschlag aus Vergleichsprojekten – nicht als Projektbedarf bestätigt, Vorschlag von HERMES PIA – noch nicht übernommen, vo"
+    },
+    {
+      "pruefung": "RAG-Thema getrennt, nicht «von Dir genannt»",
+      "ok": true,
+      "detail": "Vorschlag aus Vergleichsprojekten – nicht als Projektbedarf bestätigt"
+    },
+    {
+      "pruefung": "Nächste Frage stammt aus dem Korpus-Thema",
+      "ok": true,
+      "detail": "Welche Datenbestände und Schnittstellen soll die Initialisierung untersuchen, damit der Umfang der Ablösung abschätzbar wird?"
+    },
+    {
+      "pruefung": "Änderung wird angesagt (aria-live)",
+      "ok": true,
+      "detail": "Für den PIA erkannt: 6 neue Erkenntnisse."
+    },
+    {
+      "pruefung": "Korrektur ersetzt ohne Neustart",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Korrigierte Angabe hervorgehoben",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Schmal: Kurzstatus sichtbar",
+      "ok": true,
+      "detail": "Für den PIA erkannt: 13 Angaben · 3 neu · 0 geändert · 4 offen  ▼"
+    },
+    {
+      "pruefung": "Schmal: Eingabe nicht verdrängt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Schmal: kein seitliches Scrollen",
+      "ok": true,
+      "detail": "Seite 390 px, Fenster 390 px"
+    },
+    {
+      "pruefung": "Schmal: Erkenntnisse klappen auf",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Keine JavaScript-Fehler",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Vorschläge gesammelt übernehmbar",
+      "ok": true,
+      "detail": "Alle 3 Vorschläge übernehmen"
+    },
+    {
+      "pruefung": "Abschlussprüfung zeigt den Bericht",
+      "ok": true,
+      "detail": "0 Korrektur(en) im Verlauf.Fertigstellen heisst: die Projektleitung hält den Auftrag für vollständig. Es ist keine Prüfu"
+    },
+    {
+      "pruefung": "Vollständiger Fall: «Fertigstellen» angeboten",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Fertigstellen setzt den Status",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "F-02: keine JavaScript-Fehler",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "pruefung": "Blockierter Beitrag bleibt stehen, mit Entscheidungsweg",
+      "ok": true,
+      "detail": "Fundstellen prüfen und verarbeiten"
+    },
+    {
+      "pruefung": "Entscheidungsseite zeigt die Fundstelle",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "bilder": [
+    "01_einstieg_desktop.png",
+    "02_nach_erstem_beitrag_desktop.png",
+    "03_nach_korrektur_desktop.png",
+    "04_nach_drittem_beitrag_desktop.png",
+    "05_dokumentvorschau_desktop.png",
+    "06_schmal_kurzstatus.png",
+    "07_schmal_aufgeklappt.png",
+    "08_vorschlaege_uebernommen_desktop.png",
+    "09_abschlusspruefung_desktop.png",
+    "10_fertiggestellt_desktop.png",
+    "11_pseudonymisierung_angehalten.png",
+    "12_pseudonymisierung_entscheid.png"
+  ],
+  "modellaufrufe": [
+    "aussagen",
+    "ausgangslage",
+    "themen",
+    "frage",
+    "aussagen",
+    "frage",
+    "aussagen",
+    "themen",
+    "frage"
+  ]
+}

@@ -67,7 +67,13 @@ def test_ohne_schalter_gibt_es_den_testlauf_nicht(tmp_path):
     c = anwendung.test_client()
     c.post("/login", data={"email": "pl@org.ch", "password": "pw"})
     assert c.post("/testlauf", data={"ausgangslage": "Etwas"}).status_code == 404
-    assert b"Testlauf" not in c.get("/").data
+    # Geprüft wird das FORMULAR, nicht das Wort. Das Versionsabzeichen zeigt den
+    # Betreff des letzten Commits – und der kann «Testlauf» enthalten
+    # (V0.41.1 tat es). Der frühere Test schlug deshalb fehl, ohne dass der
+    # Testlauf sichtbar gewesen wäre.
+    seite = c.get("/").data
+    assert b'action="/testlauf"' not in seite
+    assert b"Durchspielen" not in seite
     SessionLocal.remove()
 
 

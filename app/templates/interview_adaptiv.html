@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{{ session.project_name or "Projekt" }} – Interview{% endblock %}
+{% block kopf %}<link rel="stylesheet" href="{{ url_for('static', filename='css/adaptiv.css') }}">{% endblock %}
+{% block main_class %}adaptiv-main{% endblock %}
+{% block content %}
+{#
+  Adaptives Interview. Der gesamte Inhalt von Gespräch und Erkenntnisanzeige
+  wird aus EINEM Lesemodell gezeichnet (ai-daten unten, danach dieselben
+  JSON-Endpunkte) – es gibt keine zweite Darstellung, die davon abweichen
+  könnte. Alle Texte gehen über textContent in die Seite, nie als HTML.
+#}
+{% include "partials/_modellzugang_warnung.html" %}
+{% include "partials/_qualitaet_hinweis.html" %}
+<div class="ai-kopf">
+  {% if projekt %}
+  <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">&larr; Projekt</a>
+  {% endif %}
+  <h1>{{ session.project_name or "Projekt" }}</h1>
+  <p class="ai-reife" id="ai-reife" aria-live="polite"></p>
+  <div class="ai-kopf-aktionen">
+    <a class="btn-link" href="{{ url_for('ui.interview_version', session_id=session.id) }}">Word-Entwurf herunterladen</a>
+    {% if session.answers_vor_umstellung_json is not none %}
+    <form method="post" action="{{ url_for('ui.adaptiv_rueckfall', session_id=session.id) }}" class="ai-inline-form"
+          onsubmit="return confirm('Den Stand vor der Umstellung wiederherstellen? Was seither im adaptiven Interview erfasst wurde, bleibt als Verlauf erhalten, gilt aber nicht mehr.');">
+      <button type="submit" class="btn-link">Zurück zum bisherigen Ablauf</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<button type="button" class="ai-kurzstatus" id="ai-kurzstatus"
+        aria-controls="ai-erkannt" aria-expanded="false"></button>
+
+<div class="ai-raster">
+  <section class="ai-gespraech" aria-label="Gespräch">
+    <ol class="ai-verlauf" id="ai-verlauf" aria-label="Gesprächsverlauf"></ol>
+    <div class="ai-frage" id="ai-frage" aria-live="polite"></div>
+
+    <form class="ai-eingabe" id="ai-eingabe" autocomplete="off">
+      <label for="answer-text" class="visually-hidden">Deine Antwort</label>
+      <textarea id="answer-text" name="text"
+                placeholder="Antworte frei – auch mehrere Themen auf einmal. Korrekturen wie «Das stimmt so nicht …» funktionieren ebenfalls."></textarea>
+      <div class="ai-eingabe-zeile">
+        <button type="submit" class="btn-primary" id="ai-senden">Senden</button>
+        <button type="button" id="voice-btn" class="btn-voice" aria-pressed="false"
+                data-stt="{{ '1' if stt_available else '0' }}"
+                data-endpoint="{{ url_for('ui.interview_transcribe', session_id=session.id) }}">🎤 Sprechen</button>
+        <select id="mic-select" class="mic-select" style="display:none" aria-label="Mikrofon wählen"></select>
+        <span id="voice-status" class="voice-status" aria-live="polite"></span>
+      </div>
+    </form>
+    <p class="ai-status" id="ai-status" role="status" aria-live="polite"></p>
+  </section>
+
+  <aside class="ai-erkannt" id="ai-erkannt" aria-label="Für den PIA erkannt">
+    <div class="ai-tabs" role="tablist">
+      <button type="button" role="tab" id="tab-erkannt" aria-selected="true"
+              aria-controls="ai-panel-erkannt">Für den PIA erkannt</button>
+      <button type="button" role="tab" id="tab-vorschau" aria-selected="false"
+              aria-controls="ai-panel-vorschau">Dokumentvorschau</button>
+    </div>
+    <div id="ai-ansage" class="visually-hidden" aria-live="polite"></div>
+    <div class="ai-panel" id="ai-panel-erkannt" role="tabpanel" aria-labelledby="tab-erkannt"></div>
+    <div class="ai-panel" id="ai-panel-vorschau" role="tabpanel" aria-labelledby="tab-vorschau" hidden></div>
+  </aside>
+</div>
+
+<script id="ai-daten" type="application/json">{{ ansicht | tojson }}</script>
+<script id="ai-wege" type="application/json">{{ {
+  "beitrag": url_for('ui.adaptiv_beitrag', session_id=session.id),
+  "weiter": url_for('ui.adaptiv_weiter', session_id=session.id),
+  "zustand": url_for('ui.adaptiv_zustand', session_id=session.id),
+  "aussage": url_for('ui.adaptiv_aussage', session_id=session.id, schluessel='SCHLUESSEL'),
+  "bestaetigen": url_for('ui.adaptiv_sammelbestaetigung', session_id=session.id),
+  "thema": url_for('ui.adaptiv_thema', session_id=session.id, thema_id=0),
+  "quelle": url_for('ui.adaptiv_quelle', session_id=session.id, thema_id=0),
+  "rueckmeldung": url_for('ui.adaptiv_rueckmeldung', session_id=session.id),
+  "vorschau": url_for('ui.adaptiv_vorschau', session_id=session.id),
+  "abschluss": url_for('ui.adaptiv_abschluss', session_id=session.id),
+  "verarbeiten": url_for('ui.adaptiv_erneut_verarbeiten', session_id=session.id, nachricht_id=0)
+} | tojson }}</script>
+<script src="{{ url_for('static', filename='js/diktat.js') }}"></script>
+<script src="{{ url_for('static', filename='js/interview_adaptiv.js') }}"></script>
+{% endblock %}

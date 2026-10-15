@@ -125,10 +125,15 @@ def estimate_risk_assessment(llm_client, beschreibung):
         raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=256)
         d = _parse_json(raw) or {}
         out = {}
-        if d.get("ew") in ("Tief", "Mittel", "Hoch"):
-            out["ew"] = d["ew"]
-        if d.get("ag") in ("Tief", "Mittel", "Hoch"):
-            out["ag"] = d["ag"]
+        # In die Beschriftung der Vorlage übersetzen («Niedrig = 1» …); was
+        # sich nicht eindeutig zuordnen lässt, bleibt leer statt geraten.
+        from app.domains.method.vorlagenzuordnung import auswahlwert
+        ew = auswahlwert("eintrittswahrscheinlichkeit", d.get("ew"))
+        ag = auswahlwert("auswirkungsgrad", d.get("ag"))
+        if ew:
+            out["ew"] = ew
+        if ag:
+            out["ag"] = ag
         if d.get("massnahmen"):
             out["massnahmen"] = str(d["massnahmen"]).strip()
         return fix_hermes_terms(out)
@@ -470,26 +475,19 @@ def detect_project_type(llm_client, available_types, ausgangslage_text):
 
 
 def detect_gender(llm_client, name):
-    """Schaetzt das Geschlecht aus einem Namen: 'w', 'm' oder 'u' (unbekannt)."""
-    if not name or not name.strip() or llm_client is None:
-        return "u"
-    system = (
-        "Du bestimmst das wahrscheinliche Geschlecht anhand eines Vornamens. "
-        "Antworte ausschliesslich mit validem JSON, keine Erklaerungen."
-    )
-    user = (
-        f"Name: {name}\n"
-        f'Rueckgabe als JSON: {{"geschlecht": "w"}} fuer weiblich, '
-        f'{{"geschlecht": "m"}} fuer maennlich, {{"geschlecht": "u"}} wenn unklar.'
-    )
-    try:
-        raw = llm_client.complete(system, [{"role": "user", "content": user}], max_tokens=64)
-        g = (_parse_json(raw) or {}).get("geschlecht", "u")
-        return g if g in ("w", "m", "u") else "u"
-    except PseudoFehler:
-        raise                    # MUSS durchschlagen (ANBINDUNG.md 6.2)
-    except Exception:
-        return "u"
+    """Liefert IMMER 'u' (unbekannt) – aus einem Namen wird nichts abgeleitet.
+
+    Früher schätzte ein Modellaufruf das Geschlecht aus dem Vornamen, damit das
+    Deckblatt «Projektleiterin» statt «Projektleiter/in» schrieb. Der Auftrag
+    vom 15.10.2026 (Abschnitt 10) untersagt das ausdrücklich: aus Namen keine
+    Geschlechts- oder Anredeannahmen per Sprachmodell. Die Vorlage führt
+    neutrale Bezeichnungen; sie bleiben stehen.
+
+    Die Funktion bleibt als Stelle erhalten, an der eine AUSDRÜCKLICHE Angabe
+    künftig eingespeist werden kann – die Aufrufer müssen dafür nicht geändert
+    werden. Nebeneffekt: Namen verlassen für diesen Zweck den Host nicht mehr.
+    """
+    return "u"
 
 
 def _extract_free_text(llm_client, section_title, raw_text):

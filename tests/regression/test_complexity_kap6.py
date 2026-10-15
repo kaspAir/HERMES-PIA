@@ -156,7 +156,10 @@ def test_kosten_leitet_intern_extern_aus_personalaufwand_ab():
     rows = [{"phase": "Externe Fachexpertise Datenschutz und Recht (extern)", "betrag": "14000"},
             {"phase": "Externe Fachexpertise Entwickler/Prototyp (extern)", "betrag": "18000"},
             {"phase": "Sachmittel und Lizenzen", "betrag": "6000"}]
-    out = svc._kosten_breakdown(rows, answers)
+    # Kostensätze jetzt AUSDRÜCKLICH (15.10.2026): ohne hinterlegten Satz
+    # gibt es keinen Betrag mehr (Auftrag Abschnitt 4.2, keine erfundenen
+    # Tarife). Geprüft wird hier die Aufteilung, nicht ein Standardwert.
+    out = svc._kosten_breakdown(rows, answers, tarife={"intern": 1200, "extern": 1800})
     labels = [r["phase"] for r in out]
 
     # Genau EINE externe Position – die externe Rolle aus Kap. 3.1 (Cloud, 10 PT * 1800).
@@ -288,7 +291,11 @@ def test_postprocess_risiken_schaetzt_fehlende_ew_ag():
     sa = {"extracted": [{"beschreibung": "Stakeholder nicht verfügbar"}]}
     svc._postprocess_section(section, sa, {})
     r = sa["extracted"][0]
-    assert r["ew"] == "Hoch" and r["ag"] == "Mittel"
+    # Erwartung angepasst (15.10.2026): die Auswahlwerte der Vorlage
+    # PIA_HERMESPIA.docx lauten «Hoch = 3» / «Mittel = 2», nicht «Hoch» /
+    # «Mittel». Quelle: Inhaltssteuerelemente der Vorlage, festgehalten in
+    # methods/hermes_pia/vorlagenzuordnung.yaml.
+    assert r["ew"] == "Hoch = 3" and r["ag"] == "Mittel = 2"
     assert r["massnahmen"] and r["verantwortung"] == "Projektleiter"
 
 

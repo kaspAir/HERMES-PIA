@@ -25,13 +25,17 @@ method:
 # ---------------------------------------------------------------------
 # Kontrollierte Vokabulare (Auswahlfelder der Vorlage)
 # ---------------------------------------------------------------------
+# Exakt die Auswahlwerte der Vorlage PIA_HERMESPIA.docx. Massgebend ist
+# vorlagenzuordnung.yaml; ein Test haelt beide gleich. Die frueheren Werte
+# (Tief/Mittel/Hoch fuer die Eintrittswahrscheinlichkeit, «in Pruefung»,
+# «freigegeben», «Intern») stammten nicht aus der Vorlage.
 vocabularies:
   zielkategorie: ["Systemziel", "Vorgehensziel"]
   prioritaet: ["Tief", "Mittel", "Hoch", "Muss"]
-  eintrittswahrscheinlichkeit: ["Tief", "Mittel", "Hoch"]
-  auswirkungsgrad: ["Tief", "Mittel", "Hoch"]
-  dokument_status: ["in Arbeit", "in Pruefung", "freigegeben"]
-  klassifizierung: ["Nicht klassifiziert", "Intern", "Vertraulich", "Geheim"]
+  eintrittswahrscheinlichkeit: ["Niedrig = 1", "Mittel = 2", "Hoch = 3"]
+  auswirkungsgrad: ["Tief = 1", "Mittel = 2", "Hoch = 3"]
+  dokument_status: ["in Arbeit", "geprüft", "fertiggestellt", "abgenommen"]
+  klassifizierung: ["Nicht klassifiziert", "INTERN", "VERTRAULICH", "GEHEIM"]
 
 # ---------------------------------------------------------------------
 # Metadaten / Deckblatt
@@ -170,9 +174,13 @@ sections:
       questions:
         - "Welche Ziele soll die Phase Initialisierung erreichen?"
         - "Woran wird der Erfolg gemessen (Messgroesse)?"
+      # Die Vorlage sieht Zielkategorien vor (Systemziel, Vorgehensziel),
+      # verlangt aber nicht ausdruecklich, dass beide zwingend vertreten sein
+      # muessen. Deshalb: jedes Ziel sachgerecht kategorisieren, aber KEINE
+      # Ziele erfinden, nur um beide Kategorien zu besetzen.
       completeness:
-        - "Mindestens ein Systemziel und ein Vorgehensziel vorhanden"
         - "Jedes Ziel hat eine Messgroesse"
+        - "Jedes Ziel ist sachgerecht einer Kategorie der Vorlage zugeordnet; keine zusaetzlichen Ziele, nur um Kategorien zu besetzen"
 
   - id: rahmenbedingungen
     number: "2.2"
@@ -259,12 +267,14 @@ sections:
       - { id: monat_9, label: "Monat 9" }
       - { id: bestaetigung, label: "Bestaetigung Vorgesetzter" }
 
+  # Kapitel der Vorlage. Ob es fuer das Vorhaben ausreichend bearbeitet ist,
+  # beurteilt das Abschlussprofil; «optional» war keine Vorlagenaussage.
   - id: kommunikation
     number: "6"
     title: "Kommunikation"
     leitfrage: "Wer muss wann wovon erfahren?"
     type: table
-    required: false
+    required: true
     columns:
       - { id: empfaenger,   label: "Empfaenger" }
       - { id: verantwortlich, label: "Verantwortlich" }

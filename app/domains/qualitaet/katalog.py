@@ -30,6 +30,9 @@ HERMES_ROLLEN = {
     "betriebsverantwortlicher", "projektunterstützung", "projektunterstuetzung",
     "externe expertise", "externer berater", "externe beraterin", "extern",
     "lieferant", "auftragnehmer", "steuerungsgremium ablehnen",  # s.u. D-005
+    # Die Vorlage definiert «AG» und «PL» in Kap. 0.4 selbst (Definitionen und
+    # Abkürzungen) und führt sie als Basiszeilen in Kap. 3.1 – sie sind Rollen.
+    "ag", "pl",
 }
 # Wörter, die eine Rollenangabe generisch machen (dann ist es KEIN Personenname).
 _ROLLENWOERTER = ("leiter", "leiterin", "verantwortlich", "vertreter", "manager",

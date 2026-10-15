@@ -1,0 +1,856 @@
+{
+  "aussagen": [
+    {
+      "id": 1,
+      "schluessel": "A-0001",
+      "inhalt": "Die Beispielstadt führt drei Registerdienste mit eigenen Schaltern und eigener Software",
+      "thema": "Ist-Zustand",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 2,
+      "thema_id": null,
+      "revision_neu": 1,
+      "revision_geaendert": 1
+    },
+    {
+      "id": 2,
+      "schluessel": "A-0002",
+      "inhalt": "Für eine Adressänderung sind bis zu drei Stellen aufzusuchen",
+      "thema": "Problem",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 2,
+      "thema_id": null,
+      "revision_neu": 1,
+      "revision_geaendert": 1
+    },
+    {
+      "id": 3,
+      "schluessel": "A-0003",
+      "inhalt": "Der Stadtrat will die Registerdienste zusammenlegen",
+      "thema": "Auftrag",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "ausgangslage",
+          "felder": {}
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 2,
+      "thema_id": null,
+      "revision_neu": 1,
+      "revision_geaendert": 1
+    },
+    {
+      "id": 4,
+      "schluessel": "A-0004",
+      "inhalt": "Die Initialisierung läuft vom 1. Februar 2027 bis 31. Januar 2028",
+      "thema": "Zeitrahmen",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "eckdaten",
+          "felder": {
+            "start_initialisierung": "2027-02-01",
+            "ende_initialisierung": "2028-01-31"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 2,
+      "thema_id": null,
+      "revision_neu": 1,
+      "revision_geaendert": 1
+    },
+    {
+      "id": 5,
+      "schluessel": "A-0005",
+      "inhalt": "Die Projektleitung rechnet mit 60 Personentagen",
+      "thema": "Aufwand PL",
+      "art": "schaetzung",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "personalaufwand",
+          "felder": {
+            "rolle": "PL",
+            "aufwand": "60"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 2,
+      "thema_id": null,
+      "revision_neu": 1,
+      "revision_geaendert": 1
+    },
+    {
+      "id": 6,
+      "schluessel": "A-0006",
+      "inhalt": "Der Auftraggeber rechnet mit 12 Personentagen",
+      "thema": "Aufwand AG",
+      "art": "schaetzung",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "personalaufwand",
+          "felder": {
+            "rolle": "AG",
+            "aufwand": "12"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 2,
+      "thema_id": null,
+      "revision_neu": 1,
+      "revision_geaendert": 1
+    },
+    {
+      "id": 7,
+      "schluessel": "A-0007",
+      "inhalt": "Die Personalvertretung ist noch nicht einbezogen",
+      "thema": "Personalvertretung",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "risiken",
+          "felder": {
+            "beschreibung": "Die Personalvertretung ist noch nicht einbezogen",
+            "ew": "Mittel = 2",
+            "ag": "Hoch = 3",
+            "massnahmen": "Personalvertretung im ersten Monat informieren und in die Studie einbinden",
+            "verantwortung": "PL",
+            "termin": "28.02.2027"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 2,
+      "thema_id": null,
+      "revision_neu": 1,
+      "revision_geaendert": 1
+    },
+    {
+      "id": 8,
+      "schluessel": "A-0008",
+      "inhalt": "Vorschlag Terminplan: 8 Ergebnisse zwischen 01.02.2027 und 31.01.2028 terminiert, Abnahme durch den AG",
+      "thema": "Terminplan",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": true,
+      "beleg": "Berechnet aus Start 01.02.2027 und Ende 31.01.2028 der Initialisierung nach der Abhängigkeitsfolge der Ergebnisse. Vorschlag zum Anpassen; die Lage der Termine ist ein Produktentscheid von HERMES PIA.",
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Stakeholder Liste",
+            "termin": "15.04.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Studie",
+            "termin": "26.09.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Rechtsgrundlagenanalyse",
+            "termin": "15.07.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Schutzbedarfsanalyse",
+            "termin": "15.07.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Meilenstein Weiteres Vorgehen (Checkliste Weiteres Vorgehen; Liste Projektentscheide Führung)",
+            "termin": "14.10.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Entscheid Auftraggeber"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Projektmanagementplan",
+            "termin": "07.12.2027",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Durchführungsauftrag",
+            "termin": "13.01.2028",
+            "abnahme": "AG",
+            "pruefmethode": "Review"
+          }
+        },
+        {
+          "abschnitt": "termine",
+          "felder": {
+            "ergebnis": "Meilenstein Durchführungsfreigabe (mit Checkliste Durchführungsfreigabe; Liste Projektentscheide Steuerung)",
+            "termin": "31.01.2028",
+            "abnahme": "AG",
+            "pruefmethode": "Entscheid Auftraggeber"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": null,
+      "thema_id": null,
+      "revision_neu": 2,
+      "revision_geaendert": 4
+    },
+    {
+      "id": 9,
+      "schluessel": "A-0009",
+      "inhalt": "Vorschlag Monatsverteilung AG: 12 PT auf 12 Monat(e) (1 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 1)",
+      "thema": "Monatsverteilung AG",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": true,
+      "beleg": "Berechnet: Personentage aus Kap. 3.1 gleichmässig auf die Monate 01.02.2027 bis 31.01.2028 verteilt. Vorschlag, keine zugesagte Ressourcenplanung.",
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "projektorganisation",
+          "felder": {
+            "rolle_person": "AG / Robin Beispiel",
+            "monat_1": "1",
+            "monat_2": "1",
+            "monat_3": "1",
+            "monat_4": "1",
+            "monat_5": "1",
+            "monat_6": "1",
+            "monat_7": "1",
+            "monat_8": "1",
+            "monat_9": "1",
+            "monat_10": "1",
+            "monat_11": "1",
+            "monat_12": "1"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": null,
+      "thema_id": null,
+      "revision_neu": 2,
+      "revision_geaendert": 4
+    },
+    {
+      "id": 10,
+      "schluessel": "A-0010",
+      "inhalt": "Vorschlag Monatsverteilung PL: 60 PT auf 12 Monat(e) (5 / 5 / 5 / 5 / 5 / 5 / 5 / 5 / 5 / 5 / 5 / 5)",
+      "thema": "Monatsverteilung PL",
+      "art": "systemvorschlag",
+      "herkunft": "system",
+      "bestaetigt": true,
+      "beleg": "Berechnet: Personentage aus Kap. 3.1 gleichmässig auf die Monate 01.02.2027 bis 31.01.2028 verteilt. Vorschlag, keine zugesagte Ressourcenplanung.",
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "projektorganisation",
+          "felder": {
+            "rolle_person": "PL / Kim Muster",
+            "monat_1": "5",
+            "monat_2": "5",
+            "monat_3": "5",
+            "monat_4": "5",
+            "monat_5": "5",
+            "monat_6": "5",
+            "monat_7": "5",
+            "monat_8": "5",
+            "monat_9": "5",
+            "monat_10": "5",
+            "monat_11": "5",
+            "monat_12": "5"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": null,
+      "thema_id": null,
+      "revision_neu": 2,
+      "revision_geaendert": 4
+    },
+    {
+      "id": 11,
+      "schluessel": "A-0011",
+      "inhalt": "Studie mit zwei Organisationsvarianten",
+      "thema": "Studie",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "ziele",
+          "felder": {
+            "kategorie": "Vorgehensziel",
+            "beschreibung": "Studie mit zwei Organisationsvarianten",
+            "messgroesse": "Studie vom Auftraggeber abgenommen",
+            "prioritaet": "Muss"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 4,
+      "thema_id": null,
+      "revision_neu": 3,
+      "revision_geaendert": 3
+    },
+    {
+      "id": 12,
+      "schluessel": "A-0012",
+      "inhalt": "Konzept für einen gemeinsamen Schalter mit einer Anlaufstelle",
+      "thema": "Gemeinsamer Schalter",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "ziele",
+          "felder": {
+            "kategorie": "Systemziel",
+            "beschreibung": "Gemeinsamer Schalter mit einer Anlaufstelle für alle Registerdienste",
+            "messgroesse": "Konzept beschreibt Abläufe und Rollen am Schalter",
+            "prioritaet": "Hoch"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 4,
+      "thema_id": null,
+      "revision_neu": 3,
+      "revision_geaendert": 3
+    },
+    {
+      "id": 13,
+      "schluessel": "A-0013",
+      "inhalt": "Die Zusammenlegung darf keine Entlassungen auslösen",
+      "thema": "Personalvorgabe",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "rahmenbedingungen",
+          "felder": {
+            "vorgaben": "Personalpolitische Vorgabe",
+            "beschreibung": "Die Zusammenlegung darf keine Entlassungen auslösen"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 4,
+      "thema_id": null,
+      "revision_neu": 3,
+      "revision_geaendert": 3
+    },
+    {
+      "id": 14,
+      "schluessel": "A-0014",
+      "inhalt": "Die Mitarbeitenden werden monatlich an der Teamsitzung informiert",
+      "thema": "Information Mitarbeitende",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "kommunikation",
+          "felder": {
+            "empfaenger": "Mitarbeitende der Registerdienste",
+            "verantwortlich": "PL",
+            "inhalt": "Stand der Initialisierung",
+            "medium": "Teamsitzung",
+            "termin": "monatlich"
+          }
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 4,
+      "thema_id": null,
+      "revision_neu": 3,
+      "revision_geaendert": 3
+    },
+    {
+      "id": 15,
+      "schluessel": "A-0015",
+      "inhalt": "Keine besonderen Sachmittel nötig, die Arbeitsplätze sind vorhanden",
+      "thema": "Sachmittel",
+      "art": "benutzerangabe",
+      "herkunft": "benutzer",
+      "bestaetigt": true,
+      "beleg": null,
+      "bezug": "initialisierung",
+      "entscheid": null,
+      "zurueckgestellt": false,
+      "ziele": [
+        {
+          "abschnitt": "sachmittel",
+          "felder": {},
+          "nicht_anwendbar": true
+        }
+      ],
+      "status": "aktiv",
+      "ersetzt_durch": null,
+      "ersetzt": null,
+      "nachricht_id": 4,
+      "thema_id": null,
+      "revision_neu": 3,
+      "revision_geaendert": 3
+    }
+  ],
+  "themen": [],
+  "konflikte": [],
+  "kriterien": [
+    {
+      "id": "K-AL-1",
+      "abschnitt": "ausgangslage",
+      "gewicht": "wesentlich",
+      "herkunft": "ergebnisbeschreibung",
+      "beschreibung": "Anlass und Problem der Initialisierung sind beschrieben",
+      "aktion": "erkunden",
+      "vorlagenfrage": "Worum geht es bei diesem Vorhaben – was ist der Anlass, und welches Problem soll gelöst werden?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0001",
+        "A-0002",
+        "A-0003"
+      ]
+    },
+    {
+      "id": "K-ECK-START",
+      "abschnitt": "eckdaten",
+      "gewicht": "wesentlich",
+      "herkunft": "produktentscheid",
+      "beschreibung": "Geplanter Start der Initialisierung ist bekannt (Tag, Monat, Jahr)",
+      "aktion": "konkretisieren",
+      "vorlagenfrage": "Ab wann soll die Initialisierung starten – an welchem Datum?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0004"
+      ]
+    },
+    {
+      "id": "K-ECK-ENDE",
+      "abschnitt": "eckdaten",
+      "gewicht": "wesentlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Geplantes Enddatum der Phase Initialisierung",
+      "aktion": "konkretisieren",
+      "vorlagenfrage": "Bis wann soll die Initialisierung abgeschlossen sein?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0004"
+      ]
+    },
+    {
+      "id": "K-ZI-1",
+      "abschnitt": "ziele",
+      "gewicht": "wesentlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Mindestens ein Ziel der Phase Initialisierung",
+      "aktion": "erkunden",
+      "vorlagenfrage": "Was soll am Ende der Initialisierung erreicht sein – woran erkennst Du, dass die Phase erfolgreich war?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0011",
+        "A-0012"
+      ]
+    },
+    {
+      "id": "K-PA-1",
+      "abschnitt": "personalaufwand",
+      "gewicht": "wesentlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Personalaufwand in PT je Rolle (mindestens AG und PL)",
+      "aktion": "konkretisieren",
+      "vorlagenfrage": "Wie viele Personentage rechnest Du für Dich als Projektleitung und für den Auftraggeber in der Initialisierung?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0005",
+        "A-0006"
+      ]
+    },
+    {
+      "id": "K-RI-1",
+      "abschnitt": "risiken",
+      "gewicht": "wesentlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Mindestens ein Risiko der Phase Initialisierung",
+      "aktion": "erkunden",
+      "vorlagenfrage": "Was könnte die Initialisierung gefährden – etwa fehlende Verfügbarkeit von Schlüsselpersonen oder unklare Zuständigkeiten?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0007"
+      ]
+    },
+    {
+      "id": "K-AL-2",
+      "abschnitt": "ausgangslage",
+      "gewicht": "erforderlich",
+      "herkunft": "produktentscheid",
+      "beschreibung": "Die Ausgangslage trägt mehr als eine einzelne Angabe (Kontext, Betroffene, Dringlichkeit)",
+      "aktion": "konkretisieren",
+      "vorlagenfrage": "Wer ist von der heutigen Situation betroffen, und was geschieht, wenn nichts unternommen wird?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0001",
+        "A-0002",
+        "A-0003"
+      ]
+    },
+    {
+      "id": "K-ZI-2",
+      "abschnitt": "ziele",
+      "gewicht": "erforderlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Jedes Ziel hat Kategorie, Messgrösse und Priorität",
+      "aktion": "konkretisieren",
+      "vorlagenfrage": "Woran wird das Erreichen dieses Ziels gemessen, und wie wichtig ist es?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0011",
+        "A-0012"
+      ]
+    },
+    {
+      "id": "K-RB-1",
+      "abschnitt": "rahmenbedingungen",
+      "gewicht": "erforderlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Verbindliche Vorgaben ausser HERMES sind genannt oder ausdrücklich keine",
+      "aktion": "erkunden",
+      "vorlagenfrage": "Gibt es Vorgaben, an die sich das Vorhaben halten muss – etwa ein Kostenrahmen, Ecktermine oder Vorgaben der Stammorganisation?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0013"
+      ]
+    },
+    {
+      "id": "K-PA-2",
+      "abschnitt": "personalaufwand",
+      "gewicht": "erforderlich",
+      "herkunft": "produktentscheid",
+      "beschreibung": "Weitere benötigte Rollen sind geklärt (Fachpersonen, ISDS, externe Expertise)",
+      "aktion": "erkunden",
+      "vorlagenfrage": "Wer muss in der Initialisierung ausser Dir und dem Auftraggeber mitarbeiten?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0005",
+        "A-0006"
+      ]
+    },
+    {
+      "id": "K-SM-1",
+      "abschnitt": "sachmittel",
+      "gewicht": "erforderlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Sachmittel genannt oder ausdrücklich keine",
+      "aktion": "erkunden",
+      "vorlagenfrage": "Braucht die Initialisierung besondere Sachmittel, etwa Software, Räume oder externe Leistungen?",
+      "zustand": "nicht_anwendbar",
+      "details": [
+        "Keine besonderen Sachmittel nötig, die Arbeitsplätze sind vorhanden"
+      ],
+      "konflikte": [],
+      "aussagen": [
+        "A-0015"
+      ]
+    },
+    {
+      "id": "K-KO-1",
+      "abschnitt": "kosten",
+      "gewicht": "erforderlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Kosten der Initialisierung berechenbar (Kostensatz hinterlegt, PT vorhanden)",
+      "aktion": "hinweis",
+      "vorlagenfrage": "Für die Kosten fehlt ein hinterlegter Kostensatz. Kennst Du den Satz Deiner Organisation, oder soll er im PMO hinterlegt werden?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": []
+    },
+    {
+      "id": "K-TE-1",
+      "abschnitt": "termine",
+      "gewicht": "erforderlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Die Ergebnisse der Vorlage haben Liefertermin und Abnahme (Rolle)",
+      "aktion": "konkretisieren",
+      "vorlagenfrage": "Wann sollen die Ergebnisse der Initialisierung vorliegen, und wer nimmt sie jeweils ab?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0008"
+      ]
+    },
+    {
+      "id": "K-PO-1",
+      "abschnitt": "projektorganisation",
+      "gewicht": "erforderlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Monatsverteilung der Personentage stimmt mit Kapitel 3.1 überein",
+      "aktion": "vorschlag",
+      "vorlagenfrage": "Soll ich die Personentage aus Kapitel 3.1 gleichmässig auf die Monate der Initialisierung verteilen? Du kannst die Verteilung danach anpassen.",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0009",
+        "A-0010"
+      ]
+    },
+    {
+      "id": "K-KM-1",
+      "abschnitt": "kommunikation",
+      "gewicht": "erforderlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Kommunikation während der Initialisierung geklärt oder begründet nicht anwendbar",
+      "aktion": "erkunden",
+      "vorlagenfrage": "Wer muss während der Initialisierung worüber informiert werden – etwa der Auftraggeber, betroffene Stellen oder Stakeholder?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0014"
+      ]
+    },
+    {
+      "id": "K-RI-2",
+      "abschnitt": "risiken",
+      "gewicht": "erforderlich",
+      "herkunft": "vorlage",
+      "beschreibung": "Jedes Risiko ist bewertet (EW, AG) und hat Massnahme, Verantwortung und Termin",
+      "aktion": "konkretisieren",
+      "vorlagenfrage": "Wie wahrscheinlich ist dieses Risiko, wie stark wäre die Auswirkung, was tun wir dagegen – und wer kümmert sich bis wann?",
+      "zustand": "erfuellt",
+      "details": [],
+      "konflikte": [],
+      "aussagen": [
+        "A-0007"
+      ]
+    }
+  ],
+  "frage": {
+    "aktion": "abschluss",
+    "prio": 99,
+    "ziel": "abschluss",
+    "begruendung": "Keine weiteren offenen Punkte, die im Gespräch zu klären sind",
+    "zurueckgestellt": [],
+    "frage": "Ich habe keine offenen Fragen mehr, die wir im Gespräch klären müssten. Möchtest Du den Auftrag jetzt prüfen und fertigstellen?",
+    "revision": 4,
+    "nachricht_id": 6,
+    "quelle": "vorlage"
+  },
+  "reife": {
+    "zustand": "bereit_zur_pruefung",
+    "blocker": 0,
+    "pia_status": "fertiggestellt"
+  },
+  "pia_status": "fertiggestellt",
+  "modellaufrufe": [
+    "aussagen",
+    "ausgangslage",
+    "themen",
+    "frage",
+    "aussagen",
+    "themen",
+    "frage"
+  ],
+  "gespraech": [
+    {
+      "rolle": "system",
+      "art": "frage",
+      "text": "Lass uns mit «Registerdienste vereint» beginnen. Worum geht es bei diesem Vorhaben? Erzähl mir vom Anlass, vom Problem, das gelöst werden soll, und was Du schon weisst – so ausführlich, wie Du magst.",
+      "aktion": "erkunden",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "text": "Die Beispielstadt führt drei Registerdienste mit eigenen Schaltern und eigener Software. Bürgerinnen und Bürger müssen für eine Adressänderung bis zu drei Stellen aufsuchen. Der Stadtrat will die Dienste zusammenlegen. Die Initialisierung läuft vom 1. Februar 2027 bis 31. Januar 2028. Ich rechne für mich mit 60 Personentagen, der Auftraggeber mit 12. Risiko: die Personalvertretung ist noch nicht einbezogen.",
+      "aktion": null,
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "text": "Was soll am Ende der Initialisierung erreicht sein?",
+      "aktion": "erkunden",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "benutzer",
+      "art": "beitrag",
+      "text": "Ziel ist eine Studie mit zwei Organisationsvarianten, Muss. Und ein Konzept für einen gemeinsamen Schalter mit einer Anlaufstelle, Hoch. Vorgabe: die Fusion darf keine Entlassungen auslösen. Die Mitarbeitenden informiere ich monatlich an der Teamsitzung über den Stand. Besondere Sachmittel brauchen wir keine, die Arbeitsplätze sind vorhanden.",
+      "aktion": null,
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "text": "Passen die vorgeschlagenen Termine und die Monatsverteilung?",
+      "aktion": "rueckspiegeln",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "frage",
+      "text": "Ich habe keine offenen Fragen mehr, die wir im Gespräch klären müssten. Möchtest Du den Auftrag jetzt prüfen und fertigstellen?",
+      "aktion": "abschluss",
+      "status": "verarbeitet"
+    },
+    {
+      "rolle": "system",
+      "art": "hinweis",
+      "text": "Die Projektleitung hat den Auftrag fertiggestellt. Eine weitere Änderung macht die Abschlussprüfung erneut nötig.",
+      "aktion": "abschluss",
+      "status": "verarbeitet"
+    }
+  ]
+}

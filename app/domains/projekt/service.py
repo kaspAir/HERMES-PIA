@@ -297,8 +297,12 @@ class ProjektService:
     # Kostensätze (Projekt übersteuert Org; Einheit Stunde/Tag)            #
     # ------------------------------------------------------------------ #
 
-    # Standard-Tagessätze (CHF/PT), wenn nichts hinterlegt ist – extern teurer.
-    DEFAULT_TARIFE = {"intern": 1200, "extern": 1800}
+    # KEINE Standard-Tagessätze. Früher standen hier 1200/1800 CHF als Rückfall,
+    # und jeder Projektinitialisierungsauftrag ohne hinterlegten Kostensatz wies
+    # damit Beträge aus, die niemand festgelegt hatte. Ohne Satz gibt es keinen
+    # Betrag, sondern einen offenen Punkt (Auftrag 15.10.2026, Abschnitt 4.2:
+    # «Keine erfundenen Tarife, Steuersätze oder Geldbeträge»).
+    DEFAULT_TARIFE = {"intern": None, "extern": None}
 
     def set_kostensatz(self, satz_intern, satz_extern, einheit="tag",
                        stunden_pro_tag=8, org_id=None, projekt_id=None):
@@ -336,19 +340,27 @@ class ProjektService:
         ).order_by(Kostensatz.updated_at.desc()).first()
 
     def effective_tarife(self, org_id=None, projekt_id=None):
-        """Massgebliche Tagessätze (CHF/PT) für die Kostenberechnung: Projekt
-        übersteuert Org, sonst Standard. Stundensätze werden auf den Tag umgerechnet."""
+        """Massgebliche Tagessätze (CHF/PT): Projekt übersteuert Organisation.
+
+        Stundensätze werden auf den Tag umgerechnet. Ist für eine Kategorie
+        nichts hinterlegt, ist ihr Satz None – nicht ein Standardwert.
+        """
         row = self.projekt_kostensatz(projekt_id) or self.org_kostensatz(org_id)
         if not row or not (row.satz_intern or row.satz_extern):
             return dict(self.DEFAULT_TARIFE)
         faktor = (row.stunden_pro_tag or 8) if row.einheit == "stunde" else 1
 
-        def tag(v, fallback):
-            return int(v) * faktor if v else fallback
-        return {
-            "intern": tag(row.satz_intern, self.DEFAULT_TARIFE["intern"]),
-            "extern": tag(row.satz_extern, self.DEFAULT_TARIFE["extern"]),
-        }
+        def tag(v):
+            return int(v) * faktor if v else None
+        return {"intern": tag(row.satz_intern), "extern": tag(row.satz_extern)}
+
+    def tarif_herkunft(self, org_id=None, projekt_id=None):
+        """Woher der massgebliche Kostensatz stammt: 'projekt', 'organisation' oder None."""
+        if self.projekt_kostensatz(projekt_id):
+            return "projekt"
+        if self.org_kostensatz(org_id):
+            return "organisation"
+        return None
 
     def get_methoden_vorlage(self, vorlage_id):
         return SessionLocal().get(MethodenVorlage, int(vorlage_id))

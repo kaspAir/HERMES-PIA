@@ -64,8 +64,15 @@ def test_direktmodus_greift_nur_auf_ausdrueckliches_verlangen():
     from app.config import Config
 
     assert Config.PSEUDO_UMGEHEN is False        # Vorgabe: aus
-    # Der Embedding-Weg kennt weiterhin KEINEN eigenen Schluessel.
-    assert not hasattr(Config, "VOYAGE_API_KEY")
+    # Seit dem Entscheid vom 15.10.2026 (Direktzugang für Embeddings auf dev)
+    # hat auch der Embedding-Weg einen eigenen Schluessel – aber mit derselben
+    # Doppelbedingung: ein Schluessel allein schaltet NICHTS um.
+    assert Config.EMBEDDING_DIREKT is False
+    from app.domains.llm import datenweg
+    assert datenweg.bestimme({"VOYAGE_API_KEY": "k"})["embeddings"]["modus"] == "aus"
+    assert datenweg.bestimme({"EMBEDDING_DIREKT": "1"})["embeddings"]["modus"] == "aus"
+    assert datenweg.bestimme({"EMBEDDING_DIREKT": "1", "VOYAGE_API_KEY": "k"}
+                             )["embeddings"]["modus"] == "direkt"
 
     from app.domains.llm.client import LLMClient
     assert LLMClient(basis_url="http://x/anthropic").direkt is False
@@ -196,12 +203,13 @@ def test_dienst_weg_faellt_nicht_auf_den_anbieter_zurueck(monkeypatch):
     lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
     .assess_complexity(llm, "Eine Ausgangslage."),
     lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
-    .detect_gender(llm, "Andrea Muster"),
-    lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
     .generate_followups(llm, {"id": "ziele", "title": "Ziele",
                               "interview": {"intent": "Ziele erheben"}}, "Text."),
 ])
 def test_blockiert_schlaegt_durch_generischen_except_faenger(aufruf):
+    # detect_gender stand hier bis 15.10.2026. Sie ruft seither kein Modell mehr
+    # auf (keine Ableitung von Geschlecht aus Namen, Auftrag Abschnitt 10);
+    # ein Blockierfall kann dort nicht mehr entstehen.
     """Jede dieser Funktionen hat ein `except Exception:`, das LLM-Ausfaelle
     absichtlich verschluckt. Der Blockierfall darf dort NICHT haengenbleiben."""
     class _Blockiert:
@@ -315,6 +323,11 @@ def app(tmp_path):
 
 
 def _angemeldet(app):
+    # Diese Tests prüfen die Schreibwege des BISHERIGEN Interviews. Neue
+    # Aufträge starten sonst im adaptiven Interview, und dort weisen die alten
+    # Schreibwege jede Änderung ab (siehe test_adaptiv_bestand). Den adaptiven
+    # Weg prüft test_adaptiv_pseudonymisierung.py.
+    app.config["INTERVIEW_ADAPTIV"] = False
     auth = app.auth_service
     org = auth.create_org("Org")
     auth.create_user("u@o.ch", "pw", role="org_admin", org_id=org.id,
@@ -783,7 +796,10 @@ def test_interview_zeigt_dass_die_pseudonymisierung_aus_ist(app_direkt):
     """Sonst arbeitet jemand wochenlang ungeschuetzt, ohne es zu merken."""
     c, sid = _angemeldet(app_direkt)
     seite = c.get(f"/interview/{sid}").get_data(as_text=True)
-    assert "Pseudonymisierung ist abgeschaltet" in seite
+    # Seit die Embeddings einen eigenen Weg haben, nennt das Banner jeden
+    # direkten Weg (hier: das Sprachmodell) statt nur «abgeschaltet».
+    assert "Ohne Pseudonymisierung (Direktmodus)" in seite
+    assert "Texte für das Sprachmodell" in seite
     assert "ungeschützt" in seite
     # Die andere Warnung (gar kein LLM) darf NICHT zusaetzlich erscheinen.
     assert "nicht aufbereitet" not in seite

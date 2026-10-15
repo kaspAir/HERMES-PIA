@@ -1,0 +1,103 @@
+# =====================================================================
+# Übertragungsregeln: Erfahrungskorpus -> Interviewthemen
+# =====================================================================
+#
+# Der Korpus wird ausdrücklich weitergenutzt – als THEMATISCHE und
+# erfahrungsbezogene Grundlage für ein besseres Interview, NICHT als
+# normative Quelle für HERMES 2022 (Auftrag Abschnitt 6).
+#
+# Jeder Treffer wird je Aussage einer Regel zugeordnet. Die Regel bestimmt,
+# ob und wie das Thema im aktuellen Interview verwendet werden darf. Die
+# Quelle selbst wird nie umgeschrieben; Begründung und Originalpassage
+# bleiben am Themenkandidaten erhalten.
+#
+# Eine blosse Begriffsersetzung zwischen Methodenversionen ist KEINE
+# fachliche Migration: «Projektauftrag» wird nicht zu «Durchführungsauftrag»
+# umetikettiert und dann übernommen.
+
+regeln:
+  version: "1.0.0"
+  stand: "2026-10-15"
+
+# Erklärung des Auftraggebers zum eingesetzten Korpus. Sie gilt für Chunks
+# OHNE eigene Methodenversion – als Angabe des Auftraggebers, nicht als je
+# Dokument geprüfte Tatsache. Chunks mit eigener Angabe behalten diese.
+korpus_deklaration:
+  methodenversion: "HERMES 5.1"
+  herkunft: "Angabe des Auftraggebers vom 15.10.2026, nicht je Dokument geprüft"
+
+uebertragbarkeit:
+  nutzbar: "Projektfachliches Thema; als Klärungsfrage für die Initialisierung verwendbar"
+  eingeschraenkt: "Nur als gekennzeichnete Beratung verwendbar (z.B. Erfahrungswerte), nie als Zusage"
+  methodisch_klaeren: "Hinweis auf ein Methodenelement, dessen Entsprechung in HERMES 2022 zu prüfen ist"
+  nicht_uebernehmen: "Nicht in den aktuellen PIA übernehmen (Methodenpflicht, fremde Fakten)"
+
+liste:
+  - id: R1
+    titel: "Projektfachliches Thema"
+    beschreibung: >
+      Sachthemen, die in vielen Vorhaben auftreten: Datenmigration,
+      Schnittstellen, Betriebsabhängigkeiten, Stakeholder, Akzeptanz,
+      Beschaffung, fehlende Expertise, Datenschutz/Informationssicherheit,
+      Abhängigkeiten zu anderen Vorhaben.
+    uebertragbarkeit: [nutzbar]
+    verwendung: >
+      Als offene Klärungsfrage für die Initialisierung – «Sollen wir in der
+      Initialisierung untersuchen, …?». Nie als Befund des aktuellen Projekts
+      («Ihr Projekt hat dieselben Probleme») und nie als Pflicht, schon jetzt
+      ein fertiges Ergebnis zu liefern.
+
+  - id: R2
+    titel: "Methodenaussage einer früheren Version"
+    beschreibung: >
+      Aufgaben, Ergebnisnamen, Rollenpflichten, Phasenzuordnungen,
+      Meilensteine oder Dokumentgliederungen aus HERMES 5.1 (z.B. Voranalyse,
+      Projektauftrag, Phasenbericht in der Initialisierung).
+    uebertragbarkeit: [nicht_uebernehmen, methodisch_klaeren]
+    verwendung: >
+      Nie als Pflicht oder Ergebnis in den HERMES-2022-PIA. Höchstens als
+      Hinweis, dass die Entsprechung in HERMES 2022 zu prüfen ist. Ein solcher
+      Treffer erzeugt keine Terminzeile und keine Pflichtrolle.
+
+  - id: R3
+    titel: "Konkrete Fakten eines Vergleichsprojekts"
+    beschreibung: >
+      Namen, Personen, Organisationen, Beträge, Daten, Mengen, Pseudonym-
+      Platzhalter wie [Person_x] oder [Org_x] eines anderen Vorhabens.
+    uebertragbarkeit: [nicht_uebernehmen]
+    verwendung: >
+      Werden nie als Fakten des aktuellen Projekts übernommen. Das Thema
+      dahinter kann nach R1 nutzbar sein – die Werte nicht.
+
+  - id: R4
+    titel: "Erfahrungswert"
+    beschreibung: >
+      Geplante Dauern, Aufwände oder Häufigkeiten aus Vergleichsprojekten.
+    uebertragbarkeit: [eingeschraenkt]
+    verwendung: >
+      Nur als klar gekennzeichnete Beratung mit Anzahl unterschiedlicher
+      Vergleichsprojekte und Einschränkungen. Eine geplante historische Dauer
+      ist kein nachgewiesener Ist-Aufwand und keine zugesicherte Dauer.
+
+  - id: R5
+    titel: "Nicht übertragbar"
+    beschreibung: >
+      Passagen ohne Bezug zum aktuellen Vorhaben, reine Formalien,
+      Inhaltsverzeichnisse, Vorlagentexte.
+    uebertragbarkeit: [nicht_uebernehmen]
+    verwendung: "Kein Thema."
+
+# Was ein Themenkandidat NIE enthalten darf (deterministisch geprüft, AT12).
+sperrmuster:
+  - '\[(Person|Org|Ort|Name|PERSON|ORG)[_ ]?[^\]]*\]'
+  - '\b(CHF|Fr\.)\s*[\d''’.,]+'
+  - '\b\d{1,3}(?:[''’]\d{3})+\b'
+  - '\b\d+(?:[.,]\d+)?\s*(Mio|Mrd|Millionen|Milliarden)\b'
+
+# Wann gesucht wird – nicht blind nach jedem Wort (Auftrag 6.1).
+suche:
+  erster_kontext_zeichen: 160      # erst ab hinreichendem Kontext
+  neue_aussagen_fuer_neue_suche: 3 # wesentliche neue Angaben
+  treffer: 8                       # Kandidatenpassagen je Suche
+  mindestscore: 0.25
+  auszug_zeichen: 600              # Länge des Auszugs, der dem Modell gezeigt und gespeichert wird

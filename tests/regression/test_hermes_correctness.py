@@ -97,8 +97,9 @@ def test_projektleiter_und_auftraggeber_name_autofilled():
         "projektleiter": "Markus Stein", "auftraggeber": "Hans Meier",
     })
     joined = _personalaufwand_rows(buf)
-    assert joined.get("Projektleiter") == "Markus Stein"
-    assert joined.get("Auftraggeber") == "Hans Meier"
+    # Ohne Geschlechtsangabe neutral (seit 15.10.2026, Auftrag Abschnitt 10).
+    assert joined.get("Projektleiter/in") == "Markus Stein"
+    assert joined.get("Auftraggeber/in") == "Hans Meier"
     assert joined.get("IT-Architekt", "") == ""  # andere Rollen unberührt
 
 
@@ -111,11 +112,28 @@ def test_gendered_rolle_for_female_projektleiterin():
     buf = gs.generate("hermes_pia", sa, {
         "projektname": "Test",
         "projektleiter": "Helene Digital", "projektleiter_weiblich": True,
-        "auftraggeber": "Hans Meier", "auftraggeber_weiblich": False,
+        # Erwartung angepasst (15.10.2026): «nicht weiblich» heisst nicht
+        # «männlich». Die männliche Form gibt es nur bei AUSDRÜCKLICHER Angabe
+        # (Auftrag Abschnitt 10: keine Geschlechtsannahmen).
+        "auftraggeber": "Hans Meier", "auftraggeber_geschlecht": "m",
     })
     joined = _personalaufwand_rows(buf)
     assert joined.get("Projektleiterin") == "Helene Digital"
     assert joined.get("Auftraggeber") == "Hans Meier"
+
+
+def test_ohne_angabe_bleibt_die_rolle_neutral():
+    gs = GenerationService(MethodService(get_config().METHODS_DIR))
+    sa = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "aufwand": "20"},
+        {"rolle": "Auftraggeber", "aufwand": "3"},
+    ]}}
+    buf = gs.generate("hermes_pia", sa, {"projektname": "Test",
+                                         "projektleiter": "Sam Muster",
+                                         "auftraggeber": "Andrea Beispiel"})
+    joined = _personalaufwand_rows(buf)
+    assert joined.get("Projektleiter/in") == "Sam Muster"
+    assert joined.get("Auftraggeber/in") == "Andrea Beispiel"
 
 
 def test_steuerungsausschuss_wird_zu_projektausschuss():
@@ -148,7 +166,10 @@ def test_risk_estimate_fills_missing_ew_ag():
     sa = {"extracted": []}
     svc._apply_followup(sections["risiken"], sa, dict(fup, status="pending"), None)
     row = sa["extracted"][0]
-    assert row.get("ew") == "Mittel" and row.get("ag") == "Hoch"
+    # Erwartung angepasst (15.10.2026): Auswahlwerte der Vorlage
+    # PIA_HERMESPIA.docx («Mittel = 2», «Hoch = 3»), siehe
+    # methods/hermes_pia/vorlagenzuordnung.yaml.
+    assert row.get("ew") == "Mittel = 2" and row.get("ag") == "Hoch = 3"
     assert row.get("massnahmen")
 
 
