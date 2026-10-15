@@ -116,8 +116,29 @@ Fragen, Aussagen und Themen erzeugt das Modell. Ergebnisse unter `nachweis-dev/l
   Startdatum, Vorschläge rechnen nach; «höchstens 4 Tage» gegen «10 Tage» wird ein offener
   Widerspruch mit Rückfrage, «Es gilt …» löst ihn. Word-Datei als Entwurf mit Anhang
   «Offene Punkte».
-- **[D] Kosten:** Lauf 1 USD 1.25, Lauf 2 USD 0.71, Lauf 3 USD 0.15 – zusammen rund
-  **USD 2.11** (gerechnet mit bewusst hoch angesetzten Preisen 5/25/0.20 USD je Mio Tokens).
+- **[D] Kosten Läufe 1–3:** Lauf 1 USD 1.25, Lauf 2 USD 0.71, Lauf 3 USD 0.15 (gerechnet mit
+  bewusst hoch angesetzten Preisen 5/25/0.20 USD je Mio Tokens).
+
+- **[D] Echte Erfahrungen im Korpus (Freigabe des Auftraggebers vom 15.10.2026 für die
+  «sicheren» PIAs):** 149 Dateien ohne Treffer der Klarnamen-Sperre, davon 137 geladen
+  (12 Textdubletten übersprungen) → 1'594 Chunks, neutrale Kennungen statt Dateinamen,
+  Kennzeichen «extern freigegeben», Korpusversion `seed-2026-10-15`. Gesamtbestand dev:
+  147 Dokumente, 1'624 Chunks, einheitlich `voyage-3`/1024.
+- **[D] Lauf 4 – Fall A gegen den echten Korpus:** 1'624 Chunks verglichen, 0 inkompatibel;
+  14 Themen aus 4+ früheren Aufträgen; Abschlussprüfung ohne Blocker, fertiggestellt;
+  Word-Datei ohne Dokumentbefund, keine Pseudonym-Platzhalter und keine Korpus-Kennungen im
+  Dokument. Kosten USD 0.72. **Protokoll und Word-Datei liegen bewusst NICHT im
+  Repository** (öffentlich; das Protokoll enthält Auszüge aus echten PIAs), sondern beim
+  Auftraggeber lokal.
+- **Beobachtung für die fachliche Abnahme (Lauf 4):** Ein Teil der Themen betrifft die
+  Struktur früherer PIAs statt des Vorhabens (z.B. «Risikobewertung mit EW, AG und
+  Massnahmen», «Sachmittel für die Initialisierung», «Kommunikation während der
+  Initialisierung»). Ein Thema verortet Rechtsgrundlagen- und Schutzbedarfsanalyse «als
+  Bestandteil der Studie» – in HERMES 2022 sind es eigene Ergebnisse. Die
+  Übertragungsregeln R1–R5 sollten das fachlich nachschärfen (Kandidat für die kontrollierte
+  Verbesserung, nicht still geändert).
+- **Kosten gesamt:** rund **USD 2.95** (Läufe 1–4, Korpus synthetisch und echt; mit bewusst
+  hoch angesetzten Preisen).
 
 **Befunde aus den echten Läufen, behoben und mit Tests festgehalten
 (`test_echtlauf_befunde.py`):**
@@ -137,8 +158,9 @@ Sessions liegen in der Organisation «Synthetik-Nachweis (erfunden)»: Lauf 2 Fa
 
 ## 5. Offen
 
-- RAG mit den echten (pseudonymisierten) Aufträgen: erst nach Bereinigung und ausdrücklicher
-  Freigabe oder mit der Schutzschicht (Entscheid «A» vom 15.10.2026).
+- Die 36 PIAs mit Klarnamen-Verdacht: erst nach Bereinigung und Freigabe oder mit der
+  Schutzschicht.
+- Fachliche Nachschärfung der Übertragungsregeln (Struktur- statt Vorhabensthemen).
 - Sichtprüfung der Oberfläche auf dev (Abschnitt 4).
 - Direkter Sprachmodellweg: `PSEUDO_UMGEHEN` steht in der geteilten `.env`, die alle Stufen
   laden (nur Variablennamen gelesen). Ob er auf test/int/prod wirkt, hängt vom Wert ab –
