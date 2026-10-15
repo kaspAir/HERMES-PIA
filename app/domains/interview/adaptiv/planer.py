@@ -95,7 +95,21 @@ def kandidaten(aussagen, konflikte, themen, kriterien, nachrichten, bezug_unklar
                       "kontext": {"aussage": a}})
 
     verworfene_themen = {t["thema"].lower() for t in themen if t["status"] == "verworfen"}
-    for e in kriterien:
+    nutzbare = [t for t in themen
+                if t["status"] == "kandidat" and t["uebertragbarkeit"] in ("nutzbar", "eingeschraenkt")
+                and t["thema"].lower() not in verworfene_themen]
+    verwendet = set()
+
+    def thema_fuer(abschnitt):
+        """Ein RAG-Thema, das genau diese Lücke berührt. Es bestimmt dann, WIE
+        nach der Lücke gefragt wird – das Thema steht nicht neben der Lücke,
+        sondern in ihr (Auftrag 6.3: priorisiere, was eine Lücke schliesst)."""
+        for t in nutzbare:
+            if abschnitt in (t.get("pia_ziele") or []) and t["id"] not in verwendet:
+                return t
+        return None
+
+    for reihe, e in enumerate(kriterien):
         if e["zustand"] in ("erfuellt", "nicht_anwendbar", "konflikt", "zurueckgestellt"):
             continue
         if e["zustand"] == "unbekannt":
@@ -107,25 +121,29 @@ def kandidaten(aussagen, konflikte, themen, kriterien, nachrichten, bezug_unklar
                       "kontext": {"kriterium": e}})
             continue
         aktion = e["aktion"]
-        k.append({"aktion": aktion, "prio": PRIO[e["gewicht"]] if aktion != "hinweis" else PRIO["hinweis"],
-                  "ziel": e["id"], "abschnitt": e["abschnitt"],
-                  "begruendung": f"{e['gewicht'].capitalize()}: {e['beschreibung']}"
-                                 + (f" ({e['details'][0]})" if e["details"] else ""),
-                  "kontext": {"kriterium": e}})
+        kand = {"aktion": aktion, "prio": PRIO[e["gewicht"]] if aktion != "hinweis" else PRIO["hinweis"],
+                "ziel": e["id"], "abschnitt": e["abschnitt"], "reihe": reihe,
+                "begruendung": f"{e['gewicht'].capitalize()}: {e['beschreibung']}"
+                               + (f" ({e['details'][0]})" if e["details"] else ""),
+                "kontext": {"kriterium": e}}
+        t = thema_fuer(e["abschnitt"]) if aktion in ("erkunden", "konkretisieren") else None
+        if t is not None:
+            verwendet.add(t["id"])
+            kand["unterart"] = "rag"
+            kand["kontext"]["thema"] = t
+            kand["begruendung"] += (f"; Anhaltspunkt aus {t['n_projekte']} "
+                                    f"Vergleichsprojekt(en): {t['thema']}")
+        k.append(kand)
 
-    # RAG-Themen nur, wenn sie eine tatsächliche Lücke berühren: ein Abschnitt
-    # mit offenem Kriterium oder ohne eigene Angaben.
-    offene_abschnitte = {e["abschnitt"] for e in kriterien
-                         if e["zustand"] in ("offen", "unbekannt")}
-    for t in themen:
-        if t["status"] != "kandidat" or t["uebertragbarkeit"] not in ("nutzbar", "eingeschraenkt"):
-            continue
-        if t["thema"].lower() in verworfene_themen:
+    # Übrige RAG-Themen ohne eigenes offenes Kriterium: nur als Vertiefung zu
+    # Zielen oder Risiken der Initialisierung – nie vor den Lücken.
+    for t in nutzbare:
+        if t["id"] in verwendet:
             continue
         ziele = set(t.get("pia_ziele") or [])
-        if not ziele & (offene_abschnitte | {"ziele", "risiken"}):
+        if not ziele & {"ziele", "risiken"}:
             continue
-        k.append({"aktion": "konkretisieren", "prio": PRIO["rag"], "ziel": f"T-{t['id']}",
+        k.append({"aktion": "konkretisieren", "prio": PRIO["vertiefung"], "ziel": f"T-{t['id']}",
                   "abschnitt": next(iter(ziele), ""), "unterart": "rag",
                   "begruendung": f"Thema aus {t['n_projekte']} Vergleichsprojekt(en): {t['thema']}",
                   "kontext": {"thema": t}})
@@ -137,7 +155,13 @@ def naechste_aktion(aussagen, konflikte, themen, kriterien, nachrichten, bezug_u
     grenze = profil().get("wiederholungen_bis_zurueckstellen", 2)
     alle = kandidaten(aussagen, konflikte, themen, kriterien, nachrichten, bezug_unklar)
     zurueckgestellt = []
-    for kand in sorted(alle, key=lambda x: (x["prio"], x["ziel"])):
+    # Bei gleicher Priorität zuerst die Lücke, zu der der Korpus einen
+    # Anhaltspunkt liefert, dann die Reihenfolge des Profils. Früher entschied
+    # hier die alphabetische Kennung («K-PA» vor «K-ZI») – Zufall, keine Begründung.
+    def ordnung(x):
+        return (x["prio"], 0 if x.get("unterart") == "rag" else 1, x.get("reihe", 99), x["ziel"])
+
+    for kand in sorted(alle, key=ordnung):
         if kand["ziel"] not in ("start", "bezug") and \
                 _wiederholungen(nachrichten, kand["ziel"]) >= grenze:
             zurueckgestellt.append(kand["ziel"])

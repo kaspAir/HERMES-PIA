@@ -33,3 +33,14 @@ class CorpusChunk(Base):
     # Projekte (beratender Dauer-Vorschlag), statt sie später aus Freitext zu raten.
     init_dauer_wochen = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # ---- Nachweis (additiv, 15.10.2026) ----------------------------------- #
+    # Damit ein Verweis tatsächlich zur verwendeten Passage führt (Auftrag 6.3).
+    # NULL heisst «nicht erfasst» – für Bestandschunks wird nichts erfunden.
+    dokument_hash = Column(String(64), nullable=True)    # SHA-256 des Quelltexts
+    chunk_nr = Column(Integer, nullable=True)            # Position im Dokument
+    # Methodenversion der Quelle UND woher diese Angabe stammt. Unbekannt
+    # bleibt unbekannt; sie wird nicht pauschal zu HERMES 2022 umetikettiert.
+    methodenversion = Column(String(40), nullable=True)
+    methodenversion_herkunft = Column(String(120), nullable=True)
+    korpus_version = Column(String(40), nullable=True)   # Ingest-/Indexstand

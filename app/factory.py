@@ -107,6 +107,15 @@ def _migrate_db(engine):
             with engine.connect() as conn:
                 conn.execute(text("ALTER TABLE corpus_chunks ADD COLUMN init_dauer_wochen INTEGER"))
                 conn.commit()
+        # Nachweisfelder (15.10.2026) – additiv; Bestandschunks bleiben NULL.
+        with engine.connect() as conn:
+            for spalte, typ in (("dokument_hash", "VARCHAR(64)"), ("chunk_nr", "INTEGER"),
+                                ("methodenversion", "VARCHAR(40)"),
+                                ("methodenversion_herkunft", "VARCHAR(120)"),
+                                ("korpus_version", "VARCHAR(40)")):
+                if spalte not in cc_cols:
+                    conn.execute(text(f"ALTER TABLE corpus_chunks ADD COLUMN {spalte} {typ}"))
+            conn.commit()
 
     # Die Checkliste traegt seit V0.35.1 dieselbe Aenderungskontrolle wie die
     # uebrigen Ergebnisse.
@@ -209,6 +218,13 @@ def create_app(config_class=None):
         app.method_service, app.catalog_service, llm_client, rag=app.rag_service,
         projekt_service=app.projekt_service,
     )
+    # Adaptives Interview: derselbe Modell-Client, derselbe RAG-Dienst (kein
+    # zweiter, unverbundener Korpus). Ohne Embedding-Zugang meldet die
+    # Themenquelle sich als nicht verfügbar – das Interview läuft weiter.
+    from app.domains.interview.adaptiv.dienst import AdaptivesInterview
+    from app.domains.interview.adaptiv.rag_themen import ThemenQuelle
+    app.adaptiv_service = AdaptivesInterview(
+        app.interview_service, llm=llm_client, themen=ThemenQuelle(app.rag_service))
     app.generation_service = GenerationService(app.method_service)
     # Kopfdaten: die zwoelf Angaben, die JEDES Dokument im Kopf traegt.
     # Die Anrede wird einmal geschaetzt und danach gepflegt - nicht bei jedem
