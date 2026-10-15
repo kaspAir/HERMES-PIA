@@ -1,0 +1,47 @@
+{
+  "gestartet": "2026-10-15T17:55:04",
+  "budget_usd": 8.7,
+  "preise_usd_pro_mio": {
+    "in": 5.0,
+    "out": 25.0,
+    "emb": 0.2
+  },
+  "datenwege": {
+    "llm": "direkt",
+    "embeddings": "direkt"
+  },
+  "faelle": [
+    {
+      "fall": "A",
+      "session_id": 20,
+      "reife": {
+        "zustand": "bereit_zur_pruefung",
+        "blocker": 0,
+        "pia_status": "fertiggestellt"
+      },
+      "pia_status": "fertiggestellt",
+      "docx": "Synthetik-A_vollstaendig.docx",
+      "abbruch": null
+    },
+    {
+      "fall": "B",
+      "session_id": 21,
+      "reife": {
+        "zustand": "entwurf_offen",
+        "blocker": 11,
+        "pia_status": "laufend"
+      },
+      "pia_status": "laufend",
+      "docx": "Synthetik-B_korrektur_widerspruch.docx",
+      "abbruch": null
+    }
+  ],
+  "verbrauch": {
+    "llm_aufrufe": 34,
+    "input_tokens": 79877,
+    "output_tokens": 12550,
+    "embedding_tokens": 1132,
+    "usd_geschaetzt": 0.7134
+  },
+  "beendet": "2026-10-15T17:59:00"
+}

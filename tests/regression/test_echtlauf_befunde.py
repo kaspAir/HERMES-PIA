@@ -83,3 +83,41 @@ def test_bekannte_themen_gehen_an_das_modell(app):
     m = Merker()
     ThemenQuelle(None)._bewerte([{"chunk_id": 1, "text": "x"}], Zustand(), [], m)
     assert "BEREITS BEKANNTE THEMEN" in m.inhalt and "Datenqualität und Migration" in m.inhalt
+
+
+def test_ersetzung_ohne_korrektursignal_wird_zum_widerspruch(app):
+    """4. Befund: «Der Auftraggeber kann höchstens 4 Tage einsetzen» ersetzte still
+    die zuvor genannten 10 Tage. Ohne Korrektursignal bleibt beides, der
+    Widerspruch ist offen (AT05)."""
+    from tests.regression.adaptiv_hilfen import ModellDouble, dienst
+    erst = ops(neu("Der Auftraggeber rechnet mit 10 Personentagen",
+                   ("personalaufwand", {"rolle": "AG", "aufwand": "10"})))
+    ersetzen = ops({"op": "korrektur", "aussage": "A-0001", "art": "benutzerangabe",
+                    "quelle": "wortlaut", "inhalt": "Der Auftraggeber setzt höchstens 4 Tage ein",
+                    "ziele": [{"abschnitt": "personalaufwand", "felder": {"rolle": "AG", "aufwand": "4"}}]})
+    d = dienst(app, ModellDouble(aussagen=[erst, ersetzen]))
+    sid = neue_session(app)
+    d.starte(sid)
+    d.beitrag(sid, "Der Auftraggeber rechnet mit 10 Personentagen.", anfrage_id="w1")
+    d.beitrag(sid, "Der Auftraggeber kann höchstens 4 Tage einsetzen.", anfrage_id="w2")
+    z = d.zustand.lade(sid, False)
+    assert {a["schluessel"]: a["status"] for a in z.aussagen} == {"A-0001": "aktiv", "A-0002": "aktiv"}
+    (kf,) = [k for k in z.konflikte if k["status"] == "offen"]
+    assert set(kf["aussagen"]) == {"A-0001", "A-0002"}
+
+
+def test_ersetzung_mit_korrektursignal_bleibt_korrektur(app):
+    from tests.regression.adaptiv_hilfen import ModellDouble, dienst
+    erst = ops(neu("Der Auftraggeber rechnet mit 10 Personentagen",
+                   ("personalaufwand", {"rolle": "AG", "aufwand": "10"})))
+    ersetzen = ops({"op": "korrektur", "aussage": "A-0001", "art": "benutzerangabe",
+                    "quelle": "wortlaut", "inhalt": "Der Auftraggeber setzt 4 Tage ein",
+                    "ziele": [{"abschnitt": "personalaufwand", "felder": {"rolle": "AG", "aufwand": "4"}}]})
+    d = dienst(app, ModellDouble(aussagen=[erst, ersetzen]))
+    sid = neue_session(app)
+    d.starte(sid)
+    d.beitrag(sid, "Der Auftraggeber rechnet mit 10 Personentagen.", anfrage_id="k1")
+    d.beitrag(sid, "Es gilt: der Auftraggeber setzt 4 Tage ein, nicht 10.", anfrage_id="k2")
+    z = d.zustand.lade(sid, False)
+    assert {a["schluessel"]: a["status"] for a in z.aussagen} == {"A-0001": "ersetzt", "A-0002": "aktiv"}
+    assert not [k for k in z.konflikte if k["status"] == "offen"]
