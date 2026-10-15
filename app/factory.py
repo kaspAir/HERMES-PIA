@@ -1,3 +1,7 @@
+import contextlib
+import os
+import tempfile
+
 from flask import Flask
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
@@ -31,6 +35,28 @@ from app.shared.version import get_version
 from app.web.auth import current_user
 from app.web.ui_routes import bp as ui_bp
 import app.web.adaptiv_routes  # noqa: F401,E402 – Endpunkte am selben Blueprint
+
+
+@contextlib.contextmanager
+def _migrationssperre(database_url):
+    """Exklusive Dateisperre um Tabellenanlage und Migration (POSIX).
+
+    Neben der SQLite-Datei, sonst im Temp-Verzeichnis. Ohne fcntl (Windows,
+    lokale Entwicklung mit einem Prozess) ohne Sperre."""
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    url = str(database_url or "")
+    pfad = (url[len("sqlite:///"):] + ".migration.lock" if url.startswith("sqlite:///")
+            else os.path.join(tempfile.gettempdir(), "hermes-pia-migration.lock"))
+    with open(pfad, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def _migrate_db(engine):
@@ -179,8 +205,14 @@ def create_app(config_class=None):
     register_request_logging(app)
 
     engine = init_engine(app.config["DATABASE_URL"], echo=app.config.get("SQL_ECHO", False))
-    Base.metadata.create_all(engine)
-    _migrate_db(engine)
+    # Mehrere Worker starten GLEICHZEITIG und fuehren je create_app aus. Ohne
+    # Sperre legen zwei Worker dieselbe neue Spalte an, einer scheitert an
+    # «duplicate column name», und der Start bricht ab (dev, 15.10.2026, 10
+    # Worker). Unter der Sperre migriert der erste; die anderen sehen danach
+    # die fertigen Spalten und tun nichts.
+    with _migrationssperre(app.config["DATABASE_URL"]):
+        Base.metadata.create_all(engine)
+        _migrate_db(engine)
 
     # Services aus der Konfiguration aufbauen ("Konfiguration vor Programmierung").
     app.method_service = MethodService(app.config["METHODS_DIR"])
