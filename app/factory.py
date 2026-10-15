@@ -18,6 +18,7 @@ import app.domains.qualitaet.models    # noqa: F401 – Pruefprotokoll-Tabelle r
 import app.domains.freigabe.models      # noqa: F401 – Checkliste/Entscheid registrieren
 import app.domains.dokumentenkopf.models  # noqa: F401 – Kopfdaten registrieren
 import app.domains.testlauf.models   # noqa: F401 – Testlauf registrieren
+import app.domains.interview.adaptiv.models  # noqa: F401 – adaptives Interview
 from app.domains.corpus.embeddings import VoyageEmbedder
 from app.domains.corpus.service import RagService
 from app.domains.praesentation.service import PraesentationService
@@ -49,6 +50,13 @@ def _migrate_db(engine):
         ("start_datum",         "VARCHAR(20)"),
         ("org_id",              "INTEGER"),
         ("ergebnis_id",         "INTEGER"),
+        # Adaptives Interview (additiv, 15.10.2026)
+        ("modus",               "VARCHAR(20)"),
+        ("revision",            "INTEGER"),
+        ("naechste_aktion_json", "TEXT"),
+        ("ausstehend_json",     "TEXT"),
+        ("pia_status",          "VARCHAR(30)"),
+        ("rag_stand_json",      "TEXT"),
     ]
     with engine.connect() as conn:
         for col, dtype in new_cols:

@@ -1,0 +1,181 @@
+# =====================================================================
+# Abschlussprüfprofil des adaptiven Interviews
+# =====================================================================
+#
+# Wann ist ein Projektinitialisierungsauftrag «bereit zur Benutzerprüfung»?
+# Diese Datei legt es offen (Auftrag Abschnitt 9). Sie ersetzt die frühere
+# Regel «Text vorhanden = vollständig».
+#
+# WICHTIG: Die meisten Kriterien hier sind PRODUKTENTSCHEIDE von HERMES PIA,
+# keine HERMES-Gebote. Jedes Kriterium nennt seine Herkunft:
+#   vorlage              die Word-Vorlage verlangt das Feld bzw. die Zeile
+#   ergebnisbeschreibung die HERMES-2022-Ergebnisbeschreibung nennt den Inhalt
+#   produktentscheid     zusätzliche Qualitätsanforderung von HERMES PIA
+#
+# GEWICHT bestimmt die Reihenfolge der Klärung und die Abschlussreife:
+#   wesentlich    fehlt es, kann die Initialisierung nicht sinnvoll beauftragt
+#                 werden -> verhindert «bereit zur Prüfung»
+#   erforderlich  für einen vollständigen Auftrag nötig -> verhindert «bereit»
+#   vertiefung    hilfreich, aber kein Blocker
+#
+# ZUSTÄNDE je Kriterium: erfuellt | offen | unbekannt (ausdrücklich nicht
+# bekannt) | zurueckgestellt | nicht_anwendbar (begründet) | konflikt.
+# Unbekannt, leer und begründet nicht anwendbar sind VERSCHIEDENE Zustände.
+# Ein ausdrücklich beauftragter Untersuchungsauftrag kann ein Kriterium
+# ausreichend bearbeiten, ohne dass die Antwort schon bekannt ist.
+
+profil:
+  version: "1.0.0"
+  stand: "2026-10-15"
+
+# Wie oft eine unbeantwortete Frage zum selben Punkt wiederholt wird, bevor
+# der Punkt als zurückgestellt gilt. Grund: keine Endlosschleife (AT07); der
+# Punkt bleibt als offener Punkt sichtbar und wird in der Abschlussprüfung
+# erneut gezeigt.
+wiederholungen_bis_zurueckstellen: 2
+
+kriterien:
+
+  - id: K-AL-1
+    abschnitt: ausgangslage
+    gewicht: wesentlich
+    herkunft: ergebnisbeschreibung
+    beschreibung: "Anlass und Problem der Initialisierung sind beschrieben"
+    pruefung: { art: aussagen, mindestens: 1 }
+    aktion: erkunden
+    vorlagenfrage: "Worum geht es bei diesem Vorhaben – was ist der Anlass, und welches Problem soll gelöst werden?"
+
+  - id: K-AL-2
+    abschnitt: ausgangslage
+    gewicht: erforderlich
+    herkunft: produktentscheid
+    beschreibung: "Die Ausgangslage trägt mehr als eine einzelne Angabe (Kontext, Betroffene, Dringlichkeit)"
+    pruefung: { art: aussagen, mindestens: 3 }
+    aktion: konkretisieren
+    vorlagenfrage: "Wer ist von der heutigen Situation betroffen, und was geschieht, wenn nichts unternommen wird?"
+
+  - id: K-ECK-START
+    abschnitt: eckdaten
+    gewicht: wesentlich
+    herkunft: produktentscheid
+    beschreibung: "Geplanter Start der Initialisierung ist bekannt (Tag, Monat, Jahr)"
+    pruefung: { art: eckdatum, feld: start_initialisierung, vollstaendig: true }
+    aktion: konkretisieren
+    vorlagenfrage: "Ab wann soll die Initialisierung starten – an welchem Datum?"
+
+  - id: K-ECK-ENDE
+    abschnitt: eckdaten
+    gewicht: wesentlich
+    herkunft: vorlage
+    beschreibung: "Geplantes Enddatum der Phase Initialisierung"
+    pruefung: { art: eckdatum, feld: ende_initialisierung, vollstaendig: true, oder_feld: dauer_initialisierung }
+    aktion: konkretisieren
+    vorlagenfrage: "Bis wann soll die Initialisierung abgeschlossen sein?"
+
+  - id: K-ZI-1
+    abschnitt: ziele
+    gewicht: wesentlich
+    herkunft: vorlage
+    beschreibung: "Mindestens ein Ziel der Phase Initialisierung"
+    pruefung: { art: zeilen, mindestens: 1, spalte: beschreibung }
+    aktion: erkunden
+    vorlagenfrage: "Was soll am Ende der Initialisierung erreicht sein – woran erkennst Du, dass die Phase erfolgreich war?"
+
+  - id: K-ZI-2
+    abschnitt: ziele
+    gewicht: erforderlich
+    herkunft: vorlage
+    beschreibung: "Jedes Ziel hat Kategorie, Messgrösse und Priorität"
+    pruefung: { art: zeilenfelder, spalten: [kategorie, messgroesse, prioritaet] }
+    aktion: konkretisieren
+    vorlagenfrage: "Woran wird das Erreichen dieses Ziels gemessen, und wie wichtig ist es?"
+
+  - id: K-RB-1
+    abschnitt: rahmenbedingungen
+    gewicht: erforderlich
+    herkunft: vorlage
+    beschreibung: "Verbindliche Vorgaben ausser HERMES sind genannt oder ausdrücklich keine"
+    pruefung: { art: aussagen_oder_na, mindestens: 1 }
+    aktion: erkunden
+    vorlagenfrage: "Gibt es Vorgaben, an die sich das Vorhaben halten muss – etwa ein Kostenrahmen, Ecktermine oder Vorgaben der Stammorganisation?"
+
+  - id: K-PA-1
+    abschnitt: personalaufwand
+    gewicht: wesentlich
+    herkunft: vorlage
+    beschreibung: "Personalaufwand in PT je Rolle (mindestens AG und PL)"
+    pruefung: { art: zeilenfelder, spalten: [aufwand], zeilen: [AG, PL] }
+    aktion: konkretisieren
+    vorlagenfrage: "Wie viele Personentage rechnest Du für Dich als Projektleitung und für den Auftraggeber in der Initialisierung?"
+
+  - id: K-PA-2
+    abschnitt: personalaufwand
+    gewicht: erforderlich
+    herkunft: produktentscheid
+    beschreibung: "Weitere benötigte Rollen sind geklärt (Fachpersonen, ISDS, externe Expertise)"
+    pruefung: { art: aussagen_oder_na, mindestens: 1 }
+    aktion: erkunden
+    vorlagenfrage: "Wer muss in der Initialisierung ausser Dir und dem Auftraggeber mitarbeiten?"
+
+  - id: K-SM-1
+    abschnitt: sachmittel
+    gewicht: vertiefung
+    herkunft: vorlage
+    beschreibung: "Sachmittel genannt oder ausdrücklich keine"
+    pruefung: { art: aussagen_oder_na, mindestens: 1 }
+    aktion: erkunden
+    vorlagenfrage: "Braucht die Initialisierung besondere Sachmittel, etwa Software, Räume oder externe Leistungen?"
+
+  - id: K-KO-1
+    abschnitt: kosten
+    gewicht: erforderlich
+    herkunft: vorlage
+    beschreibung: "Kosten der Initialisierung berechenbar (Kostensatz hinterlegt, PT vorhanden)"
+    pruefung: { art: kosten_berechenbar }
+    aktion: hinweis
+    vorlagenfrage: "Für die Kosten fehlt ein hinterlegter Kostensatz. Kennst Du den Satz Deiner Organisation, oder soll er im PMO hinterlegt werden?"
+
+  - id: K-TE-1
+    abschnitt: termine
+    gewicht: erforderlich
+    herkunft: vorlage
+    beschreibung: "Die Ergebnisse der Vorlage haben Liefertermin und Abnahme (Rolle)"
+    pruefung: { art: zeilenfelder, spalten: [termin, abnahme] }
+    aktion: konkretisieren
+    vorlagenfrage: "Wann sollen die Ergebnisse der Initialisierung vorliegen, und wer nimmt sie jeweils ab?"
+
+  - id: K-PO-1
+    abschnitt: projektorganisation
+    gewicht: erforderlich
+    herkunft: vorlage
+    beschreibung: "Monatsverteilung der Personentage stimmt mit Kapitel 3.1 überein"
+    pruefung: { art: pt_konsistent }
+    aktion: vorschlag
+    vorlagenfrage: "Soll ich die Personentage aus Kapitel 3.1 gleichmässig auf die Monate der Initialisierung verteilen? Du kannst die Verteilung danach anpassen."
+
+  - id: K-KM-1
+    abschnitt: kommunikation
+    gewicht: erforderlich
+    herkunft: vorlage
+    beschreibung: "Kommunikation während der Initialisierung geklärt oder begründet nicht anwendbar"
+    pruefung: { art: aussagen_oder_na, mindestens: 1 }
+    aktion: erkunden
+    vorlagenfrage: "Wer muss während der Initialisierung worüber informiert werden – etwa der Auftraggeber, betroffene Stellen oder Stakeholder?"
+
+  - id: K-RI-1
+    abschnitt: risiken
+    gewicht: wesentlich
+    herkunft: vorlage
+    beschreibung: "Mindestens ein Risiko der Phase Initialisierung"
+    pruefung: { art: zeilen, mindestens: 1, spalte: beschreibung }
+    aktion: erkunden
+    vorlagenfrage: "Was könnte die Initialisierung gefährden – etwa fehlende Verfügbarkeit von Schlüsselpersonen oder unklare Zuständigkeiten?"
+
+  - id: K-RI-2
+    abschnitt: risiken
+    gewicht: erforderlich
+    herkunft: vorlage
+    beschreibung: "Jedes Risiko ist bewertet (EW, AG) und hat eine Massnahme"
+    pruefung: { art: zeilenfelder, spalten: [ew, ag, massnahmen] }
+    aktion: konkretisieren
+    vorlagenfrage: "Wie wahrscheinlich ist dieses Risiko, wie stark wäre die Auswirkung, und was tun wir dagegen?"
