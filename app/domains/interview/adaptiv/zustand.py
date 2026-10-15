@@ -113,6 +113,10 @@ class Aenderung:
 class ZustandService:
     """Lesen und Ändern des gemeinsamen Zustands einer Session."""
 
+    # Liefert die aktuell wirksamen Versionen (Prompts, Regeln, Profil) – vom
+    # Dienst gesetzt, damit auch Rückmeldungen aus Operationen sie tragen.
+    versionen_fn = None
+
     # ---- Lesen ------------------------------------------------------------- #
 
     def lade(self, session_id, mit_nachrichten=True):
@@ -255,7 +259,7 @@ class ZustandService:
                         if a.herkunft in ("system", "rag"):
                             db.add(PiaRueckmeldung(
                                 session_id=s.id, org_id=s.org_id, art="vorschlag_verworfen",
-                                bezug=a.schluessel,
+                                bezug=a.schluessel, versionen_json=self._versionen_json(),
                                 kontext_json=json.dumps({"inhalt": a.inhalt[:300],
                                                          "art": a.art}, ensure_ascii=False)))
                     else:
@@ -307,6 +311,7 @@ class ZustandService:
                     if not op.get("passt"):
                         db.add(PiaRueckmeldung(session_id=s.id, org_id=s.org_id,
                                                art="rag_unpassend", bezug=f"T-{t.id}",
+                                               versionen_json=self._versionen_json(),
                                                kontext_json=json.dumps({"thema": t.thema},
                                                                        ensure_ascii=False)))
                 elif art == "systemvorschlag":
@@ -331,6 +336,12 @@ class ZustandService:
         except Exception:
             db.rollback()
             raise
+
+    def _versionen_json(self):
+        try:
+            return json.dumps(self.versionen_fn() if self.versionen_fn else {}, ensure_ascii=False)
+        except Exception:      # noqa: BLE001 – Versionsangabe darf nichts verhindern
+            return "{}"
 
     def rueckmeldung(self, session_id, art, bezug=None, kontext=None, versionen=None):
         db = SessionLocal()

@@ -9,6 +9,14 @@
   <a href="{{ url_for('ui.interview_fachpruefung_zeigen', session_id=session.id) }}">
     Fachliche Prüfung aus Auftraggeber-Sicht &#8594;</a>
 </p>
+{% if adaptiv_verfuegbar %}
+<form method="post" action="{{ url_for('ui.adaptiv_umstellen', session_id=session.id) }}" class="fussnote"
+      style="margin:0 0 1rem">
+  <button type="submit" class="btn-link"
+          title="Die bisherigen Angaben werden gesichert und als «aus früherer Erfassung» übernommen. Der Rückweg bleibt möglich.">
+    Auf das adaptive Interview umstellen</button>
+</form>
+{% endif %}
 {% if projekt %}
 <a href="{{ url_for('ui.projekt_detail', projekt_id=projekt.id) }}" class="breadcrumb-back">
   &#8592; Projekt: {{ projekt.name }}</a>

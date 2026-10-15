@@ -116,6 +116,48 @@ def adaptiv_abschluss(session_id):
     return _antwort(ansicht)
 
 
+@bp.post("/interview/<int:session_id>/nachricht/<int:nachricht_id>/verarbeiten")
+@permission_required("write")
+def adaptiv_erneut_verarbeiten(session_id, nachricht_id):
+    """Gespeicherten Beitrag erneut auswerten – als FORMULAR-Aufruf.
+
+    Blockiert die Pseudonymisierung erneut, zeigt die Anwendung ihre
+    Entscheidungsseite (Fundstellen, Ersetzen/Fehlalarm) und wiederholt nach
+    dem Entscheid genau diesen Aufruf. Danach geht es im Interview weiter;
+    die ausstehenden Schritte arbeitet die Seite beim Laden ab.
+    """
+    from flask import redirect, url_for
+    session = _load_session(session_id)
+    try:
+        _dienst().verarbeite_erneut(session_id, nachricht_id, tarife=_tarife_for_session(session))
+    except BeitragFehler as e:
+        return jsonify({"fehler": str(e)}), 409
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
+@bp.post("/interview/<int:session_id>/umstellen")
+@permission_required("write")
+def adaptiv_umstellen(session_id):
+    """Bestehende Session auf das adaptive Interview umstellen (mit Sicherung)."""
+    from flask import redirect, url_for
+    session = _load_session(session_id)
+    _dienst().umstellen(session_id, tarife=_tarife_for_session(session))
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
+@bp.post("/interview/<int:session_id>/zurueck-zum-bisherigen-ablauf")
+@permission_required("write")
+def adaptiv_rueckfall(session_id):
+    """Rückfallweg: Stand vor der Umstellung wiederherstellen."""
+    from flask import redirect, url_for
+    _load_session(session_id)
+    try:
+        _dienst().zurueck_zum_bisherigen_ablauf(session_id)
+    except BeitragFehler as e:
+        return jsonify({"fehler": str(e)}), 409
+    return redirect(url_for("ui.interview_workspace", session_id=session_id))
+
+
 @bp.post("/interview/<int:session_id>/thema/<int:thema_id>")
 @permission_required("write")
 def adaptiv_thema(session_id, thema_id):

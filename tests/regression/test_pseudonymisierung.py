@@ -316,6 +316,11 @@ def app(tmp_path):
 
 
 def _angemeldet(app):
+    # Diese Tests prüfen die Schreibwege des BISHERIGEN Interviews. Neue
+    # Aufträge starten sonst im adaptiven Interview, und dort weisen die alten
+    # Schreibwege jede Änderung ab (siehe test_adaptiv_bestand). Den adaptiven
+    # Weg prüft test_adaptiv_pseudonymisierung.py.
+    app.config["INTERVIEW_ADAPTIV"] = False
     auth = app.auth_service
     org = auth.create_org("Org")
     auth.create_user("u@o.ch", "pw", role="org_admin", org_id=org.id,

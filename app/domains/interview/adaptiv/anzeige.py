@@ -50,7 +50,8 @@ def status_text(a):
     if a["art"] == "unbekannt":
         return "zurückgestellt" if a.get("zurueckgestellt") else "Offene Frage – noch nicht bekannt"
     if a["herkunft"] == "altbestand":
-        return "aus früherer Erfassung (Herkunft nicht differenziert)"
+        return ("aus früherer Erfassung – von Dir bestätigt" if a["bestaetigt"]
+                else "aus früherer Erfassung – Herkunft nicht erfasst, noch zu bestätigen")
     if a["herkunft"] in ("system", "rag"):
         if a["art"] == "interpretation":
             return "Interpretation – von Dir bestätigt" if a["bestaetigt"] \

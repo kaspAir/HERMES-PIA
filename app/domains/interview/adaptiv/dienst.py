@@ -29,6 +29,7 @@ from app.domains.interview.adaptiv.vollstaendigkeit import bewerte, profil, reif
 from app.domains.interview.adaptiv.vorschlaege import FUER_KRITERIUM
 from app.domains.interview.adaptiv.zustand import ZustandService
 from app.domains.interview.models import InterviewSession
+from app.domains.llm.errors import PseudonymisierungBlockiert
 from app.domains.method import vorlagenzuordnung as vz
 
 log = logging.getLogger("hermes.adaptiv")
@@ -56,6 +57,7 @@ class AdaptivesInterview:
         self.llm = llm
         self.themen = themen            # RAG-Themenquelle (rag_themen.ThemenQuelle) oder None
         self.zustand = ZustandService()
+        self.zustand.versionen_fn = self.versionen
 
     # ---- Grundlagen ---------------------------------------------------------- #
 
@@ -129,6 +131,97 @@ class AdaptivesInterview:
             ausstehend_json=[])
         return self.ansicht(session_id)
 
+    # ---- Bestehende Sessions umstellen (Auftrag 12, AT23) ----------------------- #
+
+    # Abschnitte, die aus anderen berechnet werden – sie werden nicht als
+    # Aussagen übernommen, sondern neu berechnet.
+    _BERECHNET = {"kosten"}
+
+    def umstellen(self, session_id, tarife=None):
+        """Eine Session des bisherigen Ablaufs auf das adaptive Interview umstellen.
+
+        Additiv und umkehrbar: die bisherigen Dokumentdaten werden zuerst
+        gesichert; jede bisherige Angabe wird eine Aussage mit Herkunft
+        «altbestand» und Art «uebernommen». Erfunden wird nichts: keine
+        Herkunft (Benutzer oder System?), keine Bestätigung, keine Art
+        (Annahme oder Entscheid?). Die Angaben bleiben im Dokument, bis die
+        Projektleitung sie bestätigt, berichtigt oder verwirft.
+        """
+        s = self._session(session_id)
+        if s.modus == "adaptiv":
+            return self.ansicht(session_id)
+        answers = json.loads(s.answers_json or "{}")
+        methode = self._methode(s)
+        ops = []
+        for sec in methode.get("sections", []):
+            sid = sec.get("id")
+            ans = answers.get(sid)
+            if sid in self._BERECHNET or not isinstance(ans, dict):
+                continue
+            ex = ans.get("extracted")
+            if isinstance(ex, dict) and str(ex.get("text") or "").strip():
+                ops.append(self._altbestand(ex["text"].strip(), sid, {}, sec.get("title", sid)))
+            elif isinstance(ex, list):
+                for zeile in ex:
+                    if not isinstance(zeile, dict):
+                        continue
+                    felder = {k: str(v) for k, v in zeile.items()
+                              if not str(k).startswith("_") and k != "nr" and str(v or "").strip()}
+                    if not felder or "total" in str(zeile.get("rolle_person", "")).lower():
+                        continue
+                    inhalt = " · ".join(felder.values())[:500]
+                    ops.append(self._altbestand(inhalt, sid, felder, sec.get("title", sid)))
+        start = str(s.start_datum or "").strip()
+        if start:
+            ops.append(self._altbestand(f"Start der Initialisierung: {start}", "eckdaten",
+                                        {"start_initialisierung": start}, "Eckdaten"))
+        from app.shared.database import SessionLocal
+        db = SessionLocal()
+        sess = db.get(InterviewSession, int(session_id))
+        sess.answers_vor_umstellung_json = sess.answers_json or "{}"
+        db.commit()
+        if ops:
+            self.zustand.wende_an(session_id, ops,
+                                  nachher=self._projektions_hook(methode, tarife or {}))
+        self.zustand.setze_session(session_id, modus="adaptiv", pia_status="laufend",
+                                   ausstehend_json=["frage"])
+        self.zustand.nachricht(session_id, "system",
+                               f"Dieser Auftrag wurde aus dem bisherigen Interview übernommen "
+                               f"({len(ops)} Angaben). Bitte prüfe sie in «Für den PIA erkannt»: "
+                               f"bestätigen, berichtigen oder verwerfen.",
+                               art="hinweis", aktion="umstellen")
+        return self.weiter(session_id, tarife=tarife)
+
+    @staticmethod
+    def _altbestand(inhalt, abschnitt, felder, thema):
+        ziel = {"abschnitt": abschnitt, "felder": felder}
+        return {"op": "neu", "inhalt": inhalt, "art": "uebernommen", "herkunft": "altbestand",
+                "bestaetigt": False, "thema": thema, "ziele": [ziel]}
+
+    def zurueck_zum_bisherigen_ablauf(self, session_id):
+        """Rückfallweg: die gesicherten Dokumentdaten wiederherstellen.
+
+        Die Aussagen bleiben als Verlauf erhalten, werden aber stillgelegt
+        (verworfen), damit eine erneute Umstellung sauber beginnt.
+        """
+        from app.domains.interview.adaptiv.models import PiaAussage
+        from app.shared.database import SessionLocal
+        db = SessionLocal()
+        sess = db.get(InterviewSession, int(session_id))
+        if sess is None or sess.modus != "adaptiv" or sess.answers_vor_umstellung_json is None:
+            raise BeitragFehler("Für diese Session gibt es keinen Stand vor einer Umstellung.")
+        sess.answers_json = sess.answers_vor_umstellung_json
+        sess.modus = None
+        sess.ausstehend_json = None
+        sess.naechste_aktion_json = None
+        sess.revision = (sess.revision or 0) + 1
+        for a in db.query(PiaAussage).filter(PiaAussage.session_id == sess.id,
+                                            PiaAussage.status == "aktiv"):
+            a.status = "verworfen"
+            a.revision_geaendert = sess.revision
+        db.commit()
+        return True
+
     # ---- Ansicht (nur lesen) --------------------------------------------------- #
 
     def ansicht(self, session_id, tarife=None, **zusatz):
@@ -173,6 +266,46 @@ class AdaptivesInterview:
                                             "aber nicht ausgewertet.")
             return self.ansicht(session_id, fehler="Kein Sprachmodell verfügbar. Dein Beitrag "
                                                    "ist gespeichert und geht nicht verloren.")
+        try:
+            return self._werte_aus(session_id, n, text, korrektur_von, tarife)
+        except PseudonymisierungBlockiert as e:
+            # Es ging nichts an das Modell. Die Entscheidung je Fundstelle trifft
+            # der Mensch – über denselben Weg wie im bisherigen Interview
+            # (verarbeite_erneut löst ihn aus). Kein «trotzdem senden».
+            self.zustand.markiere_nachricht(n["id"], "blockiert", str(e))
+            return self.ansicht(session_id, fehler=(
+                f"Die Pseudonymisierung hat den Beitrag angehalten: {len(e.befunde)} Stelle(n) "
+                f"brauchen Deine Entscheidung. Es wurde nichts an das Sprachmodell gesendet; "
+                f"der Beitrag ist gespeichert."), blockiert_nachricht=n["id"])
+        except Exception as e:      # noqa: BLE001 – der Beitrag bleibt gesichert
+            log.warning("Aussagen-Aufruf fehlgeschlagen: %s", e)
+            self.zustand.markiere_nachricht(n["id"], "fehler", f"{e.__class__.__name__}: {e}")
+            return self.ansicht(session_id, fehler=(
+                "Die Auswertung ist fehlgeschlagen. Dein Beitrag ist gespeichert; "
+                "Du kannst ihn erneut verarbeiten lassen."), fehler_nachricht=n["id"])
+
+    def verarbeite_erneut(self, session_id, nachricht_id, tarife=None):
+        """Einen gespeicherten, nicht ausgewerteten Beitrag erneut auswerten.
+
+        Für blockierte (Pseudonymisierung) und fehlgeschlagene Beiträge. Es
+        entsteht KEINE neue Nachricht – der Originaltext wird unverändert
+        verwendet. Eine erneute Blockierung wird NICHT abgefangen: sie geht an
+        die Entscheidungsseite der Anwendung (Fundstellen, Entscheid, Replay).
+        """
+        from app.domains.interview.adaptiv.models import PiaNachricht
+        from app.shared.database import SessionLocal
+        m = SessionLocal().get(PiaNachricht, int(nachricht_id))
+        if (m is None or m.session_id != int(session_id) or m.rolle != "benutzer"
+                or m.status not in ("fehler", "blockiert")):
+            raise BeitragFehler("Dieser Beitrag kann nicht erneut verarbeitet werden.")
+        if self.llm is None:
+            raise BeitragFehler("Kein Sprachmodell verfügbar.")
+        bezug = json.loads(m.bezug_json or "{}")
+        n = {"id": m.id}
+        return self._werte_aus(session_id, n, m.text, bezug.get("korrektur_von"), tarife)
+
+    def _werte_aus(self, session_id, n, text, korrektur_von, tarife):
+        """Der Modellteil eines Beitrags: Aussagen vorschlagen, prüfen, anwenden."""
         s = self._session(session_id)
         methode = self._methode(s)
         katalog = abschnittskatalog(methode)
@@ -180,17 +313,10 @@ class AdaptivesInterview:
         frage = json.loads(s.naechste_aktion_json or "{}") or {}
 
         begonnen = time.monotonic()
-        try:
-            roh = self.llm.complete(
-                self._system_aussagen(katalog),
-                [{"role": "user", "content": self._nutzer_aussagen(z, frage, text, korrektur_von)}],
-                max_tokens=self._token_bedarf(text, z))
-        except Exception as e:      # noqa: BLE001 – der Beitrag bleibt gesichert
-            log.warning("Aussagen-Aufruf fehlgeschlagen: %s", e)
-            self.zustand.markiere_nachricht(n["id"], "fehler", f"{e.__class__.__name__}: {e}")
-            return self.ansicht(session_id, fehler=(
-                "Die Auswertung ist fehlgeschlagen. Dein Beitrag ist gespeichert; "
-                "Du kannst ihn erneut verarbeiten lassen."), fehler_nachricht=n["id"])
+        roh = self.llm.complete(
+            self._system_aussagen(katalog),
+            [{"role": "user", "content": self._nutzer_aussagen(z, frage, text, korrektur_von)}],
+            max_tokens=self._token_bedarf(text, z))
 
         pruef = pruefe_aussagen_antwort(roh, katalog, *z.fuer_vertrag())
         tarife = tarife or {}
@@ -300,7 +426,7 @@ class AdaptivesInterview:
             return self.ansicht(session_id, fehler="Die Angabe wurde inzwischen geändert.")
         if aktion == "verwerfen":
             self.zustand.rueckmeldung(session_id, "korrektur", bezug=schluessel,
-                                      kontext={"aktion": "verwerfen"})
+                                      kontext={"aktion": "verwerfen"}, versionen=self.versionen())
         self.zustand.setze_session(session_id, ausstehend_json=["frage"])
         return self.ansicht(session_id, aenderung={"geaendert": erg.geaendert,
                                                    "revision": erg.revision})
@@ -327,7 +453,9 @@ class AdaptivesInterview:
             "blocker": [{"id": e["id"], "beschreibung": e["beschreibung"],
                          "zustand": e["zustand"], "details": e["details"][:3]} for e in blocker],
             "annahmen": [a["inhalt"] for a in im_dokument if a["art"] == "annahme"],
-            "korrekturen": sum(1 for a in z.aussagen if a["status"] == "ersetzt"),
+            # Korrekturen der Projektleitung – nachgeführte Systemvorschläge zählen nicht.
+            "korrekturen": sum(1 for a in z.aussagen if a["status"] == "ersetzt"
+                               and a["herkunft"] == "benutzer"),
             "vertiefungen_offen": [e["beschreibung"] for e in kriterien
                                    if e["gewicht"] == "vertiefung"
                                    and e["zustand"] not in ("erfuellt", "nicht_anwendbar")],
@@ -359,6 +487,13 @@ class AdaptivesInterview:
         blocker = blocker + [{"id": b["regel"], "beschreibung": b["meldung"], "zustand": "muss",
                               "details": [b.get("fundstelle", "")], "gewicht": "muss"}
                              for b in (muss_befunde or [])]
+        alt = [a for a in z.aussagen if a["status"] == "aktiv" and a["herkunft"] == "altbestand"
+               and not a["bestaetigt"]]
+        if alt:
+            blocker.append({"id": "ALTBESTAND", "zustand": "offen", "gewicht": "erforderlich",
+                            "beschreibung": f"{len(alt)} aus dem bisherigen Interview übernommene "
+                                            f"Angabe(n) sind noch nicht bestätigt",
+                            "details": [a["inhalt"][:80] for a in alt[:3]]})
         bericht = self._abschlussbericht(z, kriterien, blocker)
         if aktion == "pruefen":
             return self.ansicht(session_id, abschluss=bericht)

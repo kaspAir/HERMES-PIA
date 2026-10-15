@@ -45,3 +45,6 @@ class InterviewSession(Base, GovernanceMixin):
     pia_status = Column(String(30), nullable=True)
     # Stand der Themensuche im Korpus (letzte Anfrage, Verfügbarkeit).
     rag_stand_json = Column(Text, nullable=True)
+    # Sicherung der Dokumentdaten VOR der Umstellung einer bestehenden Session
+    # auf das adaptive Interview – Grundlage des Rückfallwegs (Auftrag 12).
+    answers_vor_umstellung_json = Column(Text, nullable=True)

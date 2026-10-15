@@ -92,13 +92,25 @@
     var offenId = frage && frage.nachricht_id;
     (nachrichten || []).forEach(function (m) {
       if (offenId && m.id === offenId) return;
+      var offen = m.rolle === 'benutzer' && (m.status === 'fehler' || m.status === 'blockiert');
       var li = knoten('li', 'ai-nachricht ai-nachricht--' + m.rolle +
-                            (m.status === 'fehler' ? ' ai-nachricht--fehler' : ''));
+                            (offen ? ' ai-nachricht--fehler' : ''));
       li.appendChild(knoten('span', 'wer', m.rolle === 'benutzer' ? 'Du' : 'HERMES PIA'));
       li.appendChild(knoten('span', '', m.text));
-      if (m.status === 'fehler') {
-        li.appendChild(knoten('div', 'zusatz',
-          'Nicht ausgewertet – der Beitrag ist gespeichert. Sende ihn erneut, um ihn verarbeiten zu lassen.'));
+      if (offen) {
+        li.appendChild(knoten('div', 'zusatz', m.status === 'blockiert'
+          ? 'Von der Pseudonymisierung angehalten – nichts wurde gesendet. Entscheide je Fundstelle, dann wird der Beitrag unverändert verarbeitet.'
+          : 'Nicht ausgewertet – der Beitrag ist gespeichert.'));
+        // Ein echtes Formular: die Entscheidungsseite der Pseudonymisierung
+        // wiederholt genau diesen Aufruf, mit Anmeldung und Rechten.
+        var f = knoten('form', 'ai-inline-form');
+        f.method = 'post';
+        f.action = wege.verarbeiten.replace('/0/', '/' + m.id + '/');
+        var b = knoten('button', 'ai-linkknopf', m.status === 'blockiert'
+          ? 'Fundstellen prüfen und verarbeiten' : 'Erneut verarbeiten');
+        b.type = 'submit';
+        f.appendChild(b);
+        li.appendChild(f);
       }
       el.verlauf.appendChild(li);
     });

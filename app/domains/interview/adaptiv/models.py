@@ -37,6 +37,7 @@ ARTEN = (
     "schaetzung",       # Grösse mit Unsicherheit
     "interpretation",   # vom System gefolgert, nicht wörtlich gesagt
     "systemvorschlag",  # vom System vorgeschlagen
+    "uebernommen",      # aus dem bisherigen Interview übernommen – Art nicht erfasst
     "unbekannt",        # ausdrücklich nicht bekannt / zurückgestellt
 )
 

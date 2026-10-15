@@ -94,6 +94,12 @@ class RagService:
             return 0
         if skip_if_exists and self._exists(projekt, org_id, ergebnistyp):
             return 0
+        dok_hash = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest()
+        # Derselbe Text unter anderem Projektnamen ist eine Dublette: er würde
+        # sonst als «zweites Vergleichsprojekt» seine eigene Aussage bestätigen
+        # (Auftrag 13: keine unkontrollierte Rückspeisung, Duplikaterkennung).
+        if self._hash_vorhanden(dok_hash, org_id):
+            return 0
         chunks = _chunk_text(raw_text)
         if not chunks:
             return 0
@@ -101,7 +107,6 @@ class RagService:
         if not vectors or len(vectors) != len(chunks):
             return 0
         dauer = int(init_dauer_wochen) if init_dauer_wochen else None
-        dok_hash = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest()
         db = SessionLocal()
         for nr, ((section, ctext), vec) in enumerate(zip(chunks, vectors)):
             db.add(CorpusChunk(
@@ -133,6 +138,13 @@ class RagService:
         n = len(werte)
         median = werte[n // 2] if n % 2 else (werte[n // 2 - 1] + werte[n // 2]) / 2
         return {"median_wochen": round(median), "n_projekte": n}
+
+    def _hash_vorhanden(self, dok_hash, org_id):
+        """Liegt derselbe Text schon im geteilten oder im eigenen Korpus?"""
+        db = SessionLocal()
+        q = db.query(CorpusChunk).filter(CorpusChunk.dokument_hash == dok_hash)
+        q = q.filter((CorpusChunk.org_id.is_(None)) | (CorpusChunk.org_id == org_id))             if org_id is not None else q.filter(CorpusChunk.org_id.is_(None))
+        return db.query(q.exists()).scalar()
 
     def _exists(self, projekt, org_id, ergebnistyp):
         db = SessionLocal()

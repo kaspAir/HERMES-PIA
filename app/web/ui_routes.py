@@ -99,6 +99,15 @@ def _load_session(session_id):
     return session
 
 
+def _nur_bisheriger_ablauf(session):
+    """Die Schreibwege des bisherigen Interviews arbeiten direkt auf den
+    Dokumentdaten. Bei einer adaptiven Session würden sie die Projektion am
+    Zustand vorbei überschreiben (Auftrag 12: neue Daten nicht durch einen
+    alten Ablauf beschädigen) – deshalb abgewiesen."""
+    if getattr(session, "modus", None) == "adaptiv":
+        abort(409, description="Diese Session nutzt das adaptive Interview.")
+
+
 def _load_projekt(projekt_id):
     """Lädt ein Projekt und prüft die Mandanten-Zugehörigkeit (Super-Admin: alle)."""
     projekt = current_app.projekt_service.get_projekt(projekt_id)
@@ -397,6 +406,7 @@ def interview_workspace(session_id):
         "interview.html",
         session=session, state=state, sections=sections, preview=preview, method=method,
         projekt=projekt,
+        adaptiv_verfuegbar=bool(current_app.config.get("INTERVIEW_ADAPTIV")),
         stt_available=getattr(current_app.transcriber, "available", False),
         # Ohne Pseudonymisierungsdienst wird NICHT formuliert. Das muss sichtbar
         # sein: sonst diktiert der Projektleiter ein ganzes Interview und merkt
@@ -423,6 +433,7 @@ def _tarife_for_session(session):
 @permission_required("write")
 def interview_answer(session_id):
     session = _load_session(session_id)
+    _nur_bisheriger_ablauf(session)
     raw_text = request.form.get("raw_text", "").strip()
     try:
         current_app.interview_service.submit_answer(
@@ -436,6 +447,7 @@ def interview_answer(session_id):
 @permission_required("write")
 def interview_reprocess(session_id):
     session = _load_session(session_id)
+    _nur_bisheriger_ablauf(session)
     current_app.interview_service.reprocess(session_id, tarife=_tarife_for_session(session))
     return redirect(url_for("ui.interview_workspace", session_id=session_id))
 
@@ -444,6 +456,7 @@ def interview_reprocess(session_id):
 @permission_required("write")
 def interview_followup(session_id):
     session = _load_session(session_id)
+    _nur_bisheriger_ablauf(session)
     risk_id = request.form.get("risk_id", "")
     accepted = request.form.get("accepted", "0") == "1"
     raw_text = request.form.get("raw_text", "").strip() or None
@@ -1584,6 +1597,7 @@ def interview_edit(session_id, section_id):
     """Bearbeiten: Freitext mit vorgeladenem Inhalt; Tabellen werden zurückgesetzt."""
     svc = current_app.interview_service
     session = _load_session(session_id)
+    _nur_bisheriger_ablauf(session)
     section = svc._section_by_id(svc._effective_method(session), section_id)
     if not section:
         return "Abschnitt nicht gefunden", 404
@@ -1598,7 +1612,7 @@ def interview_edit(session_id, section_id):
 @permission_required("write")
 def interview_edit_save(session_id, section_id):
     """Speichert den bearbeiteten Freitext und lässt ihn neu formulieren."""
-    _load_session(session_id)
+    _nur_bisheriger_ablauf(_load_session(session_id))
     raw_text = request.form.get("raw_text", "").strip()
     current_app.interview_service.update_free_text(session_id, section_id, raw_text)
     return redirect(url_for("ui.interview_workspace", session_id=session_id))

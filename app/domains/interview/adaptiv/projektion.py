@@ -46,7 +46,13 @@ def _norm(text):
 
 def ins_dokument(aussage, abschnitt):
     """Gehört diese Aussage in diesen Abschnitt des Dokuments?"""
-    if aussage["status"] != "aktiv" or not aussage["bestaetigt"]:
+    if aussage["status"] != "aktiv":
+        return False
+    # Übernommener Altbestand stand schon im bisherigen Dokument. Er bleibt
+    # dort, bis er bestätigt, berichtigt oder verworfen wird – sonst verlöre
+    # die Umstellung Inhalte. Die Bestätigung wird NICHT unterstellt: die
+    # Abschlussprüfung blockiert, solange Altbestand unbestätigt ist.
+    if not aussage["bestaetigt"] and aussage["herkunft"] != "altbestand":
         return False
     if aussage["art"] == "unbekannt" or aussage.get("zurueckgestellt"):
         return False

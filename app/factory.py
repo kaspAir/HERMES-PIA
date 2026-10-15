@@ -58,6 +58,7 @@ def _migrate_db(engine):
         ("ausstehend_json",     "TEXT"),
         ("pia_status",          "VARCHAR(30)"),
         ("rag_stand_json",      "TEXT"),
+        ("answers_vor_umstellung_json", "TEXT"),
     ]
     with engine.connect() as conn:
         for col, dtype in new_cols:

@@ -19,6 +19,12 @@
   <p class="ai-reife" id="ai-reife" aria-live="polite"></p>
   <div class="ai-kopf-aktionen">
     <a class="btn-link" href="{{ url_for('ui.interview_version', session_id=session.id) }}">Word-Entwurf herunterladen</a>
+    {% if session.answers_vor_umstellung_json is not none %}
+    <form method="post" action="{{ url_for('ui.adaptiv_rueckfall', session_id=session.id) }}" class="ai-inline-form"
+          onsubmit="return confirm('Den Stand vor der Umstellung wiederherstellen? Was seither im adaptiven Interview erfasst wurde, bleibt als Verlauf erhalten, gilt aber nicht mehr.');">
+      <button type="submit" class="btn-link">Zurück zum bisherigen Ablauf</button>
+    </form>
+    {% endif %}
   </div>
 </div>
 
@@ -70,7 +76,8 @@
   "quelle": url_for('ui.adaptiv_quelle', session_id=session.id, thema_id=0),
   "rueckmeldung": url_for('ui.adaptiv_rueckmeldung', session_id=session.id),
   "vorschau": url_for('ui.adaptiv_vorschau', session_id=session.id),
-  "abschluss": url_for('ui.adaptiv_abschluss', session_id=session.id)
+  "abschluss": url_for('ui.adaptiv_abschluss', session_id=session.id),
+  "verarbeiten": url_for('ui.adaptiv_erneut_verarbeiten', session_id=session.id, nachricht_id=0)
 } | tojson }}</script>
 <script src="{{ url_for('static', filename='js/diktat.js') }}"></script>
 <script src="{{ url_for('static', filename='js/interview_adaptiv.js') }}"></script>

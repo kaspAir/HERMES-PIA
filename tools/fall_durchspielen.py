@@ -21,7 +21,7 @@ sys.path.insert(0, str(WURZEL))
 
 
 def spiele_in(app, fall_id, org_name="Musterkanton – Amt für Baubewilligungen",
-              nur_schritte=None, version="Entwurf aus dem Interview"):
+              nur_schritte=None, version="Entwurf aus dem Interview", mit_rag=True):
     """Spielt den Fall in einer BESTEHENDEN Anwendung durch (auch für Tests).
 
     Rückgabe: (org_id, session_id, letzte Ansicht, Dienst). Der Dienst trägt
@@ -38,7 +38,7 @@ def spiele_in(app, fall_id, org_name="Musterkanton – Amt für Baubewilligungen
     for k in KORPUS:
         rag.ingest_document(k["text"], projekt=k["projekt"], korpus_version="synthetisch-1")
     d = AdaptivesInterview(app.interview_service, llm=DrehbuchModell(fall),
-                           themen=ThemenQuelle(rag))
+                           themen=ThemenQuelle(rag) if mit_rag else None)
     org = app.auth_service.create_org(org_name).id
     if fall.get("tarife"):
         app.projekt_service.set_kostensatz(fall["tarife"]["intern"], fall["tarife"]["extern"],

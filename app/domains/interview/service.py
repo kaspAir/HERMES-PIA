@@ -218,6 +218,12 @@ class InterviewService:
         s = db.get(InterviewSession, int(session_id))
         if s is None:
             return False
+        # Mit dem Auftrag gehen Gespräch, Aussagen, Widersprüche, Themen samt
+        # Fundstellen und Rückmeldungen (Auftrag 12: Aufbewahrung und Löschung).
+        from app.domains.interview.adaptiv.models import (
+            PiaAussage, PiaKonflikt, PiaNachricht, PiaRagThema, PiaRueckmeldung)
+        for modell in (PiaNachricht, PiaAussage, PiaKonflikt, PiaRagThema, PiaRueckmeldung):
+            db.query(modell).filter(modell.session_id == s.id).delete(synchronize_session=False)
         db.delete(s)
         db.commit()
         return True

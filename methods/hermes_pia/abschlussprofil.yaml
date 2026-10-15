@@ -11,6 +11,9 @@
 #   vorlage              die Word-Vorlage verlangt das Feld bzw. die Zeile
 #   ergebnisbeschreibung die HERMES-2022-Ergebnisbeschreibung nennt den Inhalt
 #   produktentscheid     zusätzliche Qualitätsanforderung von HERMES PIA
+#   invariante           eine Muss-Invariante der Ausgabeprüfung verlangt es
+#                        (Profil und Ausgabeprüfung dürfen nicht auseinander-
+#                        fallen: «bereit» muss herunterladbar sein)
 #
 # GEWICHT bestimmt die Reihenfolge der Klärung und die Abschlussreife:
 #   wesentlich    fehlt es, kann die Initialisierung nicht sinnvoll beauftragt
@@ -25,8 +28,15 @@
 # ausreichend bearbeiten, ohne dass die Antwort schon bekannt ist.
 
 profil:
-  version: "1.0.0"
+  version: "1.1.0"
   stand: "2026-10-15"
+  aenderungen:
+    - version: "1.1.0"
+      inhalt: >
+        An die Ausgabeprüfung angeglichen: K-SM-1 erforderlich (D-011), K-RI-2
+        mit Verantwortung und Termin (D-071), neu K-ZI-3 beide Zielarten (D-030).
+    - version: "1.0.0"
+      inhalt: "Erste Fassung."
 
 # Wie oft eine unbeantwortete Frage zum selben Punkt wiederholt wird, bevor
 # der Punkt als zurückgestellt gilt. Grund: keine Endlosschleife (AT07); der
