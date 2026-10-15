@@ -1,0 +1,35 @@
+{
+  "gestartet": "2026-10-15T18:01:43",
+  "budget_usd": 8.0,
+  "preise_usd_pro_mio": {
+    "in": 5.0,
+    "out": 25.0,
+    "emb": 0.2
+  },
+  "datenwege": {
+    "llm": "direkt",
+    "embeddings": "direkt"
+  },
+  "faelle": [
+    {
+      "fall": "B",
+      "session_id": 22,
+      "reife": {
+        "zustand": "entwurf_offen",
+        "blocker": 11,
+        "pia_status": "laufend"
+      },
+      "pia_status": "laufend",
+      "docx": "Synthetik-B_korrektur_widerspruch.docx",
+      "abbruch": null
+    }
+  ],
+  "verbrauch": {
+    "llm_aufrufe": 10,
+    "input_tokens": 18023,
+    "output_tokens": 2396,
+    "embedding_tokens": 50,
+    "usd_geschaetzt": 0.15
+  },
+  "beendet": "2026-10-15T18:02:46"
+}

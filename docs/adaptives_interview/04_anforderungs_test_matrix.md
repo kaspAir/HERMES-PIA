@@ -30,7 +30,7 @@ Testdateien unter `tests/regression/`; Kurzformen: `zustand` = `test_adaptiv_zus
 | 05 | Korrektur ersetzt nachvollziehbar, Widersprüche bleiben sichtbar | zustand: `at05_korrektur_ersetzt_nachvollziehbar`, `at05_widerspruch_bleibt_sichtbar_und_hat_vorrang` | T, B | L |
 | 06 | Gesamtbudget ≠ Initialisierungsbudget | zustand: `at06_gesamtbudget_ist_kein_initialisierungsbudget` | T | L |
 | 07 | «Weiss ich nicht» → offener Punkt, keine Schleife, Wiederaufnahme | zustand: `at07_…` (3 Tests) | T | – |
-| 08 | RAG-Thema führt nachweisbar zu einer Lückenfrage | rag: `at08_rag_thema_fuehrt_zu_einer_kontextgerechten_frage` | T, B (Frage aus dem Korpus-Thema) | **L: echter Korpus auf keiner Stufe aktiv** |
+| 08 | RAG-Thema führt nachweisbar zu einer Lückenfrage | rag: `at08_rag_thema_fuehrt_zu_einer_kontextgerechten_frage` | T, B, **D** (echte Embeddings, synthetischer Korpus) | Nutzen mit echten Aufträgen offen (Freigabe/Schutzschicht) |
 | 09 | Versionsgrenze HERMES 5.1 → 2022 | rag: `at09_alte_methodenpflicht_wird_nicht_uebernommen` | T | F: Übertragungsregeln R1–R5 |
 | 10 | Fundstellen rückverfolgbar, Chunks eines Projekts = ein Beleg | rag: `at10_…` (2 Tests); verbesserung: `at26_kein_ungesteuertes_korpuswachstum` (Hash-Dublette) | T | L |
 | 11 | RAG-Ausfall stoppt nichts, Zustand erkennbar | rag: `at11_…` (3 Tests); `test_datenweg.py`: Ausfall der Schutzschicht führt nie zum Anbieter, Ausfall im Direktmodus ist ein Fehler | T, B («nicht abgefragt») | – |
@@ -49,7 +49,7 @@ Testdateien unter `tests/regression/`; Kurzformen: `zustand` = `test_adaptiv_zus
 | 24 | Sicherheit, Berechtigungen, Mandanten, Datenwege | routen: `at24_…` (3 Tests); pseudo: 4 Tests; `test_datenweg.py` (13 Tests: Direkt nur ausdrücklich, Schutzschicht gewinnt, keine Schlüssel in `/health`, Banner); `test_stufenkonfiguration.py`: Embeddings direkt nur auf dev | T, B (Entscheidungsseite) | Schutzschicht bewusst noch nicht angebunden (späteres Standardwerkzeug) |
 | 25 | Ende-zu-Ende: vollständig vs. Entwurf | abschluss: `at25_…` (4 Tests) | T, B (F-02 bis «Fertiggestellt»), D | L, F: realer Dialog mit echtem Modell |
 | 26 | Kontrollierte Verbesserung | verbesserung: 7 Tests; `tools/evaluation_interview.py` | T | L: Bewertung mit echtem Modell offen |
-| – | Echter Nachweis dev (Werkzeug) | `test_korpus_und_echtlauf.py`: Voraussetzungen, Budgetgrenze, Protokoll und DOCX (ohne externe Aufrufe) | T | **L: Lauf auf dev nicht ausgeführt** |
+| – | Echter Nachweis dev | `test_korpus_und_echtlauf.py`; Befunde der echten Läufe: `test_echtlauf_befunde.py` (7 Tests) | T, **D** (3 Läufe, USD 2.11) | Sichtprüfung der Oberfläche auf dev |
 
 **Gesamter Testbestand:** 1149 bestanden, 14 übersprungen (Ausgangslage 972 / 1 Testfehler / 14). Die 14 übersprungenen sind die fachlichen Ende-zu-Ende-Fälle `tests/e2e/test_fachlich_e2e.py` (pia-fachlich-0001 bis 0014): sie brauchen Audioaufnahmen, die bewusst nicht im Repository liegen. Sie prüfen den bisherigen Ablauf mit Spracherkennung und sind für diese Änderung **nicht** gelaufen.
 Kein Test wurde entfernt. Geänderte Erwartungen mit Quellenbezug:
