@@ -3,6 +3,7 @@ import io
 import json
 import logging
 from datetime import date, datetime
+from pathlib import Path
 
 from flask import (
     Blueprint, abort, current_app, g, jsonify, redirect, render_template, request,
@@ -53,9 +54,23 @@ def _pseudonymisierung_aus():
     stand dieselbe getattr-Abfrage an drei Stellen - und driftete auseinander,
     sobald eine davon einen anderen Client sah.
     """
-    return (bool(current_app.config.get("PSEUDO_UMGEHEN"))
-            and bool(current_app.config.get("ANTHROPIC_API_KEY"))
-            and not (current_app.config.get("PSEUDO_BASIS_URL") or "").strip())
+    from app.domains.llm import datenweg
+    return datenweg.bestimme(current_app.config)["llm"]["modus"] == datenweg.DIREKT
+
+
+def _datenwege():
+    """Die tatsächlichen Datenwege für Anzeige und /health (ohne Schlüssel)."""
+    from app.domains.llm import datenweg
+    return datenweg.oeffentlich(datenweg.bestimme(current_app.config))
+
+
+@bp.app_context_processor
+def _datenwege_fuer_vorlagen():
+    """Jede Seite kennt die tatsächlichen Datenwege (für das Warnbanner)."""
+    try:
+        return {"datenwege": _datenwege()}
+    except Exception:      # noqa: BLE001 – Anzeige darf keine Seite verhindern
+        return {"datenwege": None}
 
 
 @bp.get("/health")
@@ -80,6 +95,8 @@ def health():
             # Formulierung, keine Extraktion, keine Komplexitaetseinschaetzung.
             "textformulierung_aktiv": bool(llm),
         },
+        # Je Übermittlung: schutzschicht | direkt | aus – so, wie es ist.
+        "datenwege": _datenwege(),
     })
 
 
@@ -1698,6 +1715,23 @@ def _pruefe_vor_ausgabe(session, answers, buf):
 # ===================================================================== #
 # Verwaltung: Betreiber (Super-Admin) – Organisationseinheiten          #
 # ===================================================================== #
+
+@bp.get("/admin/korpus/bestand")
+@roles_required(ROLE_SUPER_ADMIN)
+def admin_korpus_bestand():
+    """Bestand des RAG-Korpus dieser Stufe – nur lesend, nur für den Betreiber.
+
+    Dieselbe Auswertung wie scripts/korpus_bestand.py; enthält Zählwerte und
+    Metadaten, keine Korpustexte."""
+    from app.domains.corpus.bestand import bestand, pfad_aus_url
+    pfad = pfad_aus_url(current_app.config.get("DATABASE_URL"))
+    if not pfad:
+        return jsonify({"gefunden": False, "grund": "Nur SQLite wird ausgewertet"}), 200
+    daten = bestand(pfad, modell=current_app.config.get("VOYAGE_MODEL"))
+    daten["datenbank"] = Path(pfad).name           # kein Serverpfad nach aussen
+    daten["datenwege"] = _datenwege()
+    return jsonify(daten)
+
 
 @bp.get("/admin/organisationen")
 @roles_required(ROLE_SUPER_ADMIN)

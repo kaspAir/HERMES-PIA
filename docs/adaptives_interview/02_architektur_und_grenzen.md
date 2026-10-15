@@ -72,11 +72,23 @@ Module unter `app/domains/interview/adaptiv/`: `vertraege`, `zustand`, `projekti
    Muss-Befunde im Export) dürfen sich nie verschlechtern. Der Korpus erkennt Dubletten über
    den Dokument-Hash; es gibt keinen Weg, eigene Ausgaben in den Korpus zurückzuspeisen.
 
+10. **Datenwege je Übermittlung** (`app/domains/llm/datenweg.py`, Entscheid 15.10.2026):
+    Sprachmodell und Embeddings laufen je über eine Schutzschicht, ausdrücklich direkt oder
+    gar nicht. Die Embedding-Anbindung hängt nicht mehr an der Pseudonymisierung; die
+    Integrationsstelle für ein späteres Standardwerkzeug ist je Dienst eine
+    anbieterkompatible Basis-URL. Keine automatische Umgehung, keine vorgetäuschte
+    Pseudonymisierung; Banner und `/health` zeigen den tatsächlichen Weg. Im Direktmodus
+    durchsucht das RAG nur ausdrücklich zur externen Verarbeitung freigegebene Korpusteile.
+    Spracherkennung läuft weiterhin nicht über die Schutzschicht (offen).
+
+11. **Sicherung vor jedem Deploy** (`hermes_ctl.sh`): konsistente SQLite-Sicherung vor
+    dem Neustart, Abbruch ohne Sicherung; Rückweg = Code-Revert plus `wiederherstellen`.
+
 ## Entscheide an bestehenden Normen (bitte fachlich bestätigen)
 
 | Was | Vorher | Jetzt | Grund |
 |---|---|---|---|
-| Invariante D-030 «beide Zielarten» | Muss | **Hinweis** | Vorlage verlangt keine Zielkategorien; Auftrag AT17: «unbelegte Pflicht-Zielkategorien werden nicht erzwungen» |
+| Invariante D-030 Mindestbesetzung beider Zielkategorien | Muss | **Hinweis** (bestätigt 15.10.2026) | Die Vorlage sieht Zielkategorien vor (Spalte «Kategorie», Fussnote «Systemziel, Vorgehensziel»), verlangt aber nicht ausdrücklich, dass beide Kategorien zwingend vertreten sein müssen (AT17). Die Kategorie je Ziel bleibt Pflicht (D-031, K-ZI-2); keine Ziele erfinden, um beide zu besetzen. |
 | D-053 Rollenkatalog | «AG»/«PL» unbekannt | als Rollen anerkannt | Die Vorlage definiert AG und PL selbst (Kap. 0.4) und führt sie als Basiszeilen |
 | D-007 gebündelte Personalkosten | Zeile «Interne Personalkosten (gem. Kap. 3.1)» gemeldet | anerkannt, wenn die genannten PT den internen PT aus 3.1 entsprechen | So schreibt HERMES PIA die Zeile selbst; die Gegenprobe (falsche PT) meldet weiter |
 | D-042 Trennung intern/extern | fehlte ohne externe Posten | Zeile «Summe externe Kosten (keine externen Posten erfasst): 0» | Die 0 ist aus Kap. 3.1/3.2 abgeleitet, nicht angenommen |
@@ -84,9 +96,10 @@ Module unter `app/domains/interview/adaptiv/`: `vertraege`, `zustand`, `projekti
 
 ## Grenzen (ehrlich)
 
-- **RAG ist auf keiner laufenden Stufe aktiv** (`PSEUDO_BASIS_URL` leer → kein Embedder).
-  Die Themennutzung ist vollständig integriert und mit einem deterministischen Embedding-
-  Double getestet – ein Nachweis mit dem echten Korpus steht aus.
+- **RAG mit echten Embeddings ist noch nirgends nachgewiesen.** Auf dev ist der
+  Direktzugang für Embeddings vorbereitet (`EMBEDDING_DIREKT=1`), wirksam erst mit dem
+  serverseitigen Schlüssel. Bis dahin laufen alle RAG-Nachweise mit einem deterministischen
+  Embedding-Double.
 - **Keine Live-Tests mit einem echten Sprachmodell.** Alle Gesprächsläufe nutzen Drehbücher.
   Ob ein echtes Modell aus freien Beiträgen dieselben Operationen ableitet, ist offen.
 - **Kein Render-Nachweis in Word.** Auf dem Entwicklungsrechner gibt es weder Word-

@@ -33,7 +33,18 @@ def _stufenblock(umgebung):
 
 
 def test_der_testlauf_ist_auf_dev_eingeschaltet():
-    assert 'HP_EXTRA_ENV="TESTLAUF=1"' in _stufenblock("dev")
+    import re
+    m = re.search(r'HP_EXTRA_ENV="([^"]*)"', _stufenblock("dev"))
+    assert m and "TESTLAUF=1" in m.group(1).split()
+
+
+def test_embeddings_direkt_nur_auf_dev():
+    """Entscheid 15.10.2026: Direktzugang für Embeddings nur auf dev – ohne
+    Schlüssel im Skript (der kommt aus der Stufen-Datei)."""
+    assert "EMBEDDING_DIREKT=1" in _stufenblock("dev")
+    assert "VOYAGE_API_KEY=" not in PFAD.read_text(encoding="utf-8")
+    for umgebung in ("prod", "test", "int"):
+        assert "EMBEDDING_DIREKT" not in _stufenblock(umgebung)
 
 
 @pytest.mark.parametrize("umgebung", ["prod", "test", "int"])

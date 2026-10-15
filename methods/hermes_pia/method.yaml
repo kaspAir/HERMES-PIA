@@ -174,10 +174,13 @@ sections:
       questions:
         - "Welche Ziele soll die Phase Initialisierung erreichen?"
         - "Woran wird der Erfolg gemessen (Messgroesse)?"
-      # Keine Pflicht je Zielkategorie: die Vorlage verlangt sie nicht. Die
-      # fruehere Regel «mind. ein System- und ein Vorgehensziel» war unbelegt.
+      # Die Vorlage sieht Zielkategorien vor (Systemziel, Vorgehensziel),
+      # verlangt aber nicht ausdruecklich, dass beide zwingend vertreten sein
+      # muessen. Deshalb: jedes Ziel sachgerecht kategorisieren, aber KEINE
+      # Ziele erfinden, nur um beide Kategorien zu besetzen.
       completeness:
         - "Jedes Ziel hat eine Messgroesse"
+        - "Jedes Ziel ist sachgerecht einer Kategorie der Vorlage zugeordnet; keine zusaetzlichen Ziele, nur um Kategorien zu besetzen"
 
   - id: rahmenbedingungen
     number: "2.2"

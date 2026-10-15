@@ -86,6 +86,18 @@ class Config:
     # im Pseudonymisierungsdienst; ohne dessen Basis-URL bleibt das RAG inaktiv.
     VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-3")
 
+    # ---- Datenwege (app/domains/llm/datenweg.py) ---------------------------- #
+    # Integrationsstelle für eine spätere Schutzschicht (Standardwerkzeug):
+    # je Dienst eine anbieterkompatible Basis-URL. Ohne Angabe abgeleitet aus
+    # PSEUDO_BASIS_URL (<basis>/anthropic, <basis>/voyage).
+    SCHUTZSCHICHT_LLM_URL = os.environ.get("SCHUTZSCHICHT_LLM_URL", "")
+    SCHUTZSCHICHT_EMBEDDING_URL = os.environ.get("SCHUTZSCHICHT_EMBEDDING_URL", "")
+    # Embeddings DIREKT an Voyage – nur ausdrücklich (=1) UND mit Schlüssel.
+    # Wirkungslos, sobald eine Schutzschicht konfiguriert ist. Schlüssel nur
+    # serverseitig (Stufen-Datei ausserhalb des Repositorys), nie im Code.
+    EMBEDDING_DIREKT = os.environ.get("EMBEDDING_DIREKT", "0") == "1"
+    VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
+
     # Speech-to-Text (Meeting mithören). OpenAI-kompatibler Endpoint -> frei wählbar
     # (OpenAI, Groq, Azure-OpenAI oder self-hosted/CH-gehostete Whisper-Instanz).
     # Ohne Key bleibt die Mithör-Funktion inaktiv.

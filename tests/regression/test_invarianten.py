@@ -77,7 +77,8 @@ def test_muss_befund_verhindert_die_ausgabe():
 
 
 def test_fehlende_zielart_ist_nur_ein_hinweis():
-    """Die Vorlage verlangt keine Ziele je Kategorie (Auftrag AT17) – D-030
+    """Die Vorlage sieht Zielkategorien vor, verlangt aber nicht, dass beide
+    vertreten sind (Auftrag AT17, Entscheid 15.10.2026) – D-030
     fragt nach, sperrt aber die Ausgabe nicht."""
     e = pruefe({"ziele": {"extracted": [
         {"kategorie": "Vorgehensziel", "beschreibung": "A",

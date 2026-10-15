@@ -147,9 +147,15 @@ class ThemenQuelle:
         letzte = {"revision": zustand.revision, "n_aussagen": len(benutzer),
                   "abschnitte": abschnitte}
         if not treffer:
+            grund = "Keine passenden Vergleichsprojekte gefunden."
+            if bericht.get("nur_extern_freigegeben") and not bericht.get("verglichen"):
+                # Direktmodus ohne freigegebene Korpusteile – das ist kein
+                # «nichts gefunden», sondern «nichts durchsuchbar».
+                grund = ("Direktmodus: durchsucht werden nur zur externen Verarbeitung "
+                         f"freigegebene Korpusteile – davon gibt es keine "
+                         f"({bericht.get('nicht_freigegeben', 0)} nicht freigegebene ausgelassen).")
             self._stand(session.id, verfuegbar=True, letzte_suche=letzte, treffer=0,
-                        projekte=0, bericht=bericht, zeit=jetzt,
-                        grund="Keine passenden Vergleichsprojekte gefunden.")
+                        projekte=0, bericht=bericht, zeit=jetzt, grund=grund)
             return "Keine passenden Vergleichsprojekte"
         if llm is None:
             self._stand(session.id, verfuegbar=True, letzte_suche=letzte, treffer=len(treffer),

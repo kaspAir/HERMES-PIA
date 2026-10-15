@@ -33,8 +33,8 @@ Testdateien unter `tests/regression/`; Kurzformen: `zustand` = `test_adaptiv_zus
 | 08 | RAG-Thema führt nachweisbar zu einer Lückenfrage | rag: `at08_rag_thema_fuehrt_zu_einer_kontextgerechten_frage` | T, B (Frage aus dem Korpus-Thema) | **L: echter Korpus auf keiner Stufe aktiv** |
 | 09 | Versionsgrenze HERMES 5.1 → 2022 | rag: `at09_alte_methodenpflicht_wird_nicht_uebernommen` | T | F: Übertragungsregeln R1–R5 |
 | 10 | Fundstellen rückverfolgbar, Chunks eines Projekts = ein Beleg | rag: `at10_…` (2 Tests); verbesserung: `at26_kein_ungesteuertes_korpuswachstum` (Hash-Dublette) | T | L |
-| 11 | RAG-Ausfall stoppt nichts, Zustand erkennbar | rag: `at11_…` (3 Tests) | T, B («nicht abgefragt») | – |
-| 12 | Mandantentrennung, keine fremden Namen/Beträge, keine inkompatiblen Embeddings | rag: `at12_…` (3 Tests) | T | – |
+| 11 | RAG-Ausfall stoppt nichts, Zustand erkennbar | rag: `at11_…` (3 Tests); `test_datenweg.py`: Ausfall der Schutzschicht führt nie zum Anbieter, Ausfall im Direktmodus ist ein Fehler | T, B («nicht abgefragt») | – |
+| 12 | Mandantentrennung, keine fremden Namen/Beträge, keine inkompatiblen Embeddings | rag: `at12_…` (3 Tests); `test_datenweg.py`: Direktmodus durchsucht nur freigegebene Korpusteile; `test_korpus_und_echtlauf.py`: Bestandsaufnahme (nur lesend, Kompatibilität) | T | L: Bestand auf den Stufen nicht geprüft (kein Serverzugang) |
 | 13 | Live-Aktualisierung ohne Reload, Neu/Geändert erkennbar | routen: `at13_…` (2 Tests) | T, B | Antwortzeiten nur je Beitrag protokolliert (`dauer_s`), nicht unter Last gemessen |
 | 14 | Live-Korrektur ohne Neustart | routen: `at14_…` (2 Tests) | T, B | – |
 | 15 | Keine Scheinsicherheit, Herkunft unterscheidbar | rag: `at15_herkunft_ist_unterscheidbar_und_ohne_prozente` | T, B | – |
@@ -46,18 +46,23 @@ Testdateien unter `tests/regression/`; Kurzformen: `zustand` = `test_adaptiv_zus
 | 21 | Fehler und Parallelität ohne Verlust/Rückschritt | zustand: `at21_…` (5 Tests); abschluss: `at21_…` (2 Tests) | T | Parallele Tabs nur über Revisionsprüfung getestet, nicht mit zwei Browsern |
 | 22 | DOCX-Qualität, Vorschau = Export, idempotent, lange Inhalte | abschluss: `at22_…` (5 Tests) | T, D | **Kein Render-Test in Word/LibreOffice** (auf diesem Rechner nicht vorhanden) |
 | 23 | Bestandsschutz, Migration und Rückfall | bestand: 9 Tests; routen: `at23_bestehende_session_behaelt_ihren_ablauf` | T | Migration nur auf Test-Datenbanken; **keine produktive Migration ausgeführt** |
-| 24 | Sicherheit, Berechtigungen, Mandanten | routen: `at24_…` (3 Tests); pseudo: 4 Tests | T, B (Entscheidungsseite) | L: Pseudonymisierungsdienst nicht angebunden |
+| 24 | Sicherheit, Berechtigungen, Mandanten, Datenwege | routen: `at24_…` (3 Tests); pseudo: 4 Tests; `test_datenweg.py` (13 Tests: Direkt nur ausdrücklich, Schutzschicht gewinnt, keine Schlüssel in `/health`, Banner); `test_stufenkonfiguration.py`: Embeddings direkt nur auf dev | T, B (Entscheidungsseite) | Schutzschicht bewusst noch nicht angebunden (späteres Standardwerkzeug) |
 | 25 | Ende-zu-Ende: vollständig vs. Entwurf | abschluss: `at25_…` (4 Tests) | T, B (F-02 bis «Fertiggestellt»), D | L, F: realer Dialog mit echtem Modell |
-| 26 | Kontrollierte Verbesserung | verbesserung: 7 Tests; `tools/evaluation_interview.py` | T | L: Bewertung mit echtem Modell nicht autorisiert |
+| 26 | Kontrollierte Verbesserung | verbesserung: 7 Tests; `tools/evaluation_interview.py` | T | L: Bewertung mit echtem Modell offen |
+| – | Echter Nachweis dev (Werkzeug) | `test_korpus_und_echtlauf.py`: Voraussetzungen, Budgetgrenze, Protokoll und DOCX (ohne externe Aufrufe) | T | **L: Lauf auf dev nicht ausgeführt** |
 
-**Gesamter Testbestand:** 1123 bestanden, 14 übersprungen (vorher 972 / 1 Testfehler / 14).
+**Gesamter Testbestand:** 1149 bestanden, 14 übersprungen (Ausgangslage 972 / 1 Testfehler / 14). Die 14 übersprungenen sind die fachlichen Ende-zu-Ende-Fälle `tests/e2e/test_fachlich_e2e.py` (pia-fachlich-0001 bis 0014): sie brauchen Audioaufnahmen, die bewusst nicht im Repository liegen. Sie prüfen den bisherigen Ablauf mit Spracherkennung und sind für diese Änderung **nicht** gelaufen.
 Kein Test wurde entfernt. Geänderte Erwartungen mit Quellenbezug:
 
 - `test_hermes_correctness.py`: Rollenbezeichnungen neutral («/in»), weil der Auftrag
   Geschlechtsableitung aus Namen untersagt (Abschnitt 10).
-- `test_invarianten.py`, `test_fachpruefung.py`: D-030 ist ein Hinweis (Vorlage verlangt
-  keine Zielkategorien, AT17); die Tests, die D-030 nur als Beispiel für «einen Muss-Befund»
+- `test_invarianten.py`, `test_fachpruefung.py`: D-030 ist ein Hinweis (die Vorlage sieht
+  Zielkategorien vor, verlangt aber nicht, dass beide vertreten sind; AT17); die Tests, die D-030 nur als Beispiel für «einen Muss-Befund»
   nutzten, verwenden jetzt D-071.
+- `test_pseudonymisierung.py`: «der Embedding-Weg kennt keinen eigenen Schlüssel» ist durch
+  den Entscheid vom 15.10.2026 abgelöst; geprüft wird jetzt die Doppelbedingung (Schalter +
+  Schlüssel). Das Banner nennt jeden direkten Weg statt «abgeschaltet».
+- `test_stufenkonfiguration.py`: der dev-Block trägt zusätzlich `EMBEDDING_DIREKT=1`.
 - `test_pseudonymisierung.py`: prüft ausdrücklich den bisherigen Ablauf
   (`INTERVIEW_ADAPTIV=False`), weil dessen Schreibwege adaptive Sessions jetzt abweisen; den
   adaptiven Weg prüft `test_adaptiv_pseudonymisierung.py`.

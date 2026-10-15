@@ -12,7 +12,7 @@ Schema, ohne Migration.
 """
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 
 from app.shared.database import Base
 
@@ -44,3 +44,8 @@ class CorpusChunk(Base):
     methodenversion = Column(String(40), nullable=True)
     methodenversion_herkunft = Column(String(120), nullable=True)
     korpus_version = Column(String(40), nullable=True)   # Ingest-/Indexstand
+    # Ausdrücklich zur externen Verarbeitung OHNE Schutzschicht freigegeben
+    # (synthetisch, geeignet öffentlich oder bereinigt UND freigegeben). Nur
+    # solche Passagen verwendet das RAG im Direktmodus – sie gehen dort
+    # ungeschützt an den Sprachmodell-Anbieter. Bestand: NULL = nicht freigegeben.
+    extern_freigegeben = Column(Boolean, nullable=True, default=False)

@@ -35,8 +35,10 @@ profil:
       inhalt: >
         An die Ausgabeprüfung angeglichen: K-SM-1 erforderlich (D-011), K-RI-2
         mit Verantwortung und Termin (D-071). Bewusst KEIN Kriterium «beide
-        Zielarten»: die Vorlage verlangt es nicht (Auftrag AT17); D-030 ist
-        seither ein Hinweis.
+        Zielarten»: die Vorlage sieht Zielkategorien vor, verlangt aber nicht
+        ausdrücklich, dass beide zwingend vertreten sein müssen (Auftrag AT17,
+        Entscheid 15.10.2026); D-030 ist ein Hinweis. Dass jedes Ziel eine
+        Kategorie trägt, prüft K-ZI-2.
     - version: "1.0.0"
       inhalt: "Erste Fassung."
 

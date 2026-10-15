@@ -111,7 +111,8 @@ def _migrate_db(engine):
                 conn.commit()
         # Nachweisfelder (15.10.2026) – additiv; Bestandschunks bleiben NULL.
         with engine.connect() as conn:
-            for spalte, typ in (("dokument_hash", "VARCHAR(64)"), ("chunk_nr", "INTEGER"),
+            for spalte, typ in (("extern_freigegeben", "BOOLEAN"),
+                                ("dokument_hash", "VARCHAR(64)"), ("chunk_nr", "INTEGER"),
                                 ("methodenversion", "VARCHAR(40)"),
                                 ("methodenversion_herkunft", "VARCHAR(120)"),
                                 ("korpus_version", "VARCHAR(40)")):
@@ -184,37 +185,40 @@ def create_app(config_class=None):
     # Services aus der Konfiguration aufbauen ("Konfiguration vor Programmierung").
     app.method_service = MethodService(app.config["METHODS_DIR"])
     app.catalog_service = CatalogService(app.config["CATALOGS_DIR"])
-    # Beide Wege – Chat UND Embeddings – laufen durch die Pseudonymisierungs-
-    # schicht; der Anbieterschlüssel liegt dort, nicht hier.
-    pseudo_url = (app.config.get("PSEUDO_BASIS_URL") or "").rstrip("/")
+    # Datenwege je Übermittlung (Sprachmodell, Embeddings) – ausdrücklich aus der
+    # Konfiguration, nie aus einem Ausfall abgeleitet (app/domains/llm/datenweg.py).
+    from app.domains.llm import datenweg
+    wege = datenweg.bestimme(app.config)
+    app.datenwege = wege
     pseudo_anwendung = app.config.get("PSEUDO_ANWENDUNG", "hermes-pia")
     pseudo_mandant = app.config.get("PSEUDO_MANDANT", "standard")
-    # Ohne konfigurierten Dienst gibt es KEINEN LLM-Client – nicht etwa einen
-    # Ausweichweg zum Anbieter. Die Anwendung arbeitet dann rein deterministisch,
-    # genau wie früher ohne Anbieterschlüssel.
-    # Direktmodus nur, wenn AUSDRUECKLICH verlangt UND ein Schluessel da ist.
-    direkt_key = (app.config.get("ANTHROPIC_API_KEY", "")
-                  if app.config.get("PSEUDO_UMGEHEN") else "")
-    if pseudo_url:
-        llm_client = LLMClient(
-            basis_url=f"{pseudo_url}/anthropic",
-            model=app.config.get("LLM_MODEL"),
-            anwendung=pseudo_anwendung,
-            mandant=pseudo_mandant,
-        )
-    elif direkt_key:
+    for hinweis in wege["hinweise"]:
+        app.logger.warning("DATENWEG: %s", hinweis)
+    # Ohne Weg gibt es KEINEN LLM-Client – nicht etwa einen Ausweichweg zum
+    # Anbieter. Die Anwendung arbeitet dann rein deterministisch.
+    if wege["llm"]["modus"] == datenweg.SCHUTZSCHICHT:
+        llm_client = LLMClient(basis_url=wege["llm"]["url"], model=app.config.get("LLM_MODEL"),
+                               anwendung=pseudo_anwendung, mandant=pseudo_mandant)
+    elif wege["llm"]["modus"] == datenweg.DIREKT:
         app.logger.warning(
             "PSEUDONYMISIERUNG ABGESCHALTET (PSEUDO_UMGEHEN=1): LLM-Aufrufe gehen "
-            "DIREKT an den Anbieter. Nur fuer die Entwicklung mit Testdaten.")
-        llm_client = LLMClient(model=app.config.get("LLM_MODEL"), anbieter_key=direkt_key)
+            "DIREKT an den Anbieter. Nur fuer die Entwicklung mit freigegebenen Daten.")
+        llm_client = LLMClient(model=app.config.get("LLM_MODEL"),
+                               anbieter_key=wege["llm"]["schluessel"])
     else:
         llm_client = None
+    emb = wege["embeddings"]
+    if emb["modus"] == datenweg.DIREKT:
+        app.logger.warning(
+            "EMBEDDINGS DIREKT (EMBEDDING_DIREKT=1): Korpus- und Suchtexte gehen ohne "
+            "Pseudonymisierung an Voyage. Das RAG nutzt nur extern freigegebene Passagen.")
     app.rag_service = RagService(VoyageEmbedder(
-        basis_url=f"{pseudo_url}/voyage" if pseudo_url else "",
+        basis_url=emb["url"] if emb["modus"] == datenweg.SCHUTZSCHICHT else "",
+        api_key=emb["schluessel"] if emb["modus"] == datenweg.DIREKT else None,
         model=app.config.get("VOYAGE_MODEL", "voyage-3"),
         anwendung=pseudo_anwendung,
         mandant=pseudo_mandant,
-    ) if pseudo_url else None)
+    ) if emb["modus"] != datenweg.AUS else None)
     app.projekt_service = ProjektService()
     app.interview_service = InterviewService(
         app.method_service, app.catalog_service, llm_client, rag=app.rag_service,

@@ -68,8 +68,15 @@ def _cosine(a, b):
 
 
 class RagService:
-    def __init__(self, embedder):
+    def __init__(self, embedder, nur_extern_freigegeben=None):
         self.embedder = embedder
+        # Im Direktmodus gehen gefundene Passagen ungeschützt an den Anbieter
+        # (Themenbewertung, Vorschlags-Grounding). Dann gilt nur, was
+        # ausdrücklich zur externen Verarbeitung freigegeben ist. Ohne Angabe
+        # folgt die Regel dem Modus des Embedders.
+        if nur_extern_freigegeben is None:
+            nur_extern_freigegeben = getattr(embedder, "modus", None) == "direkt"
+        self.nur_extern_freigegeben = bool(nur_extern_freigegeben)
 
     @property
     def available(self):
@@ -80,7 +87,7 @@ class RagService:
     def ingest_document(self, raw_text, projekt, org_id=None, ergebnistyp="PIA",
                         skip_if_exists=True, init_dauer_wochen=None,
                         methodenversion=None, methodenversion_herkunft=None,
-                        korpus_version=None):
+                        korpus_version=None, extern_freigegeben=False):
         """Bettet ein Ergebnis-Dokument als Chunks ein und legt sie ab.
 
         org_id=None -> geteilter Basiskorpus; sonst Korpus dieser Organisation.
@@ -117,6 +124,7 @@ class RagService:
                 methodenversion=methodenversion,
                 methodenversion_herkunft=methodenversion_herkunft,
                 korpus_version=korpus_version,
+                extern_freigegeben=bool(extern_freigegeben),
             ))
         db.commit()
         return len(chunks)
@@ -174,7 +182,8 @@ class RagService:
         gezählt, nicht verschwiegen.
         """
         bericht = {"modell": getattr(self.embedder, "model", None), "verglichen": 0,
-                   "inkompatibel": 0, "ohne_vektor": 0}
+                   "inkompatibel": 0, "ohne_vektor": 0, "nicht_freigegeben": 0,
+                   "nur_extern_freigegeben": self.nur_extern_freigegeben}
         if not self.available or not (query or "").strip():
             return [], bericht
         qvec = self.embedder.embed_one(query, input_type="query")
@@ -191,6 +200,9 @@ class RagService:
 
         scored = []
         for r in q.all():
+            if self.nur_extern_freigegeben and not r.extern_freigegeben:
+                bericht["nicht_freigegeben"] += 1
+                continue
             if not r.embedding_json:
                 bericht["ohne_vektor"] += 1
                 continue

@@ -352,11 +352,17 @@ def d022_abkuerzungen_erklaert(ctx):
 
 @regel("D-030", HINWEIS)
 def d030_beide_zielarten(ctx):
-    """HINWEIS, nicht Muss (15.10.2026). Die Vorlage PIA_HERMESPIA.docx
-    verlangt keine Ziele je Kategorie, und der Entwicklungsauftrag v1.0 sagt
-    in AT17 ausdrücklich: «unbelegte Pflicht-Zielkategorien werden nicht
-    erzwungen». Als Muss sperrte die Regel die Ausgabe eines vorlagentreuen
-    Auftrags. Die Frage «bewusst so?» bleibt – als Hinweis."""
+    """Mindestbesetzung beider Zielkategorien – HINWEIS, nicht Muss.
+
+    Entscheid vom 15.10.2026, bestätigt: Die Vorlage PIA_HERMESPIA.docx sieht
+    Zielkategorien vor (Kap. 2.1, Spalte «Kategorie», Fussnote «Systemziel,
+    Vorgehensziel»), verlangt aber nicht ausdrücklich, dass beide Kategorien
+    zwingend vertreten sein müssen (Auftrag AT17: unbelegte Pflicht-
+    Zielkategorien nicht erzwingen). Keine Ziele erfinden, um beide zu besetzen.
+
+    Diese Regel prüft NUR die Mindestbesetzung. Dass jedes Ziel überhaupt eine
+    Kategorie trägt, prüft D-031 (Muss); dass die Kategorie ein Wert der
+    Vorlage ist, prüft der Vertrag beim Erfassen (vorlagenzuordnung.yaml)."""
     rows = _zeilen(ctx, "ziele")
     if not rows:
         return
@@ -364,11 +370,13 @@ def d030_beide_zielarten(ctx):
     vorgehen = sum(1 for r in rows if K.enthaelt(r.get("kategorie"), K.VORGEHENSZIEL))
     if not system:
         yield Befund("D-030", HINWEIS, DATEN,
-                     "Es ist kein Systemziel erfasst. Die Vorlage verlangt das nicht – "
-                     "bewusst so?", "Kap. 2.1")
+                     "Es ist kein Systemziel erfasst. Die Vorlage sieht beide Kategorien "
+                     "vor, verlangt aber nicht, dass beide vertreten sind – bewusst so?",
+                     "Kap. 2.1")
     if not vorgehen:
         yield Befund("D-030", HINWEIS, DATEN,
-                     "Es ist kein Vorgehensziel erfasst. Die Vorlage verlangt das nicht – "
+                     "Es ist kein Vorgehensziel erfasst. Die Vorlage sieht beide "
+                     "Kategorien vor, verlangt aber nicht, dass beide vertreten sind – "
                      "bewusst so?", "Kap. 2.1")
 
 

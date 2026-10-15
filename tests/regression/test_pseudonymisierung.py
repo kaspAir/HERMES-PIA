@@ -64,8 +64,15 @@ def test_direktmodus_greift_nur_auf_ausdrueckliches_verlangen():
     from app.config import Config
 
     assert Config.PSEUDO_UMGEHEN is False        # Vorgabe: aus
-    # Der Embedding-Weg kennt weiterhin KEINEN eigenen Schluessel.
-    assert not hasattr(Config, "VOYAGE_API_KEY")
+    # Seit dem Entscheid vom 15.10.2026 (Direktzugang für Embeddings auf dev)
+    # hat auch der Embedding-Weg einen eigenen Schluessel – aber mit derselben
+    # Doppelbedingung: ein Schluessel allein schaltet NICHTS um.
+    assert Config.EMBEDDING_DIREKT is False
+    from app.domains.llm import datenweg
+    assert datenweg.bestimme({"VOYAGE_API_KEY": "k"})["embeddings"]["modus"] == "aus"
+    assert datenweg.bestimme({"EMBEDDING_DIREKT": "1"})["embeddings"]["modus"] == "aus"
+    assert datenweg.bestimme({"EMBEDDING_DIREKT": "1", "VOYAGE_API_KEY": "k"}
+                             )["embeddings"]["modus"] == "direkt"
 
     from app.domains.llm.client import LLMClient
     assert LLMClient(basis_url="http://x/anthropic").direkt is False
@@ -789,7 +796,10 @@ def test_interview_zeigt_dass_die_pseudonymisierung_aus_ist(app_direkt):
     """Sonst arbeitet jemand wochenlang ungeschuetzt, ohne es zu merken."""
     c, sid = _angemeldet(app_direkt)
     seite = c.get(f"/interview/{sid}").get_data(as_text=True)
-    assert "Pseudonymisierung ist abgeschaltet" in seite
+    # Seit die Embeddings einen eigenen Weg haben, nennt das Banner jeden
+    # direkten Weg (hier: das Sprachmodell) statt nur «abgeschaltet».
+    assert "Ohne Pseudonymisierung (Direktmodus)" in seite
+    assert "Texte für das Sprachmodell" in seite
     assert "ungeschützt" in seite
     # Die andere Warnung (gar kein LLM) darf NICHT zusaetzlich erscheinen.
     assert "nicht aufbereitet" not in seite
