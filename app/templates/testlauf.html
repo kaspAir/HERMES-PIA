@@ -7,8 +7,17 @@
   {# Der Hinweis steht OBEN und nicht als Fussnote. Wer diese Seite oeffnet,
      soll zuerst lesen, was diese Ergebnisse NICHT sind. #}
   <p class="hero-desc"><strong>Diese Ergebnisse sind kein geprüfter Projektauftrag.</strong>
+    {% if adaptiv %}
+    Der Testlauf führt das adaptive Interview: HERMES PIA stellt die Fragen, ein
+    <em>simulierter</em> Projektleiter antwortet – nur aus Ihrer Ausgangslage, sonst
+    mit «weiss ich noch nicht». Das Gespräch, die Themen aus Vergleichsprojekten
+    samt Quellen und die Anzeige «Für den PIA erkannt» sehen Sie unter
+    «Interview ansehen».
+    {% else %}
     Der Testlauf folgt immer dem eigenen Vorschlag: Frage und Antwort kommen aus
-    derselben Quelle. Er zeigt, ob die Kette hält — er sagt nichts darüber, ob
+    derselben Quelle.
+    {% endif %}
+    Er zeigt, ob die Kette hält — er sagt nichts darüber, ob
     der Inhalt stimmt. Die Freigabe der Checkliste übergeht das Tor, das sonst
     ein Mensch passieren müsste; jede so gesetzte Bewertung ist im Dokument als
     Testlauf vermerkt.</p>

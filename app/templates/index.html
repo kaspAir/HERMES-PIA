@@ -143,11 +143,13 @@
   <form method="post" action="{{ url_for('ui.testlauf_start') }}" class="start-form-card">
     <h2 class="start-form-title">Testlauf</h2>
     <p class="start-form-hint">Beschreiben Sie nur die Ausgangslage. HERMES PIA
-      spielt den Rest ohne Rückfragen durch und folgt dabei immer dem eigenen
-      Vorschlag: Auftrag, Präsentation, Projektplan, Rechtsgrundlagenanalyse,
-      Schutzbedarfsanalyse, Checkliste und Liste Projektentscheide.
+      führt damit das Interview: es stellt die Fragen, ein <em>simulierter</em>
+      Projektleiter antwortet nur aus Ihrer Ausgangslage (sonst «weiss ich noch
+      nicht»). Danach entstehen Auftrag, Präsentation, Projektplan,
+      Rechtsgrundlagenanalyse, Schutzbedarfsanalyse, Checkliste und Liste
+      Projektentscheide.
       <strong>Das prüft, ob die Kette hält — nicht, ob der Inhalt stimmt.</strong>
-      Wer fragt und wer antwortet, ist hier dasselbe.</p>
+      Das Gespräch können Sie danach unter «Interview ansehen» nachlesen.</p>
     {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
     <div class="form-row form-row-wide">
       <label for="ausgangslage">Ausgangslage</label>

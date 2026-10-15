@@ -322,8 +322,10 @@ def testlauf_seite(lauf_id):
     if lauf is None or lauf.org_id != current_user().org_id:
         abort(404)
     from app.domains.testlauf import service as testlauf_modul
+    sitzung = current_app.interview_service.get_session(lauf.session_id) if lauf.session_id else None
     return render_template("testlauf.html", lauf=lauf,
                            zustand=dienst.zustand(lauf),
+                           adaptiv=getattr(sitzung, "modus", None) == "adaptiv",
                            schritte=[n for _, n in testlauf_modul.SCHRITTE])
 
 

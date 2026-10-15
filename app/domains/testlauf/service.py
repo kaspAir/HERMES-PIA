@@ -57,7 +57,39 @@ SCHRITTE = [
 # rund 12 Abschnitte mit je bis zu 3 Nachfragen, 7 Kettenschritte mit
 # stueckweiser Verarbeitung, dazu die uebrigen Schritte - das Doppelte davon
 # ist grosszuegig und faengt trotzdem jede Schleife.
-HOECHSTZAHL_AUFRUFE = 200
+#
+# Mit adaptivem Interview: je Antwort bis zu fuenf Aufrufe (Antwort vorbereiten,
+# einreichen, Formulierung, Vergleichsprojekte, naechste Frage) bei hoechstens
+# HOECHSTZAHL_ANTWORTEN Antworten, dazu Abschluss und die Kette – 400 deckt
+# das mit Reserve.
+HOECHSTZAHL_AUFRUFE = 400
+
+# So viele Antworten gibt der simulierte Projektleiter hoechstens. Danach
+# endet das Interview – mit dem Stand, den es dann hat (Entwurf oder fertig).
+HOECHSTZAHL_ANTWORTEN = 25
+
+TESTLAUF_SCHRITTE = {"formulierung": "Ausgangslage formuliert",
+                     "rag": "Vergleichsprojekte geprüft",
+                     "frage": "Nächste Frage gewählt"}
+
+PL_UNBEKANNT = "Das weiss ich noch nicht – bitte als offenen Punkt führen."
+
+# Version testlauf-pl-1.0. Der simulierte Projektleiter kennt nur die
+# Ausgangslage – so zeigt der Testlauf, wie das Interview mit Unwissen umgeht,
+# statt Antworten zu erfinden.
+PL_PROMPT = (
+    "Du spielst in einem TESTLAUF die Projektleitung eines Vorhabens der öffentlichen "
+    "Verwaltung. Du kennst AUSSCHLIESSLICH die AUSGANGSLAGE im Nutzerteil.\n"
+    "- Beantworte die FRAGE knapp in der Ich-Form, nur mit Angaben, die in der "
+    "Ausgangslage stehen oder sich zwingend daraus ergeben.\n"
+    "- Erfinde keine Zahlen, Daten, Namen, Rollen oder Entscheide.\n"
+    "- Steht die Antwort nicht in der Ausgangslage, antworte genau: «" + PL_UNBEKANNT + "»\n"
+    "- Fragt HERMES PIA, ob etwas richtig verstanden wurde oder ob ein berechneter "
+    "Vorschlag übernommen werden soll: bestätige, wenn es der Ausgangslage nicht "
+    "widerspricht, sonst sage, was laut Ausgangslage gilt.\n"
+    "- Fragt HERMES PIA nach einem Widerspruch: nenne die Angabe, die laut Ausgangslage gilt.\n"
+    "Antworte nur mit dem Antworttext, ohne Vorrede."
+)
 
 
 class TestlaufFehler(Exception):
@@ -75,7 +107,8 @@ class TestlaufService:
 
     def __init__(self, interview_service, projekt_service, generation_service,
                  praesentation_service, rechtsgrundlagen_service,
-                 schutzbedarf_service, freigabe_service):
+                 schutzbedarf_service, freigabe_service, adaptiv=None):
+        self.adaptiv = adaptiv
         self.interview = interview_service
         self.projekte = projekt_service
         self.generation = generation_service
@@ -107,6 +140,9 @@ class TestlaufService:
         ergebnis = self.projekte.add_ergebnis(projekt.id, ERG_PIA,
                                               created_by=projektleiter or "")
         self.interview.link_ergebnis(session.id, ergebnis.id)
+        if self._adaptiv_moeglich():
+            # Dasselbe Interview wie beim normalen PIA-Start – nicht ein Sonderweg.
+            self.adaptiv.starte(session.id)
 
         db = SessionLocal()
         lauf = Testlauf(org_id=org_id, projekt_id=projekt.id, session_id=session.id,
@@ -210,6 +246,8 @@ class TestlaufService:
         Sonderweg, sondern der Weg, den die Oberflaeche auch anbietet.
         """
         session = self.interview.get_session(lauf.session_id)
+        if getattr(session, "modus", None) == "adaptiv":
+            return self._interview_adaptiv(lauf, session)
         zustand = self.interview.current_state(session)
         phase = zustand.get("phase")
 
@@ -229,6 +267,71 @@ class TestlaufService:
             return False, f"Nachfrage angenommen: {frage[:120]}"
 
         return True, "Interview vollständig."
+
+    # ---- Adaptives Interview mit simuliertem Projektleiter ---------------- #
+
+    def _adaptiv_moeglich(self):
+        return self.adaptiv is not None and getattr(self.adaptiv, "llm", None) is not None
+
+    def _interview_adaptiv(self, lauf, session):
+        """EINE Arbeitseinheit des adaptiven Interviews.
+
+        Reihenfolge je Aufruf (höchstens ein Modellaufruf):
+          1. Steht ein Verarbeitungsschritt aus (Formulierung, Vergleichs-
+             projekte, nächste Frage)? -> genau diesen ausführen.
+          2. Noch kein Beitrag? -> die Ausgangslage erzählen.
+          3. Liegt eine vorbereitete Antwort bereit? -> einreichen.
+          4. Abschlussfrage oder Höchstzahl erreicht? -> Vorschläge übernehmen,
+             Abschluss prüfen, fertigstellen nur, wenn nichts Wesentliches offen ist.
+          5. Sonst: die Antwort des simulierten Projektleiters vorbereiten.
+        """
+        d = self.adaptiv
+        sid = session.id
+        tarife = self.projekte.effective_tarife(org_id=session.org_id, projekt_id=lauf.projekt_id)
+        ansicht = d.ansicht(sid)
+        if ansicht["ausstehend"]:
+            erg = d.weiter(sid, tarife=tarife)
+            text = TESTLAUF_SCHRITTE.get(erg.get("schritt"), erg.get("schritt") or "")
+            return False, f"{text}." + (f" {erg['hinweis']}" if erg.get("hinweis") else "")
+        beitraege = [m for m in ansicht["nachrichten"] if m["rolle"] == "benutzer"]
+        if not beitraege:
+            d.beitrag(sid, lauf.ausgangslage, anfrage_id=f"testlauf-{lauf.id}-0", tarife=tarife)
+            return False, "Ausgangslage erzählt."
+        db = SessionLocal()
+        tl = db.get(Testlauf, lauf.id)
+        if tl.naechste_antwort:
+            antwort, tl.naechste_antwort = tl.naechste_antwort, None
+            db.commit()
+            d.beitrag(sid, antwort, anfrage_id=f"testlauf-{lauf.id}-{len(beitraege)}", tarife=tarife)
+            return False, f"Antwort: {antwort[:200]}"
+        frage = ansicht.get("frage") or {}
+        if frage.get("aktion") == "abschluss" or len(beitraege) > HOECHSTZAHL_ANTWORTEN:
+            offen = [e["schluessel"] for e in ansicht["erkannt"]["offen"]
+                     if e["herkunft"] == "system" and not e["bestaetigt"]]
+            if offen:
+                d.sammelbestaetigung(sid, offen, tarife=tarife)
+                return False, f"{len(offen)} berechnete(n) Vorschlag/Vorschläge übernommen."
+            bericht = d.abschluss(sid, "pruefen")["abschluss"]
+            if bericht["bereit"]:
+                d.abschluss(sid, "fertigstellen")
+                return True, (f"Interview abgeschlossen nach {len(beitraege)} Beiträgen – "
+                              f"Abschlussprüfung ohne Blocker, fertiggestellt.")
+            blocker = "; ".join(b["beschreibung"] for b in bericht["blocker"][:6])
+            return True, (f"Interview beendet nach {len(beitraege)} Beiträgen – Entwurf, "
+                          f"offen: {blocker}")
+        antwort = self._pl_antwort(lauf.ausgangslage, frage.get("frage") or "")
+        tl.naechste_antwort = antwort
+        db.commit()
+        return False, f"Frage: {(frage.get('frage') or '')[:200]}"
+
+    def _pl_antwort(self, ausgangslage, frage):
+        """Die Antwort des simulierten Projektleiters – NUR aus der Ausgangslage."""
+        roh = self.adaptiv.llm.complete(
+            PL_PROMPT, [{"role": "user", "content":
+                         f"AUSGANGSLAGE:\n{ausgangslage}\n\nFRAGE:\n{frage}"}],
+            max_tokens=600)
+        antwort = " ".join(str(roh or "").split())[:1500]
+        return antwort or PL_UNBEKANNT
 
     def _schritt_dokument(self, lauf):
         """Den PIA erzeugen und als freigabebereite Fassung ablegen.

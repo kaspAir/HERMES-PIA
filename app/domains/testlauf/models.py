@@ -32,6 +32,10 @@ class Testlauf(Base):
     # noetig: ein Schritt, der seinen Zustand nicht bewegt, liefe sonst ewig.
     aufrufe = Column(Integer, default=0)
     protokoll_json = Column(Text, default="[]")
+    # Adaptives Interview: die vorbereitete Antwort des simulierten
+    # Projektleiters. Ein Aufruf erzeugt sie, der naechste reicht sie ein – so
+    # bleibt es bei EINEM Modellaufruf je Schritt.
+    naechste_antwort = Column(Text, nullable=True)
 
     erstellt_am = Column(DateTime, default=datetime.utcnow)
     beendet_am = Column(DateTime, nullable=True)
