@@ -94,6 +94,24 @@ def kandidaten(aussagen, konflikte, themen, kriterien, nachrichten, bezug_unklar
                       "begruendung": "Interpretation noch nicht bestätigt",
                       "kontext": {"aussage": a}})
 
+    # Systemvorschläge: EINE Rückfrage je Abschnitt, nicht je Zeile – eine
+    # Monatsverteilung über fünf Rollen ist ein Vorschlag, keine fünf Fragen.
+    gesehen = set()
+    for a in aussagen:
+        if a["status"] != "aktiv" or a["art"] != "systemvorschlag" or a["bestaetigt"]:
+            continue
+        ab = next((z.get("abschnitt") for z in a["ziele"]), None)
+        if ab in gesehen:
+            continue
+        gesehen.add(ab)
+        weitere = [b for b in aussagen if b is not a and b["status"] == "aktiv"
+                   and b["art"] == "systemvorschlag" and not b["bestaetigt"]
+                   and any(z.get("abschnitt") == ab for z in b["ziele"])]
+        k.append({"aktion": "rueckspiegeln", "prio": PRIO["rueckspiegeln"],
+                  "ziel": a["schluessel"], "unterart": "vorschlag", "abschnitt": ab,
+                  "begruendung": "Systemvorschlag noch nicht übernommen",
+                  "kontext": {"aussage": a, "weitere": weitere}})
+
     verworfene_themen = {t["thema"].lower() for t in themen if t["status"] == "verworfen"}
     nutzbare = [t for t in themen
                 if t["status"] == "kandidat" and t["uebertragbarkeit"] in ("nutzbar", "eingeschraenkt")
@@ -191,6 +209,11 @@ def vorlagenfrage(aktion):
                 f"Welche Angabe gilt?")
     if art == "rueckspiegeln":
         a = ktx.get("aussage") or {}
+        if aktion.get("unterart") == "vorschlag":
+            alle = [a] + list(ktx.get("weitere") or [])
+            liste = " ".join(f"«{x.get('inhalt', '')}»" for x in alle)
+            return (f"Mein Vorschlag: {liste}. Grundlage: {a.get('beleg') or 'siehe Anzeige'} "
+                    f"Übernehmen, anpassen oder verwerfen?")
         if aktion.get("unterart") == "entscheid":
             return (f"Du hast gesagt: «{a.get('inhalt', '')}». Ist das bereits entschieden, "
                     f"oder eine Lösungsidee, die die Initialisierung noch prüfen soll?")

@@ -69,7 +69,8 @@
   "thema": url_for('ui.adaptiv_thema', session_id=session.id, thema_id=0),
   "quelle": url_for('ui.adaptiv_quelle', session_id=session.id, thema_id=0),
   "rueckmeldung": url_for('ui.adaptiv_rueckmeldung', session_id=session.id),
-  "vorschau": url_for('ui.adaptiv_vorschau', session_id=session.id)
+  "vorschau": url_for('ui.adaptiv_vorschau', session_id=session.id),
+  "abschluss": url_for('ui.adaptiv_abschluss', session_id=session.id)
 } | tojson }}</script>
 <script src="{{ url_for('static', filename='js/diktat.js') }}"></script>
 <script src="{{ url_for('static', filename='js/interview_adaptiv.js') }}"></script>

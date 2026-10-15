@@ -125,7 +125,10 @@ def _pruefe_ziele(ziele, katalog, hinweise):
             continue
         felder = {}
         for k, v in (z.get("felder") or {}).items() if isinstance(z.get("felder"), dict) else []:
-            if k not in info["spalten"]:
+            # Neun Monatsspalten der Vorlage sind keine Höchstdauer: weitere
+            # Monate gehen in eine Fortsetzungstabelle (vorlagenzuordnung.yaml).
+            weiterer_monat = (abschnitt == "projektorganisation" and re.fullmatch(r"monat_\d{1,2}", k))
+            if k not in info["spalten"] and not weiterer_monat:
                 if k not in BERECHNET:
                     hinweise.append(f"{abschnitt}: unbekannte Spalte «{k}»")
                 continue

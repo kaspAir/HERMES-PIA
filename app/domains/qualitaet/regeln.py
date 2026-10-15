@@ -94,6 +94,11 @@ def _arbeitstage(von, bis):
     return tage
 
 
+# Monatsspalten in Kap. 5. Eine Phase über neun Monate führt monat_10 ff.
+# (Fortsetzungstabelle im Dokument) – die Summe darf sie nicht übergehen.
+_MONAT = re.compile(r"monat_(\d+)")
+
+
 def _rollen_pt(ctx):
     """{rolle_lower: summe_pt} aus Kap. 3.1 – mehrfach besetzte Rollen summiert
     (Katalog Abschnitt 11)."""
@@ -118,7 +123,7 @@ def d001_pt_stimmen_mit_monatsverteilung(ctx):
     je_rolle = {}
     for r in verteilung:
         rolle = str(r.get("rolle_person", "")).split("/")[0].split("(")[0].strip().lower()
-        summe = sum(_zahl(r.get(f"monat_{i}")) or 0.0 for i in range(1, 10))
+        summe = sum(_zahl(v) or 0.0 for k, v in r.items() if _MONAT.fullmatch(str(k)))
         if rolle:
             je_rolle[rolle] = je_rolle.get(rolle, 0.0) + summe
     for rolle, pt in aufwand.items():
@@ -198,6 +203,14 @@ def d007_personalkosten_haben_eine_grundlage(ctx):
         # Traegt Kap. 3.1 eine Rolle, deren Name in dieser Zeile vorkommt?
         if any(rolle and rolle.split("/")[0].strip() in klein for rolle in rollen):
             continue
+        # Die gebuendelte Zeile verweist auf Kap. 3.1 und nennt ihre
+        # Personentage. Stimmen sie mit den internen PT aus 3.1 ueberein, ist
+        # sie hergeleitet - so schreibt sie HERMES PIA selbst.
+        if "kap. 3.1" in klein:
+            m = re.search(r"(\d+(?:[.,]\d+)?)\s*pt", klein)
+            intern = sum(pt for rolle, pt in _rollen_pt(ctx).items() if "extern" not in rolle)
+            if m and intern and abs(float(m.group(1).replace(",", ".")) - intern) <= K.TOLERANZ_PT:
+                continue
         yield Befund("D-007", MUSS, DATEN,
                      f"«{bezeichnung}» steht in Kap. 3.3, aber Kap. 3.1 weist "
                      f"für diese Rolle keinen Aufwand aus. Kosten ohne "
@@ -413,7 +426,7 @@ def d041_auftraggeber_hat_aufwand(ctx):
     aufwand = _rollen_pt(ctx)
     if not aufwand:
         return
-    if not any("auftraggeber" in r and pt > 0 for r, pt in aufwand.items()):
+    if not any(("auftraggeber" in r or r == "ag") and pt > 0 for r, pt in aufwand.items()):
         yield Befund("D-041", HINWEIS, DATEN,
                      "Für den Auftraggeber ist kein Aufwand ausgewiesen – Steuerung "
                      "und Entscheide brauchen Zeit.", "Kap. 3.1")
@@ -585,9 +598,10 @@ def d060_monatsspalten_decken_die_phase(ctx):
         return
     genutzt = 0
     for r in rows:
-        for i in range(1, 10):
-            if _zahl(r.get(f"monat_{i}")):
-                genutzt = max(genutzt, i)
+        for k, v in r.items():
+            m = _MONAT.fullmatch(str(k))
+            if m and _zahl(v):
+                genutzt = max(genutzt, int(m.group(1)))
     if genutzt and genutzt < monate:
         yield Befund("D-060", HINWEIS, DATEN,
                      f"Die Monatsverteilung deckt nur {genutzt} von {monate} Monaten ab.",

@@ -19,6 +19,7 @@
   var angezeigt = ansicht.revision || 0;
   var beschaeftigt = false;
   var offeneAnfrage = null;          // Anfrage-ID bleibt bis zum Erfolg gleich (Idempotenz)
+  var bericht = null;                // letzte Abschlussprüfung – gilt nur für ihre Revision
 
   var el = {
     verlauf: document.getElementById('ai-verlauf'),
@@ -218,6 +219,7 @@
       if (erk.blocker.length > 6) ul.appendChild(knoten('li', '', '… und ' + (erk.blocker.length - 6) + ' weitere'));
       box.appendChild(ul);
     }
+    zeichneAbschluss(box, a, bereit);
     el.panel.appendChild(box);
 
     // Offenes und Widersprüche zuerst – nicht zwischen Bestätigtem verstecken.
@@ -304,6 +306,65 @@
                  el.frage.querySelector('[data-fokus="' + fokus + '"]');
       if (ziel) ziel.focus();
     }
+  }
+
+  // Abschlussprüfung: zeigt Blocker, Annahmen, Korrekturen und offene
+  // Vertiefungen. Fertigstellen gilt nur für die geprüfte Revision.
+  function zeichneAbschluss(box, a, bereit) {
+    if (bericht && bericht.revision !== a.revision) bericht = null;
+    if (a.pia_status === 'fertiggestellt') {
+      box.appendChild(knoten('p', 'ai-abschluss-ok',
+        'Fertiggestellt von der Projektleitung (Stand ' + a.revision + '). ' +
+        'Prüfung und Freigabe erfolgen durch die zuständigen Personen.'));
+      return;
+    }
+    var pruefen = knoten('button', 'ai-linkknopf', 'Abschluss prüfen');
+    pruefen.type = 'button';
+    pruefen.dataset.fokus = 'abschluss-pruefen';
+    pruefen.addEventListener('click', function () { abschluss('pruefen'); });
+    box.appendChild(pruefen);
+    if (!bericht) return;
+    var b = bericht.daten;
+    var d = knoten('div', 'ai-abschluss');
+    if (b.annahmen.length) {
+      d.appendChild(knoten('p', '', 'Als Annahme im Dokument (vermerkt «unbestätigt»):'));
+      var ua = knoten('ul');
+      b.annahmen.forEach(function (x) { ua.appendChild(knoten('li', '', x)); });
+      d.appendChild(ua);
+    }
+    d.appendChild(knoten('p', '', b.korrekturen + ' Korrektur(en) im Verlauf.'));
+    if (b.unbestaetigt.length) {
+      d.appendChild(knoten('p', '', b.unbestaetigt.length +
+        ' Angabe(n) nicht übernommen – sie stehen nicht im Dokument.'));
+    }
+    if (b.vertiefungen_offen.length) {
+      d.appendChild(knoten('p', '', 'Offene Vertiefungen (blockieren nicht): ' +
+                                    b.vertiefungen_offen.join('; ')));
+    }
+    d.appendChild(knoten('p', 'ai-hinweistext', b.hinweis));
+    if (b.bereit && bereit) {
+      var f = knoten('button', 'btn-primary', 'Fertigstellen');
+      f.type = 'button';
+      f.dataset.fokus = 'abschluss-fertig';
+      f.addEventListener('click', function () { abschluss('fertigstellen'); });
+      d.appendChild(f);
+    }
+    box.appendChild(d);
+  }
+
+  function abschluss(aktion) {
+    if (beschaeftigt) return;
+    beschaeftigt = true;
+    setzeStatus(aktion === 'pruefen' ? 'Abschluss wird geprüft …' : 'Wird fertiggestellt …');
+    sende(wege.abschluss, { aktion: aktion, revision: angezeigt })
+      .then(function (a) {
+        beschaeftigt = false;
+        if (a.abschluss) bericht = { revision: a.revision, daten: a.abschluss };
+        uebernehme(a);
+        zeichneErkannt(a);
+        setzeStatus(aktion === 'fertigstellen' ? 'Fertiggestellt.' : '');
+      })
+      .catch(function (e) { beschaeftigt = false; setzeStatus('Nicht ausgeführt: ' + e.message, true); });
   }
 
   function ansagen(a) {

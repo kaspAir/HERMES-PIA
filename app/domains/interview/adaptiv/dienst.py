@@ -26,6 +26,7 @@ from app.domains.interview.adaptiv.vertraege import (
     pruefe_frage,
 )
 from app.domains.interview.adaptiv.vollstaendigkeit import bewerte, profil, reife
+from app.domains.interview.adaptiv.vorschlaege import FUER_KRITERIUM
 from app.domains.interview.adaptiv.zustand import ZustandService
 from app.domains.interview.models import InterviewSession
 from app.domains.method import vorlagenzuordnung as vz
@@ -314,6 +315,70 @@ class AdaptivesInterview:
         return self.ansicht(session_id, aenderung={"geaendert": erg.geaendert,
                                                    "revision": erg.revision})
 
+    # ---- Abschluss ------------------------------------------------------------ #
+
+    def _abschlussbericht(self, z, kriterien, blocker):
+        """Was die Projektleitung vor dem Fertigstellen sehen muss (Auftrag 7):
+        Blocker, die im Dokument stehenden Annahmen, Korrekturen im Verlauf,
+        offene Vertiefungen und nicht übernommene Vorschläge."""
+        im_dokument = [a for a in z.aussagen if a["status"] == "aktiv" and a["bestaetigt"]]
+        return {
+            "bereit": not blocker,
+            "blocker": [{"id": e["id"], "beschreibung": e["beschreibung"],
+                         "zustand": e["zustand"], "details": e["details"][:3]} for e in blocker],
+            "annahmen": [a["inhalt"] for a in im_dokument if a["art"] == "annahme"],
+            "korrekturen": sum(1 for a in z.aussagen if a["status"] == "ersetzt"),
+            "vertiefungen_offen": [e["beschreibung"] for e in kriterien
+                                   if e["gewicht"] == "vertiefung"
+                                   and e["zustand"] not in ("erfuellt", "nicht_anwendbar")],
+            "unbestaetigt": [a["inhalt"] for a in z.aussagen
+                             if a["status"] == "aktiv" and not a["bestaetigt"]],
+            "hinweis": ("Fertigstellen heisst: die Projektleitung hält den Auftrag für vollständig. "
+                        "Es ist keine Prüfung, keine Abnahme und keine Freigabe – diese erfolgen "
+                        "durch die zuständigen Personen und stehen im Dokument-Protokoll erst, "
+                        "wenn sie stattgefunden haben."),
+        }
+
+    def abschluss(self, session_id, aktion, revision=None, muss_befunde=None):
+        """Abschlussprüfung («pruefen») oder Fertigstellung («fertigstellen»).
+
+        Fertigstellen nur, wenn kein wesentliches oder erforderliches Kriterium
+        offen ist, und nur für den Stand, den die Projektleitung geprüft hat
+        (Revision). Jede spätere Änderung setzt den Status zurück (siehe
+        Projektions-Hook).
+        """
+        if aktion not in ("pruefen", "fertigstellen"):
+            raise BeitragFehler(f"Unbekannte Aktion «{aktion}»")
+        s = self._session(session_id)
+        z = self.zustand.lade(session_id, False)
+        answers = json.loads(s.answers_json or "{}")
+        kriterien = bewerte(z.aussagen, answers, z.konflikte)
+        status, blocker = reife(kriterien)
+        # Die verbindliche Ausgabeprüfung (Invarianten, Daten- und Dokumentebene)
+        # gilt auch hier: «bereit» darf nichts sein, was der Download anhält.
+        blocker = blocker + [{"id": b["regel"], "beschreibung": b["meldung"], "zustand": "muss",
+                              "details": [b.get("fundstelle", "")], "gewicht": "muss"}
+                             for b in (muss_befunde or [])]
+        bericht = self._abschlussbericht(z, kriterien, blocker)
+        if aktion == "pruefen":
+            return self.ansicht(session_id, abschluss=bericht)
+        if blocker:
+            raise BeitragFehler("Fertigstellen ist erst möglich, wenn keine wesentlichen oder "
+                                "erforderlichen Punkte mehr offen sind.")
+        from app.shared.database import SessionLocal
+        db = SessionLocal()
+        sess = db.get(InterviewSession, int(session_id))
+        if revision is not None and int(revision) != (sess.revision or 0):
+            raise BeitragFehler("Der Stand hat sich seit der Prüfung geändert – bitte erneut "
+                                "prüfen.")
+        sess.pia_status = "fertiggestellt"
+        db.commit()
+        self.zustand.nachricht(session_id, "system",
+                               "Die Projektleitung hat den Auftrag fertiggestellt. Eine weitere "
+                               "Änderung macht die Abschlussprüfung erneut nötig.",
+                               art="hinweis", aktion="abschluss")
+        return self.ansicht(session_id, abschluss=bericht)
+
     def thema_bewerten(self, session_id, thema_id, passt):
         erg = self.zustand.wende_an(session_id, [{"op": "rag_bewerten", "thema_id": int(thema_id),
                                                    "passt": bool(passt)}])
@@ -359,13 +424,13 @@ class AdaptivesInterview:
             elif schritt == "rag":
                 hinweis = self._themen_suchen(session_id)
             elif schritt == "frage":
-                self._naechste_frage(session_id)
+                self._naechste_frage(session_id, tarife=tarife)
         except Exception as e:      # noqa: BLE001 – ein Schritt darf das Gespräch nicht stoppen
             log.warning("Schritt «%s» fehlgeschlagen: %s", schritt, e)
             hinweis = f"Schritt «{schritt}» nicht ausgeführt: {e.__class__.__name__}"
             if schritt == "frage":
                 # Rückfall: Vorlagenfrage, damit das Gespräch weitergeht.
-                self._naechste_frage(session_id, ohne_modell=True)
+                self._naechste_frage(session_id, ohne_modell=True, tarife=tarife)
         s = self._session(session_id)
         rest = [x for x in (json.loads(s.ausstehend_json or "[]") or []) if x != schritt]
         self.zustand.setze_session(session_id, ausstehend_json=rest)
@@ -427,11 +492,51 @@ class AdaptivesInterview:
         kriterien = bewerte(z.aussagen, answers, z.konflikte)
         return self.themen.suche_und_bewerte(s, z, kriterien, self.llm)
 
-    def _naechste_frage(self, session_id, ohne_modell=False):
+    def _vorschlaege(self, s, z, answers, kriterien, tarife):
+        """Berechnete Vorschläge anlegen oder nachführen, wo ein Kriterium sie vorsieht.
+
+        Je Vorschlagsthema (z.B. «Terminplan», «Monatsverteilung PL»):
+          - verworfen  -> kommt nicht wieder,
+          - offen, aber die Grundlage hat sich geändert (Enddatum korrigiert,
+            Personentage geändert) -> als Korrektur ersetzt, nicht verdoppelt,
+          - übernommen und noch gleich -> nichts zu tun,
+          - übernommen, aber veraltet -> neuer, wieder UNBESTÄTIGTER Vorschlag
+            ersetzt den alten (AT20: das System bestätigt nichts selbst).
+        Rückgabe: True, wenn sich etwas geändert hat.
+        """
+        ops_alle = []
+        systemvorschlaege = [a for a in z.aussagen
+                             if a["herkunft"] == "system" and a["art"] == "systemvorschlag"]
+        for e in kriterien:
+            rechne = FUER_KRITERIUM.get(e["id"])
+            if rechne is None or e["zustand"] not in ("offen", "unbekannt", "konflikt"):
+                continue
+            for op in rechne(answers, self._meta(s)):
+                gleich = [a for a in systemvorschlaege if a["thema"] == op["thema"]]
+                if any(a["status"] == "verworfen" for a in gleich):
+                    continue
+                aktiv = next((a for a in gleich if a["status"] == "aktiv"), None)
+                if aktiv is None:
+                    ops_alle.append(op)
+                elif aktiv["inhalt"] != op["inhalt"] or aktiv["ziele"] != op["ziele"]:
+                    ops_alle.append(dict(op, op="korrektur", aussage=aktiv["schluessel"],
+                                         bestaetigt=False))
+        if not ops_alle:
+            return False
+        self.zustand.wende_an(s.id, ops_alle,
+                              nachher=self._projektions_hook(self._methode(s), tarife or {}))
+        return True
+
+    def _naechste_frage(self, session_id, ohne_modell=False, tarife=None):
         s = self._session(session_id)
         z = self.zustand.lade(session_id)
         answers = json.loads(s.answers_json or "{}")
         kriterien = bewerte(z.aussagen, answers, z.konflikte)
+        if self._vorschlaege(s, z, answers, kriterien, tarife):
+            s = self._session(session_id)
+            z = self.zustand.lade(session_id)
+            answers = json.loads(s.answers_json or "{}")
+            kriterien = bewerte(z.aussagen, answers, z.konflikte)
         bisher = json.loads(s.naechste_aktion_json or "{}") or {}
         aktion = naechste_aktion(z.aussagen, z.konflikte, z.themen, kriterien, z.nachrichten,
                                  bisher.get("bezug_unklar", ""))

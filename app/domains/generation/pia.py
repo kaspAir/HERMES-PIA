@@ -25,11 +25,9 @@ def erzeuge(session, interview_service, generation_service, projekt_service):
     name_display = (f"{name_part} / {session.projektnummer}"
                     if session.projektnummer else name_part)
 
+    # Aus Namen wird kein Geschlecht abgeleitet (Auftrag Abschnitt 10); die
+    # Vorlage führt neutrale Bezeichnungen.
     pl_g = ag_g = "u"
-    if getattr(svc, "llm", None):
-        from app.domains.interview.extraction import detect_gender
-        pl_g = detect_gender(svc.llm, session.created_by or "")
-        ag_g = detect_gender(svc.llm, session.auftraggeber or "")
 
     metadata = {
         "projektname":        name_display,
@@ -61,7 +59,17 @@ def erzeuge(session, interview_service, generation_service, projekt_service):
         if isinstance(extracted, dict):
             extracted["text"] = svc.composed_ausgangslage(answers)
 
-    nachweis = svc.build_nachweis(session, answers)
+    offene = None
+    if getattr(session, "modus", None) == "adaptiv":
+        # Adaptive Sitzung: alles aus dem gespeicherten Zustand, KEIN
+        # Modellaufruf beim Herunterladen. Derselbe Stand ergibt dasselbe
+        # Dokument (Auftrag: Export idempotent, Vorschau = Export).
+        nachweis = (answers.get("_nachweis") or {}).get("eintraege") or []
+        metadata["status"] = dokumentstatus(session)
+        metadata["nachweis_einleitung"] = NACHWEIS_ADAPTIV
+        offene = _offene_punkte(session, answers)
+    else:
+        nachweis = svc.build_nachweis(session, answers)
 
     # Hat das Projekt eine eigene Word-Vorlage? Dann im Format DIESER Vorlage
     # erzeugen (gleiche abgeleitete Struktur wie das Interview), sonst kanonisch.
@@ -74,8 +82,35 @@ def erzeuge(session, interview_service, generation_service, projekt_service):
         method = svc._effective_method(session)
         buf = gen.generate_into_template(
             methoden_vorlage.data, method, answers, metadata,
-            changelog=changelog, nachweis=nachweis)
+            changelog=changelog, nachweis=nachweis, offene_punkte=offene)
     else:
         buf = gen.generate(session.method_id, answers, metadata,
-                           changelog=changelog, nachweis=nachweis)
+                           changelog=changelog, nachweis=nachweis, offene_punkte=offene)
     return buf, answers
+
+
+NACHWEIS_ADAPTIV = (
+    "Diese Übersicht weist je Kapitel aus, woher die Angaben stammen: aus dem Interview mit der "
+    "Projektleitung, aus Vorschlägen von HERMES PIA, die die Projektleitung übernommen hat, oder "
+    "aus der Vorbelegung der Vorlage. Sie ist aus dem gespeicherten Interviewstand berechnet. Der "
+    "Anhang dient der Nachvollziehbarkeit und kann für die finale Fassung entfernt werden."
+)
+
+
+def dokumentstatus(session):
+    """Deckblatt-Status: nur, was tatsächlich geschehen ist.
+
+    «fertiggestellt» erst nach bestandener Abschlussprüfung und ausdrücklicher
+    Fertigstellung durch die Projektleitung. «geprüft» und «abgenommen» setzt
+    HERMES PIA NIE – das sind Handlungen von Menschen, kein Programmzustand.
+    """
+    return "fertiggestellt" if getattr(session, "pia_status", None) == "fertiggestellt" else "in Arbeit"
+
+
+def _offene_punkte(session, answers):
+    from app.domains.interview.adaptiv.vollstaendigkeit import bewerte, offene_punkte
+    from app.domains.interview.adaptiv.zustand import ZustandService
+    z = ZustandService().lade(session.id, mit_nachrichten=False)
+    if z is None:
+        return None
+    return offene_punkte(z.aussagen, bewerte(z.aussagen, answers, z.konflikte), z.konflikte)

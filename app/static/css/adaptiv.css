@@ -105,3 +105,9 @@
    Textfelds gesetzt. Hier steht er in der Zeile neben «Senden». */
 .ai-eingabe .btn-voice { position: static; padding: 9px 14px; font-size: 14px; }
 .ai-eingabe .voice-status { margin-top: 0; }
+
+/* Abschlussprüfung in der Reife-Box */
+.ai-abschluss { margin-top: .5rem; border-top: 1px solid var(--color-border); padding-top: .5rem; }
+.ai-abschluss p { margin: .3rem 0; }
+.ai-abschluss ul { margin: .2rem 0 .4rem 1.1rem; }
+.ai-abschluss-ok { margin: .4rem 0 0; font-weight: 600; }

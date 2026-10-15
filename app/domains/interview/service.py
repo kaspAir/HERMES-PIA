@@ -737,6 +737,13 @@ class InterviewService:
 
         s_int = emit(intern_items, "Summe interne Kosten")
         s_ext = emit(extern_items, "Summe externe Kosten")
+        if not extern_items:
+            # Die Trennung intern/extern gehört ins Kapitel (Invariante D-042),
+            # auch wenn Kap. 3.1 und 3.2 keine externen Posten führen. Die 0
+            # ist abgeleitet, nicht angenommen – das Label sagt, woraus.
+            out.insert(len(out), {"phase": "Summe externe Kosten (keine externen Posten erfasst)",
+                                  "betrag": "0"})
+            s_ext = 0
         total = (None if None in (s_int, s_ext) else s_int + s_ext)
         out.append({"phase": "Total Initialisierung",
                     "betrag": str(total) if total is not None else ""})

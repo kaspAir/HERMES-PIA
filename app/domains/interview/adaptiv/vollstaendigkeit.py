@@ -126,6 +126,10 @@ def _pruefe(k, aussagen, answers, kontext):
                 bez = z.get("beschreibung") or z.get("ergebnis") or z.get("rolle") or z.get("nr") or "?"
                 details.append(f"{str(bez)[:60]}: {', '.join(fehlend)} fehlt")
         return ("offen" if details else "erfuellt"), details
+    if art == "werte_vorhanden":
+        vorhanden = {_norm(z.get(p["spalte"])) for z in _eigene_zeilen(answers, ab)}
+        fehlend = [w for w in p["werte"] if _norm(w) not in vorhanden]
+        return ("offen" if fehlend else "erfuellt"), [f"{w} fehlt" for w in fehlend]
     if art == "kosten_berechenbar":
         personal = [z for z in _zeilen(answers, "personalaufwand") if _zahl(z.get("aufwand"))]
         if not personal:
@@ -208,3 +212,31 @@ def reife(ergebnisse):
     blocker = [e for e in ergebnisse if e["gewicht"] in ("wesentlich", "erforderlich")
                and e["zustand"] in BLOCKIEREND]
     return ("bereit_zur_pruefung" if not blocker else "entwurf_offen"), blocker
+
+
+ZUSTAND_TEXT = {"offen": "offen", "unbekannt": "unbekannt", "zurueckgestellt": "zurückgestellt",
+                "konflikt": "Widerspruch"}
+
+
+def offene_punkte(aussagen, kriterien, konflikte=None):
+    """Was im Dokument (noch) fehlt oder ungeklärt ist – für den Anhang eines Entwurfs.
+
+    Deterministisch aus Zustand und Abschlussprofil: offene Kriterien,
+    ungelöste Widersprüche, nicht übernommene Vorschläge und Interpretationen.
+    Rückgabe: [{"punkt", "art", "zustand"}].
+    """
+    punkte = []
+    for e in kriterien:
+        if e["zustand"] in ERLEDIGT:
+            continue
+        text = e["beschreibung"] + (f" ({'; '.join(e['details'][:2])})" if e["details"] else "")
+        punkte.append({"punkt": text, "art": e["gewicht"],
+                       "zustand": ZUSTAND_TEXT.get(e["zustand"], e["zustand"])})
+    for kf in konflikte or []:
+        if kf["status"] == "offen":
+            punkte.append({"punkt": kf["beschreibung"], "art": "Widerspruch", "zustand": "offen"})
+    for a in aussagen:
+        if a["status"] == "aktiv" and not a["bestaetigt"]:
+            art = "Vorschlag" if a["herkunft"] in ("system", "rag") else "Interpretation"
+            punkte.append({"punkt": a["inhalt"], "art": art, "zustand": "nicht bestätigt"})
+    return punkte

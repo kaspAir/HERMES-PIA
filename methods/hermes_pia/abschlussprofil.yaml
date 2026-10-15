@@ -90,6 +90,19 @@ kriterien:
     aktion: konkretisieren
     vorlagenfrage: "Woran wird das Erreichen dieses Ziels gemessen, und wie wichtig ist es?"
 
+  - id: K-ZI-3
+    abschnitt: ziele
+    gewicht: erforderlich
+    # Herkunft ist die Invariante D-030 (Muss), NICHT die Vorlage: die Vorlage
+    # verlangt keine Ziele je Kategorie (vorlagenzuordnung.yaml, Kap. 2.1).
+    # Der Widerspruch ist offen und fachlich zu entscheiden; bis dahin folgt
+    # das Profil der Ausgabeprüfung, damit «bereit» auch herunterladbar ist.
+    herkunft: invariante
+    beschreibung: "Es gibt mindestens ein Systemziel und ein Vorgehensziel"
+    pruefung: { art: werte_vorhanden, spalte: kategorie, werte: [Systemziel, Vorgehensziel] }
+    aktion: erkunden
+    vorlagenfrage: "Was soll das künftige System oder die künftige Lösung leisten – und was muss die Initialisierung selbst erarbeiten?"
+
   - id: K-RB-1
     abschnitt: rahmenbedingungen
     gewicht: erforderlich
@@ -119,7 +132,10 @@ kriterien:
 
   - id: K-SM-1
     abschnitt: sachmittel
-    gewicht: vertiefung
+    # erforderlich, nicht Vertiefung: eine leere Sachmitteltabelle blockiert
+    # die Dokumentprüfung (D-011, Muss). Profil und Ausgabeprüfung dürfen
+    # sich nicht widersprechen – sonst wäre «bereit» nicht herunterladbar.
+    gewicht: erforderlich
     herkunft: vorlage
     beschreibung: "Sachmittel genannt oder ausdrücklich keine"
     pruefung: { art: aussagen_oder_na, mindestens: 1 }
@@ -175,7 +191,9 @@ kriterien:
     abschnitt: risiken
     gewicht: erforderlich
     herkunft: vorlage
-    beschreibung: "Jedes Risiko ist bewertet (EW, AG) und hat eine Massnahme"
-    pruefung: { art: zeilenfelder, spalten: [ew, ag, massnahmen] }
+    beschreibung: "Jedes Risiko ist bewertet (EW, AG) und hat Massnahme, Verantwortung und Termin"
+    # Wie die Invariante D-071 (Muss) – Profil und Ausgabeprüfung dürfen
+    # nicht auseinanderfallen.
+    pruefung: { art: zeilenfelder, spalten: [ew, ag, massnahmen, verantwortung, termin] }
     aktion: konkretisieren
-    vorlagenfrage: "Wie wahrscheinlich ist dieses Risiko, wie stark wäre die Auswirkung, und was tun wir dagegen?"
+    vorlagenfrage: "Wie wahrscheinlich ist dieses Risiko, wie stark wäre die Auswirkung, was tun wir dagegen – und wer kümmert sich bis wann?"

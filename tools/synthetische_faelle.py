@@ -134,7 +134,97 @@ ABLOESUNG = {
     ],
 }
 
-FAELLE = [ABLOESUNG]
+# Ein Fall, der bis zur Abschlussprüfung durchläuft: zwölf Monate
+# Initialisierung (Kap. 5 braucht eine Fortsetzungstabelle), Kostensatz
+# hinterlegt, Vorschläge für Terminplan und Monatsverteilung übernommen.
+ZUSAMMENLEGUNG = {
+    "id": "F-02",
+    "titel": "Zusammenlegung der Registerdienste (Beispielstadt)",
+    "kopf": {"projektname": "Registerdienste vereint", "auftraggeber": "Robin Beispiel",
+             "projektleiter": "Kim Muster"},
+    "tarife": {"intern": 1000, "extern": 1500},
+    "schritte": [
+        {
+            "text": ("Die Beispielstadt führt drei Registerdienste mit eigenen Schaltern und eigener "
+                     "Software. Bürgerinnen und Bürger müssen für eine Adressänderung bis zu drei "
+                     "Stellen aufsuchen. Der Stadtrat will die Dienste zusammenlegen. Die "
+                     "Initialisierung läuft vom 1. Februar 2027 bis 31. Januar 2028. Ich rechne für "
+                     "mich mit 60 Personentagen, der Auftraggeber mit 12. Risiko: die Personalvertretung "
+                     "ist noch nicht einbezogen."),
+            "aussagen": {"operationen": [
+                {"op": "neu", "inhalt": "Die Beispielstadt führt drei Registerdienste mit eigenen Schaltern und eigener Software",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Ist-Zustand",
+                 "ziele": [{"abschnitt": "ausgangslage", "felder": {}}]},
+                {"op": "neu", "inhalt": "Für eine Adressänderung sind bis zu drei Stellen aufzusuchen",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Problem",
+                 "ziele": [{"abschnitt": "ausgangslage", "felder": {}}]},
+                {"op": "neu", "inhalt": "Der Stadtrat will die Registerdienste zusammenlegen",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Auftrag",
+                 "ziele": [{"abschnitt": "ausgangslage", "felder": {}}]},
+                {"op": "neu", "inhalt": "Die Initialisierung läuft vom 1. Februar 2027 bis 31. Januar 2028",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Zeitrahmen",
+                 "ziele": [{"abschnitt": "eckdaten",
+                            "felder": {"start_initialisierung": "2027-02-01",
+                                       "ende_initialisierung": "2028-01-31"}}]},
+                {"op": "neu", "inhalt": "Die Projektleitung rechnet mit 60 Personentagen",
+                 "art": "schaetzung", "quelle": "wortlaut", "thema": "Aufwand PL",
+                 "ziele": [{"abschnitt": "personalaufwand", "felder": {"rolle": "PL", "aufwand": "60"}}]},
+                {"op": "neu", "inhalt": "Der Auftraggeber rechnet mit 12 Personentagen",
+                 "art": "schaetzung", "quelle": "wortlaut", "thema": "Aufwand AG",
+                 "ziele": [{"abschnitt": "personalaufwand", "felder": {"rolle": "AG", "aufwand": "12"}}]},
+                {"op": "neu", "inhalt": "Die Personalvertretung ist noch nicht einbezogen",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Personalvertretung",
+                 "ziele": [{"abschnitt": "risiken",
+                            "felder": {"beschreibung": "Die Personalvertretung ist noch nicht einbezogen",
+                                       "ew": "Mittel = 2", "ag": "Hoch = 3",
+                                       "massnahmen": "Personalvertretung im ersten Monat informieren und in die Studie einbinden",
+                                       "verantwortung": "PL", "termin": "28.02.2027"}}]},
+            ]},
+            "frage": "Was soll am Ende der Initialisierung erreicht sein?",
+        },
+        {
+            "text": ("Ziel ist eine Studie mit zwei Organisationsvarianten, Muss. Und ein Konzept für "
+                     "einen gemeinsamen Schalter mit einer Anlaufstelle, Hoch. Vorgabe: die Fusion "
+                     "darf keine Entlassungen auslösen. Die Mitarbeitenden informiere ich monatlich "
+                     "an der Teamsitzung über den Stand. Besondere Sachmittel brauchen wir keine, "
+                     "die Arbeitsplätze sind vorhanden."),
+            "aussagen": {"operationen": [
+                {"op": "neu", "inhalt": "Studie mit zwei Organisationsvarianten",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Studie",
+                 "ziele": [{"abschnitt": "ziele",
+                            "felder": {"kategorie": "Vorgehensziel",
+                                       "beschreibung": "Studie mit zwei Organisationsvarianten",
+                                       "messgroesse": "Studie vom Auftraggeber abgenommen",
+                                       "prioritaet": "Muss"}}]},
+                {"op": "neu", "inhalt": "Konzept für einen gemeinsamen Schalter mit einer Anlaufstelle",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Gemeinsamer Schalter",
+                 "ziele": [{"abschnitt": "ziele",
+                            "felder": {"kategorie": "Systemziel",
+                                       "beschreibung": "Gemeinsamer Schalter mit einer Anlaufstelle für alle Registerdienste",
+                                       "messgroesse": "Konzept beschreibt Abläufe und Rollen am Schalter",
+                                       "prioritaet": "Hoch"}}]},
+                {"op": "neu", "inhalt": "Die Zusammenlegung darf keine Entlassungen auslösen",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Personalvorgabe",
+                 "ziele": [{"abschnitt": "rahmenbedingungen",
+                            "felder": {"vorgaben": "Personalpolitische Vorgabe",
+                                       "beschreibung": "Die Zusammenlegung darf keine Entlassungen auslösen"}}]},
+                {"op": "neu", "inhalt": "Die Mitarbeitenden werden monatlich an der Teamsitzung informiert",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Information Mitarbeitende",
+                 "ziele": [{"abschnitt": "kommunikation",
+                            "felder": {"empfaenger": "Mitarbeitende der Registerdienste",
+                                       "verantwortlich": "PL", "inhalt": "Stand der Initialisierung",
+                                       "medium": "Teamsitzung", "termin": "monatlich"}}]},
+                {"op": "neu", "inhalt": "Keine besonderen Sachmittel nötig, die Arbeitsplätze sind vorhanden",
+                 "art": "benutzerangabe", "quelle": "wortlaut", "thema": "Sachmittel",
+                 "ziele": [{"abschnitt": "sachmittel", "felder": {}, "nicht_anwendbar": True}]},
+            ]},
+            "frage": "Passen die vorgeschlagenen Termine und die Monatsverteilung?",
+            "danach": ["vorschlaege_uebernehmen"],
+        },
+    ],
+}
+
+FAELLE = [ABLOESUNG, ZUSAMMENLEGUNG]
 
 
 # ---- Drehbuch-Modell ---------------------------------------------------------- #

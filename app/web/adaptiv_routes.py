@@ -95,6 +95,27 @@ def adaptiv_sammelbestaetigung(session_id):
                                                  tarife=_tarife_for_session(session)))
 
 
+@bp.post("/interview/<int:session_id>/abschluss")
+@permission_required("write")
+def adaptiv_abschluss(session_id):
+    """Abschlussprüfung anzeigen oder fertigstellen. Kein Modellaufruf."""
+    session = _load_session(session_id)
+    daten = _json()
+    from app.domains.generation import pia as pia_dokument
+    from app.web.ui_routes import _pruefe_vor_ausgabe
+    # Dieselbe Prüfung wie beim Download – über dasselbe erzeugte Dokument.
+    buf, answers = pia_dokument.erzeuge(session, current_app.interview_service,
+                                        current_app.generation_service, current_app.projekt_service)
+    muss = [{"regel": b.regel, "meldung": b.meldung, "fundstelle": b.fundstelle}
+            for b in _pruefe_vor_ausgabe(session, answers, buf).muss]
+    try:
+        ansicht = _dienst().abschluss(session_id, daten.get("aktion", "pruefen"),
+                                      revision=daten.get("revision"), muss_befunde=muss)
+    except BeitragFehler as e:
+        return jsonify({"fehler": str(e)}), 409
+    return _antwort(ansicht)
+
+
 @bp.post("/interview/<int:session_id>/thema/<int:thema_id>")
 @permission_required("write")
 def adaptiv_thema(session_id, thema_id):

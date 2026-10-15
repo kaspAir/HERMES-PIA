@@ -116,6 +116,31 @@ VERSCHMELZUNGSSPALTE = {
 }
 
 
+# «Begründet nicht anwendbar» steht im Dokument als eigene Zeile mit der
+# Begründung der Projektleitung – sonst bliebe die Platzhalterzeile der Vorlage
+# stehen, und das Dokument sähe unbearbeitet aus (Dokumentprüfung D-011).
+NA_SPALTE = {"sachmittel": ("bezeichnung", "beschreibung"),
+             "kommunikation": ("empfaenger", "inhalt"),
+             "rahmenbedingungen": ("vorgaben", "beschreibung"),
+             "referenzierte_dokumente": ("name", None),
+             "mitgeltende_unterlagen": ("name", None)}
+MIT_VORBELEGUNG = {"rahmenbedingungen"}     # die HERMES-Vorgabe bleibt stehen
+
+
+def _na_zeile(abschnitt, aussagen):
+    na = [a for a in aussagen if ins_dokument(a, abschnitt) and any(
+        z.get("abschnitt") == abschnitt and z.get("nicht_anwendbar") for z in a["ziele"])]
+    if not na:
+        return None
+    a = na[-1]
+    titel, text = NA_SPALTE[abschnitt]
+    zeile = {titel: "Keine" if text else f"Keine – {a['inhalt']}",
+             "_aussagen": [a["schluessel"]], "_herkunft": a["herkunft"], "_nicht_anwendbar": True}
+    if text:
+        zeile[text] = a["inhalt"]
+    return zeile
+
+
 def _verschmelze(basis, eigene, schluesselspalte, passt):
     """Eigene Zeilen in Basiszeilen der Vorlage einsortieren; Rest anhängen.
 
@@ -137,6 +162,25 @@ def _verschmelze(basis, eigene, schluesselspalte, passt):
         ziel["_aussagen"] = ziel.get("_aussagen", []) + e.get("_aussagen", [])
         ziel["_herkunft"] = e.get("_herkunft", ziel.get("_herkunft"))
     return basis
+
+
+def _zahl(wert):
+    m = re.search(r"\d+(?:[.,]\d+)?", str(wert or ""))
+    return float(m.group().replace(",", ".")) if m else None
+
+
+def _summenzeile(zeilen):
+    """«Total» je Monat (Vorlage Kap. 5) – über ALLE Monate, auch über neun."""
+    monate = sorted({k for z in zeilen for k in z if re.fullmatch(r"monat_\d+", k)},
+                    key=lambda k: int(k.split("_")[1]))
+    total = {"rolle_person": vz.kapitel("projektorganisation")["summenzeile"]["label"],
+             "_herkunft": "berechnet"}
+    for m in monate:
+        werte = [_zahl(z.get(m)) for z in zeilen]
+        werte = [w for w in werte if w is not None]
+        if werte:
+            total[m] = f"{sum(werte):g}"
+    return total
 
 
 def _nummeriere(zeilen, format_):
@@ -254,7 +298,17 @@ def projiziere(aussagen, methode, meta=None, tarife=None, alte_answers=None, rev
                 _nummeriere(zeilen, "{nr:02d}")
             elif sid == "referenzierte_dokumente":
                 _nummeriere(zeilen, "[{nr}]")
+            elif sid == "projektorganisation" and zeilen:
+                zeilen.append(_summenzeile(zeilen))
 
+        if not eigene and sid in NA_SPALTE:
+            na = _na_zeile(sid, aussagen)
+            if na is not None:
+                zeilen = [z for z in zeilen if z.get("_herkunft") != "vorlage" or sid in MIT_VORBELEGUNG] + [na]
+                if sid == "rahmenbedingungen":
+                    _nummeriere(zeilen, "{nr:02d}")
+                elif sid == "referenzierte_dokumente":
+                    _nummeriere(zeilen, "[{nr}]")
         if not zeilen and sid not in ("kosten",):
             continue
         answers[sid] = {
@@ -285,8 +339,57 @@ def projiziere(aussagen, methode, meta=None, tarife=None, alte_answers=None, rev
     if "ende_initialisierung" in eck and not eck["ende_initialisierung"]["unvollstaendig"]:
         answers["_enddatum"] = _datum_ch(eck["ende_initialisierung"]["wert"])
 
+    answers["_nachweis"] = {"eintraege": nachweis(answers, aussagen, methode)}
     answers["_projektion"] = {"revision": revision, "aussagen": len(aussagen)}
     return answers
+
+
+HERKUNFT_TEXT = {
+    "benutzer": "Projektleitung (Interview)",
+    "system": "HERMES PIA (Vorschlag, von der Projektleitung übernommen)",
+    "rag": "Erfahrungswissen früherer Projekte (von der Projektleitung übernommen)",
+    "altbestand": "Altbestand vor der Umstellung (Herkunft nicht erfasst)",
+}
+
+
+def nachweis(answers, aussagen, methode):
+    """Herkunftsnachweis je Kapitel – deterministisch aus dem Zustand.
+
+    Ersetzt für adaptive Sitzungen die modellformulierte Begründung beim
+    Download (Auftrag: kein Modellaufruf beim Herunterladen). Was hier steht,
+    ist aus den Aussagen ablesbar, nicht formuliert: wer etwas eingebracht
+    hat, wie viele Aussagen das Kapitel tragen, welche davon Annahmen sind
+    und was nur aus der Vorbelegung der Vorlage stammt.
+    """
+    nach_schluessel = {a["schluessel"]: a for a in aussagen}
+    eintraege = []
+    for s in (methode or {}).get("sections", []):
+        ans = answers.get(s.get("id"))
+        if not isinstance(ans, dict):
+            continue
+        tragend = [nach_schluessel[k] for k in ans.get("_aussagen", []) if k in nach_schluessel]
+        zeilen = ans.get("extracted") if isinstance(ans.get("extracted"), list) else []
+        nur_vorlage = bool(zeilen) and all(z.get("_herkunft") == "vorlage" for z in zeilen
+                                           if isinstance(z, dict))
+        if not tragend and not nur_vorlage:
+            continue
+        herkunft = []
+        for a in tragend:
+            t = HERKUNFT_TEXT.get(a["herkunft"], a["herkunft"])
+            if t not in herkunft:
+                herkunft.append(t)
+        if any(isinstance(z, dict) and z.get("_herkunft") == "vorlage" for z in zeilen):
+            herkunft.append("Vorbelegung der Vorlage")
+        annahmen = sum(1 for a in tragend if a["art"] == "annahme")
+        if tragend:
+            begruendung = (f"{len(tragend)} von der Projektleitung bestätigte Aussage(n)"
+                           + (f", davon {annahmen} Annahme(n), im Dokument als "
+                              f"«{UNSICHER_VERMERK}» vermerkt" if annahmen else "") + ".")
+        else:
+            begruendung = "Nur die Vorbelegung der Vorlage; im Interview nicht ergänzt."
+        eintraege.append({"abschnitt": s.get("title", s.get("id")),
+                          "herkunft": " + ".join(herkunft), "begruendung": begruendung})
+    return eintraege
 
 
 def projektions_json(answers):
