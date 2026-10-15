@@ -146,6 +146,14 @@ def _migrate_db(engine):
                     conn.execute(text(f"ALTER TABLE corpus_chunks ADD COLUMN {spalte} {typ}"))
             conn.commit()
 
+    # Testlauf mit adaptivem Interview (15.10.2026): vorbereitete Antwort.
+    if "testlauf" in inspector.get_table_names():
+        tl_cols = {c["name"] for c in inspector.get_columns("testlauf")}
+        if "naechste_antwort" not in tl_cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE testlauf ADD COLUMN naechste_antwort TEXT"))
+                conn.commit()
+
     # Die Checkliste traegt seit V0.35.1 dieselbe Aenderungskontrolle wie die
     # uebrigen Ergebnisse.
     if "freigabe_checkliste" in inspector.get_table_names():
@@ -317,7 +325,11 @@ def create_app(config_class=None):
         TestlaufService(app.interview_service, app.projekt_service,
                         app.generation_service, app.praesentation_service,
                         app.rechtsgrundlagen_service, app.schutzbedarf_service,
-                        app.freigabe_service)
+                        app.freigabe_service,
+                        # Mit adaptivem Interview fuehrt der Testlauf es selbst
+                        # (simulierter Projektleiter), sonst den bisherigen Ablauf.
+                        adaptiv=(app.adaptiv_service
+                                 if app.config.get("INTERVIEW_ADAPTIV", True) else None))
         if app.config.get("TESTLAUF") else None)
     app.auth_service = AuthService()
     app.transcriber = Transcriber(
