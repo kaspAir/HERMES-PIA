@@ -148,7 +148,10 @@ def test_risk_estimate_fills_missing_ew_ag():
     sa = {"extracted": []}
     svc._apply_followup(sections["risiken"], sa, dict(fup, status="pending"), None)
     row = sa["extracted"][0]
-    assert row.get("ew") == "Mittel" and row.get("ag") == "Hoch"
+    # Erwartung angepasst (15.10.2026): Auswahlwerte der Vorlage
+    # PIA_HERMESPIA.docx («Mittel = 2», «Hoch = 3»), siehe
+    # methods/hermes_pia/vorlagenzuordnung.yaml.
+    assert row.get("ew") == "Mittel = 2" and row.get("ag") == "Hoch = 3"
     assert row.get("massnahmen")
 
 

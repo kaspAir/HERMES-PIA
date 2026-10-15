@@ -45,6 +45,9 @@ _LINIENGRAU = RGBColor(0xD9, 0xD9, 0xD9)
 
 _TITEL_TYPEN = (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE)
 _DEKOR_TYPEN = (PP_PLACEHOLDER.FOOTER, PP_PLACEHOLDER.DATE, PP_PLACEHOLDER.SLIDE_NUMBER)
+# Beschriftungen der Vorlage: die Eintrittswahrscheinlichkeit beginnt bei
+# «Niedrig», der Auswirkungsgrad bei «Tief» (vorlagenzuordnung.yaml).
+_STUFEN_TEXT_EW = {1: "Niedrig", 2: "Mittel", 3: "Hoch"}
 _STUFEN_TEXT = {1: "Tief", 2: "Mittel", 3: "Hoch"}
 _MONATE = ("Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
            "Jul", "Aug", "Sep", "Okt", "Nov", "Dez")
@@ -708,7 +711,7 @@ class _Builder:
         table.cell(0, 0).text = "EW \\ AG"
         for c, s in enumerate(stufen, 1):
             table.cell(0, c).text = s
-        for r, s in enumerate(reversed(stufen), 1):   # EW: hoch oben
+        for r, s in enumerate(reversed(("Niedrig", "Mittel", "Hoch")), 1):   # EW: hoch oben
             table.cell(r, 0).text = s
         for r in range(4):
             for c in range(4):
@@ -762,7 +765,7 @@ class _Builder:
                 table.cell(0, c).text = kopf
             for r, risiko in enumerate(seite, 1):
                 werte = (f"R{risiko['nr']}", risiko["beschreibung"],
-                         _STUFEN_TEXT.get(risiko.get("ew"), ""),
+                         _STUFEN_TEXT_EW.get(risiko.get("ew"), ""),
                          _STUFEN_TEXT.get(risiko.get("ag"), ""))
                 for c, wert in enumerate(werte):
                     cell = table.cell(r, c)

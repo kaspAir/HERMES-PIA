@@ -11,6 +11,7 @@ Platzhalter im Template:
   HTabBeispiel85ptF               → Beispiel-Tabellenzeile (wird gelöscht)
 """
 import copy
+import re
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -86,14 +87,36 @@ _SPALTEN_ALIAS = {
 
 
 def _risk_num(value):
-    """Wandelt eine Risikostufe (Tief/Mittel/Hoch oder Zahl) in eine Zahl."""
+    """Zahlenwert einer Risikostufe – oder None, wenn er unbekannt ist.
+
+    Gelesen werden die Vorlagenwerte («Niedrig = 1», «Hoch = 3»), ihre
+    Kurzform, ältere Freiformwerte und Zahlen. Früher lieferte diese Funktion
+    für «Niedrig = 1» eine 0 – die echten Auswahlwerte der Vorlage rechneten
+    also nie –, und eine 0 für jeden unbekannten Wert. Unbekannt ist aber nicht
+    null: eine Risikozahl aus einem fehlenden Faktor sähe aus wie eine
+    Bewertung, die niemand vorgenommen hat.
+    """
+    if value is None:
+        return None
     s = _normalize(str(value))
+    if not s:
+        return None
+    m = re.search(r"=\s*(\d+)\s*$", s)
+    if m:
+        return int(m.group(1))
     if s in RISK_LEVELS:
         return RISK_LEVELS[s]
     try:
         return int(str(value).strip())
     except (ValueError, TypeError):
-        return 0
+        return None
+
+
+def _produkt(zahlen):
+    ergebnis = 1
+    for z in zahlen:
+        ergebnis *= z
+    return ergebnis
 
 
 class GenerationService:
@@ -285,10 +308,9 @@ class GenerationService:
             for col in cols:
                 cid, expr = col.get('id', ''), col.get('computed', '')
                 if expr and not data.get(cid):
-                    res = 1
-                    for p in expr.split('*'):
-                        res *= _risk_num(data.get(p.strip()))
-                    data[cid] = str(res) if res else ''
+                    faktoren = [_risk_num(data.get(p.strip())) for p in expr.split('*')]
+                    data[cid] = ('' if any(f is None for f in faktoren)
+                                 else str(_produkt(faktoren)))
             if name_by_role:
                 nr = _normalize(str(data.get('rolle', '')))
                 nm = name_by_role.get(nr)
@@ -556,10 +578,10 @@ class GenerationService:
                 expr = col.get('computed', '')
                 if expr and not data.get(cid):
                     parts = [p.strip() for p in expr.split('*')]
-                    result = 1
-                    for p in parts:
-                        result *= _risk_num(data.get(p))
-                    data[cid] = str(result) if result else ''
+                    faktoren = [_risk_num(data.get(p)) for p in parts]
+                    # Ein unbekannter Faktor macht das Produkt unbekannt.
+                    data[cid] = ('' if any(f is None for f in faktoren)
+                                 else str(_produkt(faktoren)))
 
             # Personenname + geschlechtsgerechte Rolle eintragen, wo die Rolle
             # bekannt ist und eine Name-Spalte existiert (z.B. Personalaufwand-

@@ -196,12 +196,13 @@ def test_dienst_weg_faellt_nicht_auf_den_anbieter_zurueck(monkeypatch):
     lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
     .assess_complexity(llm, "Eine Ausgangslage."),
     lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
-    .detect_gender(llm, "Andrea Muster"),
-    lambda llm: __import__("app.domains.interview.extraction", fromlist=["x"])
     .generate_followups(llm, {"id": "ziele", "title": "Ziele",
                               "interview": {"intent": "Ziele erheben"}}, "Text."),
 ])
 def test_blockiert_schlaegt_durch_generischen_except_faenger(aufruf):
+    # detect_gender stand hier bis 15.10.2026. Sie ruft seither kein Modell mehr
+    # auf (keine Ableitung von Geschlecht aus Namen, Auftrag Abschnitt 10);
+    # ein Blockierfall kann dort nicht mehr entstehen.
     """Jede dieser Funktionen hat ein `except Exception:`, das LLM-Ausfaelle
     absichtlich verschluckt. Der Blockierfall darf dort NICHT haengenbleiben."""
     class _Blockiert:

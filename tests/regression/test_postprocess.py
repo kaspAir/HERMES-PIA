@@ -58,6 +58,9 @@ def _svc():
     return InterviewService(MethodService(cfg.METHODS_DIR), CatalogService(cfg.CATALOGS_DIR), None)
 
 
+TARIFE = {"intern": 1200, "extern": 1800}
+
+
 def _phasen(rows):
     return {r["phase"]: r["betrag"] for r in rows}
 
@@ -72,7 +75,10 @@ def test_kosten_breakdown_summen_und_total():
         {"phase": "Sachmittel und Lizenzen", "betrag": "8000"},
         {"phase": "Konzept", "betrag": "120000"},  # spätere Phase -> raus
     ]
-    out = _phasen(InterviewService._kosten_breakdown(rows, answers))
+    # Kostensätze jetzt AUSDRÜCKLICH (15.10.2026): ohne hinterlegten Satz
+    # gibt es keinen Betrag mehr (Auftrag Abschnitt 4.2, keine erfundenen
+    # Tarife). Geprüft wird hier die Aufteilung, nicht ein Standardwert.
+    out = _phasen(InterviewService._kosten_breakdown(rows, answers, tarife=TARIFE))
     # intern = Personal 60000 + Sachmittel 8000 = 68000; extern = 27000; Total = 95000
     assert out["Summe interne Kosten"] == "68000"
     assert out["Summe externe Kosten"] == "27000"
@@ -84,7 +90,10 @@ def test_kosten_breakdown_nur_intern():
     answers = {"personalaufwand": {"extracted": [
         {"rolle": "Projektleiter", "aufwand": "25"},   # 25*1200 = 30000
     ]}}
-    out = _phasen(InterviewService._kosten_breakdown([], answers))
+    # Kostensätze jetzt AUSDRÜCKLICH (15.10.2026): ohne hinterlegten Satz
+    # gibt es keinen Betrag mehr (Auftrag Abschnitt 4.2, keine erfundenen
+    # Tarife). Geprüft wird hier die Aufteilung, nicht ein Standardwert.
+    out = _phasen(InterviewService._kosten_breakdown([], answers, tarife=TARIFE))
     assert out["Summe interne Kosten"] == "30000"
     assert out["Total Initialisierung"] == "30000"
     assert "Summe externe Kosten" not in out
@@ -141,7 +150,10 @@ def test_postprocess_kosten_ueber_dispatch():
         {"phase": "Sachmittel", "betrag": "14000"},
         {"phase": "Konzept", "betrag": "120000"},  # spätere Phase -> raus
     ]}
-    svc._postprocess_section(section, section_answer, answers)
+    # Kostensätze jetzt AUSDRÜCKLICH (15.10.2026): ohne hinterlegten Satz
+    # gibt es keinen Betrag mehr (Auftrag Abschnitt 4.2, keine erfundenen
+    # Tarife). Geprüft wird hier die Aufteilung, nicht ein Standardwert.
+    svc._postprocess_section(section, section_answer, answers, tarife=TARIFE)
     out = {r["phase"]: r["betrag"] for r in section_answer["extracted"]}
     # intern = 30000 + 14000 = 44000; extern = 36000; Total = 80000
     assert out["Total Initialisierung"] == "80000"
@@ -325,3 +337,74 @@ def test_pt_vom_pl_genannt_bleibt():
     pl = next(r for r in answers["personalaufwand"]["extracted"]
               if "projektleiter" in r["rolle"].lower())
     assert pl["aufwand"] == "50"  # vom PL genannter Wert bleibt unangetastet
+
+
+def test_ohne_kostensatz_entsteht_kein_betrag():
+    """Ohne hinterlegten Satz: die PT-Grundlage bleibt sichtbar, der Betrag
+    leer, das Total ebenfalls – eine Summe aus bekannten Teilen ist kein Total."""
+    answers = {"personalaufwand": {"extracted": [
+        {"rolle": "Projektleiter", "aufwand": "25"},
+        {"rolle": "Externe Fachexpertise", "aufwand": "10"}]}}
+    rows = [{"phase": "Sachmittel", "betrag": "5000"}]
+    out = InterviewService._kosten_breakdown(rows, answers, tarife={})
+    personal = [r for r in out if "Personalkosten" in r["phase"]]
+    assert personal and personal[0]["betrag"] == ""
+    assert "25 PT" in personal[0]["phase"]
+    assert "nicht hinterlegt" in personal[0]["phase"]
+    assert _phasen(out)["Total Initialisierung"] == ""
+
+
+def test_mit_kostensatz_steht_die_grundlage_im_posten():
+    answers = {"personalaufwand": {"extracted": [{"rolle": "Projektleiter", "aufwand": "10"}]}}
+    out = InterviewService._kosten_breakdown([], answers, tarife={"intern": 1000, "extern": 1500})
+    posten = next(r for r in out if "Personalkosten" in r["phase"])
+    assert "10 PT × 1000 CHF" in posten["phase"] and posten["betrag"] == "10000"
+
+
+def test_ohne_startdatum_gibt_es_keinen_liefertermin():
+    """«Heute» ist kein Startdatum. Früher wurden Termine ab dem Tag der
+    Erfassung gerechnet – ein Export am Folgetag verschob sie."""
+    from app.domains.interview.service import _assign_termine_dates
+    rows = [{"ergebnis": "Studie"}, {"ergebnis": "Durchführungsauftrag"}]
+    _assign_termine_dates(rows, None)
+    assert all(r["termin"] == "" for r in rows)
+    _assign_termine_dates(rows, "2026-11-02")
+    assert all(r["termin"] for r in rows)
+
+
+def test_aus_namen_wird_kein_geschlecht_abgeleitet():
+    """Auftrag Abschnitt 10: keine Geschlechts-/Anredeannahme per Modell."""
+    from app.domains.interview.extraction import detect_gender
+
+    class _Wuerde:
+        def complete(self, *a, **kw):
+            raise AssertionError("Für das Geschlecht darf kein Modell gefragt werden")
+
+    assert detect_gender(_Wuerde(), "Andrea Muster") == "u"
+
+
+def test_ein_genannter_link_bleibt_stehen():
+    """Pauschales Leeren der Linkspalte vernichtete echte Angaben (Auftrag 4.1).
+    Geleert wird nur, was nicht im Beitrag des Benutzers steht."""
+    svc = _svc()
+    section = svc._section_by_id(svc.methods.get("hermes_pia"), "referenzierte_dokumente")
+    sa = {"raw_text": "Massgebend ist das Konzept unter https://intranet.example/konzept-v2",
+          "extracted": [{"nr": "1", "name": "Konzept", "link": "https://intranet.example/konzept-v2"},
+                        {"nr": "2", "name": "DSG", "link": "SR 235.1"}]}
+    svc._postprocess_section(section, sa, {})
+    links = {r["name"]: r["link"] for r in sa["extracted"]}
+    assert links["Konzept"] == "https://intranet.example/konzept-v2"
+    assert links["DSG"] == ""          # vom Modell beigesteuert -> nicht erfinden
+
+
+def test_ein_genannter_zeitrahmen_bleibt_stehen():
+    svc = _svc()
+    section = svc._section_by_id(svc.methods.get("hermes_pia"), "rahmenbedingungen")
+    zeile = {"nr": "02", "vorgaben": "Zeitrahmen",
+             "beschreibung": "Die Initialisierung ist innerhalb von 3 Monaten abzuschliessen"}
+    genannt = {"raw_text": "Die Initialisierung muss innerhalb von 3 Monaten stehen.",
+               "extracted": [dict(zeile)]}
+    erfunden = {"raw_text": "Wir arbeiten nach HERMES.", "extracted": [dict(zeile)]}
+    svc._postprocess_section(section, genannt, {})
+    svc._postprocess_section(section, erfunden, {})
+    assert genannt["extracted"] and not erfunden["extracted"]

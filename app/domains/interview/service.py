@@ -558,15 +558,20 @@ class InterviewService:
         if not isinstance(rows, list):
             return
         self._ensure_pflichtzeilen(section, rows)
+        beitrag = section_answer.get("raw_text") or ""
         if sid in ("referenzierte_dokumente", "mitgeltende_unterlagen"):
-            # Niemals Fundstellen/Nummern erfinden: SR-/kantonale Nummern kennt das LLM nicht
-            # zuverlässig. Spalte 'Nummer/Link' deterministisch leeren – nur der Name bleibt.
-            # Verifizierte Fundstellen liefert später die Rechtsgrundlagenanalyse (echter Abruf).
+            # Niemals Fundstellen/Nummern ERFINDEN: SR-/kantonale Nummern kennt das
+            # Modell nicht zuverlässig. Geleert wird aber nur, was das Modell
+            # beigesteuert hat. Einen Link, den der Benutzer selbst genannt hat,
+            # pauschal zu löschen, vernichtete eine echte Angabe (Auftrag 4.1).
             for r in rows:
-                if isinstance(r, dict) and "link" in r:
-                    r["link"] = ""
+                if not (isinstance(r, dict) and r.get("link")):
+                    continue
+                if r.get("_herkunft") == "benutzer" or _im_beitrag(r["link"], beitrag):
+                    continue
+                r["link"] = ""
         elif sid == "rahmenbedingungen":
-            section_answer["extracted"] = self._strip_duration_caps(rows)
+            section_answer["extracted"] = self._strip_duration_caps(rows, beitrag)
         elif sid == "kosten":
             section_answer["extracted"] = self._kosten_breakdown(rows, answers, tarife)
         elif sid == "personalaufwand":
@@ -592,19 +597,28 @@ class InterviewService:
                     r["termin"] = "laufend"
 
     @staticmethod
-    def _strip_duration_caps(rows):
-        """Entfernt selbst erfundene Maximaldauer-Vorgaben der Initialisierung aus den
-        Rahmenbedingungen (z.B. 'innerhalb von max. 4 Monaten abzuschliessen'). Die Dauer
-        ergibt sich aus Komplexität und Terminplan, nicht aus einer pauschalen Obergrenze."""
+    def _strip_duration_caps(rows, beitrag=""):
+        """Entfernt selbst ERFUNDENE Maximaldauer-Vorgaben aus den Rahmenbedingungen.
+
+        Ein vom Modell eingefügtes «innerhalb von max. 4 Monaten abzuschliessen»
+        ist eine Obergrenze, die niemand gesetzt hat. Ein Zeitrahmen, den der
+        Benutzer selbst genannt hat, ist dagegen eine echte Rahmenbedingung und
+        bleibt stehen (Auftrag 4.2) – erkannt daran, dass die Dauerangabe im
+        Beitrag vorkommt.
+        """
         import re as _re
         cap = _re.compile(r"maximal|innerhalb von|abzuschliess|abgeschloss", _re.I)
         unit = _re.compile(r"monat|woche", _re.I)
+        dauer = _re.compile(r"\b(\d{1,2}|[a-zäöü]+)\s*(monat|woche)", _re.I)
         out = []
         for r in rows:
             if isinstance(r, dict):
                 txt = f"{r.get('vorgaben', '')} {r.get('beschreibung', '')}"
                 if cap.search(txt) and unit.search(txt):
-                    continue  # Dauer-Deckel -> verwerfen
+                    genannt = r.get("_herkunft") == "benutzer" or any(
+                        _im_beitrag(m.group(0), beitrag) for m in dauer.finditer(txt))
+                    if not genannt:
+                        continue  # erfundener Dauer-Deckel -> verwerfen
             out.append(r)
         # Nr. fortlaufend neu vergeben, damit keine Lücke entsteht.
         for i, r in enumerate(out, 1):
@@ -625,11 +639,14 @@ class InterviewService:
         Total werden deterministisch ergänzt.
         """
         import re as _re
-        # Massgebliche Tagessätze (CHF/PT): aus den hinterlegten Kostensätzen (Projekt
-        # übersteuert Org), sonst Standard. Externe Fachleute teurer als interne.
+        # Massgebliche Tagessätze (CHF/PT) aus den hinterlegten Kostensätzen
+        # (Projekt übersteuert Organisation). KEIN Rückfall auf einen
+        # Standardwert: ohne Satz entsteht kein Betrag, sondern eine Zeile, die
+        # die Grundlage (PT) zeigt und den fehlenden Satz benennt. Das Total
+        # bleibt dann leer – eine Summe aus bekannten Teilen wäre kein Total.
         tarife = tarife or {}
-        TAGESSATZ_INTERN = int(tarife.get("intern") or 1200)
-        TAGESSATZ_EXTERN = int(tarife.get("extern") or 1800)
+        TAGESSATZ_INTERN = int(tarife["intern"]) if tarife.get("intern") else None
+        TAGESSATZ_EXTERN = int(tarife["extern"]) if tarife.get("extern") else None
         later = ("konzept", "realisierung", "einführung", "einfuehrung", "abschluss", "umsetzung")
         personal_kw = ("personal", "fachexpert", "experte", "beratung", "tagessatz",
                        "projektleiter", "auftraggeber", "isds", "entwickler", "anwendervertreter")
@@ -654,7 +671,7 @@ class InterviewService:
             if not rolle or not pt:
                 continue
             if "extern" in rolle.lower():
-                extern_personal.append((rolle, pt * TAGESSATZ_EXTERN))
+                extern_personal.append((rolle, pt))
             else:
                 intern_pt += pt
 
@@ -682,29 +699,47 @@ class InterviewService:
                 i["_amt"] is not None for i in material_intern + material_extern):
             return rows
 
+        def personalposten(label, pt, satz):
+            """Eine Personalzeile MIT ihrer Grundlage – oder ohne Betrag."""
+            if satz is None:
+                return {"phase": f"{label}: {pt} PT – Kostensatz nicht hinterlegt",
+                        "_amt": None, "betrag": "", "_offen": "kostensatz"}
+            betrag = pt * satz
+            return {"phase": f"{label} ({pt} PT × {satz} CHF)",
+                    "_amt": betrag, "betrag": str(betrag)}
+
         intern_items = []
         if intern_pt > 0:
-            cost = intern_pt * TAGESSATZ_INTERN
-            intern_items.append({"phase": "Interne Personalkosten (gem. Kap. 3.1)",
-                                 "_amt": cost, "betrag": str(cost)})
+            intern_items.append(personalposten("Interne Personalkosten (gem. Kap. 3.1)",
+                                               intern_pt, TAGESSATZ_INTERN))
         intern_items += material_intern
-        extern_items = [{"phase": lbl, "_amt": amt, "betrag": str(amt)}
-                        for lbl, amt in extern_personal] + material_extern
+        extern_items = [personalposten(lbl, pt, TAGESSATZ_EXTERN)
+                        for lbl, pt in extern_personal] + material_extern
 
         out = []
 
         def emit(group, summenlabel):
-            s = 0
+            """Summe der Gruppe – None, sobald ein Posten keinen Betrag hat."""
+            s, vollstaendig = 0, True
             for i in group:
-                out.append({"phase": i["phase"], "betrag": i["betrag"]})
-                s += i.get("_amt") or 0
+                zeile = {"phase": i["phase"], "betrag": i["betrag"]}
+                if i.get("_offen"):
+                    zeile["_offen"] = i["_offen"]
+                out.append(zeile)
+                if i.get("_amt") is None:
+                    vollstaendig = False
+                else:
+                    s += i["_amt"]
             if group:
-                out.append({"phase": summenlabel, "betrag": str(s)})
-            return s
+                out.append({"phase": summenlabel,
+                            "betrag": str(s) if vollstaendig else ""})
+            return s if vollstaendig else None
 
         s_int = emit(intern_items, "Summe interne Kosten")
         s_ext = emit(extern_items, "Summe externe Kosten")
-        out.append({"phase": "Total Initialisierung", "betrag": str(s_int + s_ext)})
+        total = (None if None in (s_int, s_ext) else s_int + s_ext)
+        out.append({"phase": "Total Initialisierung",
+                    "betrag": str(total) if total is not None else ""})
         return out
 
     @staticmethod
@@ -1694,6 +1729,15 @@ _ROLLEN_LAST = (
 _ROLLEN_LAST_DEFAULT = 0.15
 
 
+def _im_beitrag(wert, beitrag):
+    """Kommt eine Angabe im Beitrag des Benutzers vor? (Gross-/Kleinschreibung
+    und Leerraum egal.) Grundlage dafür, Benutzerangaben von Modellbeiträgen
+    zu unterscheiden, wo noch keine Herkunft je Zeile gespeichert ist."""
+    w = re.sub(r"\s+", " ", str(wert or "")).strip().lower()
+    b = re.sub(r"\s+", " ", str(beitrag or "")).lower()
+    return bool(w) and w in b
+
+
 def _rollen_last(rolle):
     r = (rolle or "").lower()
     for kw, load in _ROLLEN_LAST:
@@ -1784,11 +1828,20 @@ def _pruefmethode(ergebnis):
 
 
 def _termin_datum(start_datum_str, weeks):
+    """Liefertermin = Startdatum + Wochen – oder leer, wenn kein Start feststeht.
+
+    Früher galt ohne Startdatum «heute». Damit trug jeder Auftrag Termine, die
+    vom Tag der Erfassung abhingen und von niemandem geplant waren; ein
+    erneuter Export am Folgetag verschob sie. «Heute» ist kein Startdatum
+    (Auftrag 15.10.2026, Abschnitt 10). Ohne Start bleibt der Termin offen.
+    """
     from datetime import date as _date, timedelta as _timedelta
+    if not start_datum_str:
+        return ""
     try:
-        base = _date.fromisoformat(start_datum_str) if start_datum_str else _date.today()
+        base = _date.fromisoformat(start_datum_str)
     except (ValueError, TypeError):
-        base = _date.today()
+        return ""
     return (base + _timedelta(weeks=round(weeks))).strftime("%d.%m.%Y")
 
 
