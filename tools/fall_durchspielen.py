@@ -1,6 +1,6 @@
 """Einen synthetischen Fall durchspielen und den PIA als Word-Datei erzeugen.
 
-    python tools/fall_durchspielen.py <fall-id> <ziel.docx> [--json zustand.json]
+    python tools/fall_durchspielen.py <fall-id> <ziel.docx> [--json zustand.json] [--fertigstellen]
 
 Nutzt dieselben Dienste wie die Oberfläche (Beitrag -> ausstehende Schritte
 bis zur nächsten Frage), ein Drehbuch-Modell und einen synthetischen Korpus.
@@ -69,7 +69,7 @@ def spiele_in(app, fall_id, org_name="Musterkanton – Amt für Baubewilligungen
 
 
 def spiele(fall_id, ziel_docx, zustand_json=None, nur_schritte=None,
-           version="Entwurf aus dem Interview"):
+           version="Entwurf aus dem Interview", fertigstellen=False):
     from app.config import Config
     from app.domains.generation import pia as pia_dokument
     from app.factory import create_app
@@ -82,6 +82,8 @@ def spiele(fall_id, ziel_docx, zustand_json=None, nur_schritte=None,
 
     app = create_app(Cfg)
     _, sid, ansicht, d = spiele_in(app, fall_id, nur_schritte=nur_schritte, version=version)
+    if fertigstellen:
+        ansicht = d.abschluss(sid, "fertigstellen")
     session = app.interview_service.get_session(sid)
     buf, answers = pia_dokument.erzeuge(session, app.interview_service, app.generation_service,
                                         app.projekt_service)
@@ -91,7 +93,10 @@ def spiele(fall_id, ziel_docx, zustand_json=None, nur_schritte=None,
         Path(zustand_json).write_text(json.dumps({
             "aussagen": z.aussagen, "themen": z.themen, "konflikte": z.konflikte,
             "kriterien": ansicht["kriterien"], "frage": ansicht["frage"],
-            "reife": ansicht["erkannt"]["reife"], "modellaufrufe": d.llm.aufrufe,
+            "reife": ansicht["erkannt"]["reife"], "pia_status": ansicht["pia_status"],
+            "modellaufrufe": d.llm.aufrufe,
+            "gespraech": [{"rolle": m["rolle"], "art": m["art"], "text": m["text"],
+                           "aktion": m["aktion"], "status": m["status"]} for m in z.nachrichten],
         }, ensure_ascii=False, indent=2), encoding="utf-8")
     return app, sid, ansicht
 
@@ -99,5 +104,5 @@ def spiele(fall_id, ziel_docx, zustand_json=None, nur_schritte=None,
 if __name__ == "__main__":
     args = sys.argv[1:]
     zj = args[args.index("--json") + 1] if "--json" in args else None
-    spiele(args[0], args[1], zj)
+    spiele(args[0], args[1], zj, fertigstellen="--fertigstellen" in args)
     print("geschrieben:", args[1])

@@ -126,10 +126,6 @@ def _pruefe(k, aussagen, answers, kontext):
                 bez = z.get("beschreibung") or z.get("ergebnis") or z.get("rolle") or z.get("nr") or "?"
                 details.append(f"{str(bez)[:60]}: {', '.join(fehlend)} fehlt")
         return ("offen" if details else "erfuellt"), details
-    if art == "werte_vorhanden":
-        vorhanden = {_norm(z.get(p["spalte"])) for z in _eigene_zeilen(answers, ab)}
-        fehlend = [w for w in p["werte"] if _norm(w) not in vorhanden]
-        return ("offen" if fehlend else "erfuellt"), [f"{w} fehlt" for w in fehlend]
     if art == "kosten_berechenbar":
         personal = [z for z in _zeilen(answers, "personalaufwand") if _zahl(z.get("aufwand"))]
         if not personal:

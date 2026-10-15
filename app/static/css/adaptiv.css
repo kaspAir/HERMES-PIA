@@ -112,3 +112,5 @@
 .ai-abschluss ul { margin: .2rem 0 .4rem 1.1rem; }
 .ai-abschluss-ok { margin: .4rem 0 0; font-weight: 600; }
 .ai-inline-form { display: inline; margin: 0; }
+.ai-reifebox > strong { display: block; }
+.ai-reifebox > .ai-linkknopf { display: inline-block; margin-top: .35rem; }

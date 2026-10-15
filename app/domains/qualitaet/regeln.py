@@ -350,21 +350,26 @@ def d022_abkuerzungen_erklaert(ctx):
 
 # ---- 5 · Kapitel 2 ------------------------------------------------------- #
 
-@regel("D-030", MUSS)
+@regel("D-030", HINWEIS)
 def d030_beide_zielarten(ctx):
+    """HINWEIS, nicht Muss (15.10.2026). Die Vorlage PIA_HERMESPIA.docx
+    verlangt keine Ziele je Kategorie, und der Entwicklungsauftrag v1.0 sagt
+    in AT17 ausdrücklich: «unbelegte Pflicht-Zielkategorien werden nicht
+    erzwungen». Als Muss sperrte die Regel die Ausgabe eines vorlagentreuen
+    Auftrags. Die Frage «bewusst so?» bleibt – als Hinweis."""
     rows = _zeilen(ctx, "ziele")
     if not rows:
         return
     system = sum(1 for r in rows if K.enthaelt(r.get("kategorie"), K.SYSTEMZIEL))
     vorgehen = sum(1 for r in rows if K.enthaelt(r.get("kategorie"), K.VORGEHENSZIEL))
     if not system:
-        yield Befund("D-030", MUSS, DATEN,
-                     "Es fehlt mindestens ein Systemziel – der PIA braucht beide "
-                     "Zielarten.", "Kap. 2.1")
+        yield Befund("D-030", HINWEIS, DATEN,
+                     "Es ist kein Systemziel erfasst. Die Vorlage verlangt das nicht – "
+                     "bewusst so?", "Kap. 2.1")
     if not vorgehen:
-        yield Befund("D-030", MUSS, DATEN,
-                     "Es fehlt mindestens ein Vorgehensziel – der PIA braucht beide "
-                     "Zielarten.", "Kap. 2.1")
+        yield Befund("D-030", HINWEIS, DATEN,
+                     "Es ist kein Vorgehensziel erfasst. Die Vorlage verlangt das nicht – "
+                     "bewusst so?", "Kap. 2.1")
 
 
 @regel("D-031", MUSS)

@@ -71,11 +71,20 @@ def test_nicht_pruefbare_regeln_sind_sichtbar():
 
 
 def test_muss_befund_verhindert_die_ausgabe():
+    e = pruefe({"risiken": {"extracted": [{"beschreibung": "Fachleute kaum verfügbar"}]}})
+    assert "D-071" in _ids(e)             # Bewertung, Massnahme, Verantwortung fehlen
+    assert e.ausgabe_moeglich is False
+
+
+def test_fehlende_zielart_ist_nur_ein_hinweis():
+    """Die Vorlage verlangt keine Ziele je Kategorie (Auftrag AT17) – D-030
+    fragt nach, sperrt aber die Ausgabe nicht."""
     e = pruefe({"ziele": {"extracted": [
         {"kategorie": "Vorgehensziel", "beschreibung": "A",
          "messgroesse": "m", "prioritaet": "Hoch"}]}})
-    assert "D-030" in _ids(e)             # Systemziel fehlt
-    assert e.ausgabe_moeglich is False
+    assert "D-030" in _ids(e)
+    assert all(b.gewicht == "Hinweis" for b in e.befunde if b.regel == "D-030")
+    assert e.ausgabe_moeglich is True
 
 
 def test_vorbehalt_und_hinweis_blockieren_nicht():
@@ -266,9 +275,8 @@ def _pia_mit_muss_befund(app):
     from app.domains.interview.models import InterviewSession
     db = SessionLocal()
     s = db.query(InterviewSession).get(sid)
-    s.answers_json = json.dumps({"ziele": {"extracted": [
-        {"kategorie": "Vorgehensziel", "beschreibung": "A", "messgroesse": "m",
-         "prioritaet": "Hoch"}]}})
+    s.answers_json = json.dumps({"risiken": {"extracted": [
+        {"beschreibung": "Fachleute kaum verfügbar"}]}})
     db.commit()
     return c, sid
 
@@ -280,14 +288,14 @@ def test_ausgabe_wird_bei_muss_befund_verhindert(app):
     assert r.status_code == 409
     seite = r.get_data(as_text=True)
     assert "nicht ausgabefähig" in seite
-    assert "D-030" in seite                      # die Regel wird benannt
+    assert "D-071" in seite                      # die Regel wird benannt
 
 
 def test_interview_zeigt_die_befunde_laufend_als_hinweis(app):
     c, sid = _pia_mit_muss_befund(app)
     seite = c.get(f"/interview/{sid}").get_data(as_text=True)
     assert "Qualitätsprüfung" in seite
-    assert "D-030" in seite
+    assert "D-071" in seite
 
 
 def test_notausgang_liefert_das_dokument_trotzdem(app):

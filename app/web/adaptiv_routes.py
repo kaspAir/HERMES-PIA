@@ -31,6 +31,7 @@ def _antwort(ansicht, status=200):
 def render_adaptiv(session):
     """Die Interviewseite im adaptiven Modus – serverseitig vorgerendert mit
     demselben Lesemodell, das die JSON-Endpunkte liefern."""
+    from app.domains.generation.pia import ausgabestand as pia_ausgabestand
     from app.domains.qualitaet.service import pruefe_session
     from app.web.ui_routes import _pseudonymisierung_aus
     ansicht = _dienst().ansicht(session.id)
@@ -42,7 +43,9 @@ def render_adaptiv(session):
         # Dieselben Hinweise wie im bisherigen Interview: der Direktmodus muss
         # sichtbar sein, und die Invarianten laufen als Hinweis mit.
         pseudo_aus=_pseudonymisierung_aus(),
-        qualitaet=pruefe_session(session, tarife=_tarife_for_session(session)))
+        # Geprüft wird der Stand, wie ihn der Download ausgibt (mit dem
+        # Versionseintrag des Download-Schritts) – derselbe wie im Abschluss.
+        qualitaet=pruefe_session(pia_ausgabestand(session), tarife=_tarife_for_session(session)))
 
 
 @bp.get("/interview/<int:session_id>/zustand")
@@ -103,11 +106,13 @@ def adaptiv_abschluss(session_id):
     daten = _json()
     from app.domains.generation import pia as pia_dokument
     from app.web.ui_routes import _pruefe_vor_ausgabe
-    # Dieselbe Prüfung wie beim Download – über dasselbe erzeugte Dokument.
-    buf, answers = pia_dokument.erzeuge(session, current_app.interview_service,
+    # Dieselbe Prüfung wie beim Download – über das Dokument, wie es ausgegeben
+    # wird (mit dem Versionseintrag, den der Download-Schritt anlegt).
+    stand = pia_dokument.ausgabestand(session)
+    buf, answers = pia_dokument.erzeuge(stand, current_app.interview_service,
                                         current_app.generation_service, current_app.projekt_service)
     muss = [{"regel": b.regel, "meldung": b.meldung, "fundstelle": b.fundstelle}
-            for b in _pruefe_vor_ausgabe(session, answers, buf).muss]
+            for b in _pruefe_vor_ausgabe(stand, answers, buf).muss]
     try:
         ansicht = _dienst().abschluss(session_id, daten.get("aktion", "pruefen"),
                                       revision=daten.get("revision"), muss_befunde=muss)

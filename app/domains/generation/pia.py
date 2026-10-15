@@ -114,3 +114,28 @@ def _offene_punkte(session, answers):
     if z is None:
         return None
     return offene_punkte(z.aussagen, bewerte(z.aussagen, answers, z.konflikte), z.konflikte)
+
+
+def ausgabestand(session):
+    """Der Stand, wie ihn der Download ausgibt – als losgelöste Kopie.
+
+    Der Download führt über den Versionsschritt, der einen Eintrag in die
+    Änderungskontrolle schreibt. Eine Prüfung VOR diesem Schritt (die
+    Abschlussprüfung) muss das Dokument so beurteilen, wie es ausgegeben wird,
+    sonst meldet sie «Änderungskontrolle nicht geführt» über einen Auftrag,
+    der beim Herunterladen korrekt wäre. Der Eintrag ist vorläufig und wird
+    NICHT gespeichert: die Kopie ist kein Datenbankobjekt.
+    """
+    from types import SimpleNamespace
+
+    from app.domains.interview.service import _bump_version
+    werte = {c.name: getattr(session, c.name) for c in session.__table__.columns}
+    protokoll = json.loads(werte.get("changelog_json") or "[]")
+    if not protokoll:
+        neu = _bump_version(werte.get("doc_version") or "0.0", "minor")
+        protokoll.append({"version": neu, "name": werte.get("created_by") or "",
+                          "datum": date.today().strftime("%d.%m.%Y"),
+                          "bemerkungen": "(wird beim Herunterladen eingetragen)"})
+        werte["doc_version"] = neu
+        werte["changelog_json"] = json.dumps(protokoll, ensure_ascii=False)
+    return SimpleNamespace(**werte)

@@ -115,6 +115,11 @@ def main(directory, ersetzen=False, trotzdem=False):
         db.commit()
         print(f"Geteilter Basiskorpus geleert: {weg} Chunks entfernt.")
 
+    from datetime import date
+
+    from app.domains.interview.adaptiv.rag_themen import regeln as rag_regeln
+    deklaration = rag_regeln().get("korpus_deklaration") or {}
+    korpus_version = f"seed-{date.today():%Y-%m-%d}"
     docs = chunks = skipped = 0
     with app.app_context():
         for f in files:
@@ -127,8 +132,14 @@ def main(directory, ersetzen=False, trotzdem=False):
             # neuen Projekten als Vergleichswert dient (beratender Dauer-Vorschlag).
             from app.domains.interview.service import _parse_dauer_wochen
             dauer = _parse_dauer_wochen(text)
+            # Nachweisfelder je Chunk (adaptives Interview, AT10): Methodenversion
+            # aus der Korpusdeklaration – ausdrücklich als Deklaration, nicht als
+            # je Dokument geprüfte Angabe – und eine Korpusversion je Lauf.
             n = rag.ingest_document(text, projekt=projekt, org_id=None, ergebnistyp="PIA",
-                                    init_dauer_wochen=round(dauer) if dauer else None)
+                                    init_dauer_wochen=round(dauer) if dauer else None,
+                                    methodenversion=deklaration.get("methodenversion"),
+                                    methodenversion_herkunft=deklaration.get("herkunft"),
+                                    korpus_version=korpus_version)
             if n:
                 docs += 1
                 chunks += n

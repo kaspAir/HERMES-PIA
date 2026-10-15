@@ -9,7 +9,11 @@ Chrome über das DevTools-Protokoll und prüft im Browser:
   - neue Aussagen tragen «Neu», der Status steht als Text,
   - RAG-Themen stehen getrennt und nie unter «von Dir genannt»,
   - eine Korrektur ersetzt die Angabe ohne Neustart,
-  - schmal: der Kurzstatus ist sichtbar und klappt die Erkenntnisse auf.
+  - schmal: der Kurzstatus ist sichtbar und klappt die Erkenntnisse auf,
+  - ein vollständiger Fall wird über Vorschläge, Abschlussprüfung und
+    «Fertigstellen» abgeschlossen,
+  - ein von der Pseudonymisierung angehaltener Beitrag bleibt stehen und führt
+    auf die Entscheidungsseite mit der Fundstelle.
 
 Ergebnis: Screenshots und ein Prüfprotokoll (JSON) im Zielordner.
 
@@ -90,7 +94,8 @@ def main(ziel):
     from app.domains.corpus.service import RagService
     from app.domains.interview.adaptiv.rag_themen import ThemenQuelle
     from app.factory import create_app
-    from tools.synthetische_faelle import ABLOESUNG, KORPUS, DrehbuchModell, WortEmbedder
+    from tools.synthetische_faelle import (ABLOESUNG, KORPUS, ZUSAMMENLEGUNG, DrehbuchModell,
+                                          WortEmbedder)
 
     class Cfg(Config):
         DATABASE_URL = "sqlite:///" + str(tmp / "ui.db").replace("\\", "/")
@@ -246,6 +251,75 @@ def main(ziel):
         js_fehler = cdp.js("window.__fehler")
         pruefe("Keine JavaScript-Fehler", not js_fehler, "; ".join(js_fehler or []))
         protokoll["modellaufrufe"] = modell.aufrufe
+
+        # ---- Zweiter Fall: bis zum Abschluss (F-02, zwölf Monate) ---------- #
+        cdp("Emulation.setDeviceMetricsOverride", width=1440, height=1000,
+            deviceScaleFactor=1, mobile=False)
+        k2 = ZUSAMMENLEGUNG["kopf"]
+        app.adaptiv_service.llm = DrehbuchModell(ZUSAMMENLEGUNG)
+        post("/interview/start", {"project_name": k2["projektname"],
+                                  "projektleiter": k2["projektleiter"],
+                                  "auftraggeber": k2["auftraggeber"]})
+        with app.app_context():
+            sid2 = max(s.id for s in app.interview_service.sessions_for_org(org))
+        cdp("Page.navigate", url=f"{basis}/interview/{sid2}")
+        cdp.warte("document.readyState === 'complete' && !!document.getElementById('ai-frage')",
+                  text="Seite F-02 geladen")
+        cdp.js("window.__fehler = []; window.addEventListener('error', e => "
+               "window.__fehler.push(String(e.message))); true")
+        for schritt in ZUSAMMENLEGUNG["schritte"]:
+            senden(schritt["text"])
+        alle = cdp.js("(() => { const b = [...document.querySelectorAll('#ai-panel-erkannt button')]"
+                      ".find(x => x.textContent.startsWith('Alle ')); if (b) { b.click(); return b.textContent; }"
+                      " return ''; })()")
+        pruefe("Vorschläge gesammelt übernehmbar", "Vorschläge übernehmen" in (alle or ""), alle)
+        cdp.warte("!document.getElementById('ai-senden').disabled && "
+                  "document.getElementById('ai-status').textContent === ''", 60, "Übernahme fertig")
+        aufnahme("08_vorschlaege_uebernommen_desktop")
+        cdp.js("document.querySelector('[data-fokus=\"abschluss-pruefen\"]').click(); true")
+        cdp.warte("!!document.querySelector('.ai-abschluss')", 60, "Abschlussbericht")
+        hinweis = cdp.js("document.querySelector('.ai-abschluss').textContent")
+        pruefe("Abschlussprüfung zeigt den Bericht", "keine Prüfung" in (hinweis or ""), hinweis[:120])
+        fertig = cdp.js("!!document.querySelector('[data-fokus=\"abschluss-fertig\"]')")
+        pruefe("Vollständiger Fall: «Fertigstellen» angeboten", fertig)
+        aufnahme("09_abschlusspruefung_desktop")
+        cdp.js("document.querySelector('[data-fokus=\"abschluss-fertig\"]').click(); true")
+        cdp.warte("!!document.querySelector('.ai-abschluss-ok')", 60, "Fertiggestellt")
+        pruefe("Fertigstellen setzt den Status", "Fertiggestellt" in cdp.js(
+            "document.querySelector('.ai-abschluss-ok').textContent"))
+        aufnahme("10_fertiggestellt_desktop")
+        js_fehler = cdp.js("window.__fehler")
+        pruefe("F-02: keine JavaScript-Fehler", not js_fehler, "; ".join(js_fehler or []))
+
+        # ---- Dritter Fall: Pseudonymisierung hält einen Beitrag an --------- #
+        from app.domains.llm.errors import PseudonymisierungBlockiert
+
+        class Blockiert:
+            def complete(self, *a, **kw):
+                raise PseudonymisierungBlockiert(befunde=[{
+                    "befund_id": "bf_1", "kategorie": "person_name", "treffer": "Vogt",
+                    "auszug": "Wir sprachen mit Vogt.", "sicherheit": 0.61, "band": "unsicher",
+                    "grund": "kein_kontextanker_anrede", "vorschlag": "ersetzen"}],
+                    vorgang_id="vg_1")
+        app.adaptiv_service.llm = Blockiert()
+        post("/interview/start", {"project_name": "Gesprächsnotizen", "projektleiter": "Sam Muster"})
+        with app.app_context():
+            sid3 = max(s.id for s in app.interview_service.sessions_for_org(org))
+        cdp("Page.navigate", url=f"{basis}/interview/{sid3}")
+        cdp.warte("document.readyState === 'complete' && !!document.getElementById('ai-frage')",
+                  text="Seite 3 geladen")
+        cdp.js("document.getElementById('answer-text').value = 'Wir sprachen mit Vogt.';"
+               "document.getElementById('ai-eingabe').requestSubmit(); true")
+        cdp.warte("!!document.querySelector('.ai-nachricht--fehler form')", 30, "Blockierter Beitrag")
+        knopf = cdp.js("document.querySelector('.ai-nachricht--fehler form button').textContent")
+        pruefe("Blockierter Beitrag bleibt stehen, mit Entscheidungsweg",
+               "Fundstellen prüfen" in (knopf or ""), knopf)
+        aufnahme("11_pseudonymisierung_angehalten")
+        cdp.js("document.querySelector('.ai-nachricht--fehler form button').click(); true")
+        cdp.warte("document.body && document.body.textContent.includes('Der Aufruf wurde angehalten')",
+                  30, "Entscheidungsseite")
+        pruefe("Entscheidungsseite zeigt die Fundstelle", "Vogt" in cdp.js("document.body.textContent"))
+        aufnahme("12_pseudonymisierung_entscheid")
     finally:
         chrome.terminate()
         server.shutdown()

@@ -93,19 +93,18 @@ def test_versions_triple_wird_zurueckgegeben(skills_dir):
 def test_invariantenbefunde_gehen_als_datenstruktur_mit(skills_dir):
     """Briefing 5.1: als Datenstruktur, NICHT als Anzeigetext – sonst formuliert
     das Modell sie um und meldet sie doch wieder."""
-    invarianten = pruefe({"ziele": {"extracted": [
-        {"kategorie": "Vorgehensziel", "beschreibung": "A", "messgroesse": "m",
-         "prioritaet": "Hoch"}]}})
+    invarianten = pruefe({"risiken": {"extracted": [
+        {"beschreibung": "Fachleute kaum verfügbar"}]}})
     llm = _LLM()
     pruefe_fachlich({}, llm, invarianten=invarianten, skills_dir=skills_dir)
 
     # Der Prompt enthaelt Nutzdaten UND Schema - nur das erste Objekt lesen.
     eingang, _ = json.JSONDecoder().raw_decode(llm.user[llm.user.index("{"):])
     befunde = eingang["invarianten_befunde"]
-    assert "D-030" in befunde["regeln"]           # die Regel-ID geht mit
+    assert "D-071" in befunde["regeln"]           # die Regel-ID geht mit
     assert befunde["muss"] >= 1
     # Der Meldungstext NICHT – sonst waere die Versuchung da, ihn zu wiederholen.
-    assert "Systemziel" not in json.dumps(befunde)
+    assert "Massnahme fehlt" not in json.dumps(befunde)
     assert "melde sie NICHT erneut" in llm.user
 
 

@@ -117,9 +117,16 @@
     if (unten) el.verlauf.scrollTop = el.verlauf.scrollHeight;
   }
 
-  function zeichneFrage(frage) {
+  function zeichneFrage(frage, piaStatus) {
     el.frage.textContent = '';
     if (!frage || !frage.frage) return;
+    if (piaStatus === 'fertiggestellt' && frage.aktion === 'abschluss') {
+      // Die Abschlussfrage ist beantwortet – nicht weiter «fertigstellen?» fragen.
+      el.frage.appendChild(knoten('p', 'frage-text',
+        'Der Auftrag ist fertiggestellt. Du kannst weiterhin ergänzen oder berichtigen – ' +
+        'dann wird die Abschlussprüfung erneut nötig.'));
+      return;
+    }
     el.frage.appendChild(knoten('p', 'frage-text', frage.frage));
     if (frage.begruendung) {
       var d = knoten('details');
@@ -393,7 +400,7 @@
     angezeigt = a.revision;
     ansicht = a;
     zeichneVerlauf(a.nachrichten, a.frage);
-    zeichneFrage(a.frage);
+    zeichneFrage(a.frage, a.pia_status);
     zeichneErkannt(a);
     ansagen(a);
     return true;

@@ -1,0 +1,134 @@
+{
+  "erstellt": "2026-10-15T16:09:21",
+  "kandidat": null,
+  "hinweis": "Drehbuch-Modell: verglichen werden Profil, Planer, Regeln, Projektion und Export – nicht die Qualität eines echten Sprachmodells. Ein Kandidat wird nie automatisch übernommen.",
+  "entwicklung": {
+    "baseline": [
+      {
+        "fall": "F-01",
+        "mit_rag": true,
+        "bereit": false,
+        "kriterien_offen": 6,
+        "fragen": 4,
+        "wiederholte_fragen": 1,
+        "korrekturen": 1,
+        "rag_themen_genutzt": 1,
+        "nicht_uebernehmen_gefragt": 0,
+        "unbestaetigt_im_dokument": 0,
+        "muss_befunde_export": 32,
+        "modellaufrufe": 9
+      },
+      {
+        "fall": "F-01",
+        "mit_rag": false,
+        "bereit": false,
+        "kriterien_offen": 6,
+        "fragen": 4,
+        "wiederholte_fragen": 1,
+        "korrekturen": 1,
+        "rag_themen_genutzt": 0,
+        "nicht_uebernehmen_gefragt": 0,
+        "unbestaetigt_im_dokument": 0,
+        "muss_befunde_export": 32,
+        "modellaufrufe": 7
+      }
+    ],
+    "kandidat": [
+      {
+        "fall": "F-01",
+        "mit_rag": true,
+        "bereit": false,
+        "kriterien_offen": 6,
+        "fragen": 4,
+        "wiederholte_fragen": 1,
+        "korrekturen": 1,
+        "rag_themen_genutzt": 1,
+        "nicht_uebernehmen_gefragt": 0,
+        "unbestaetigt_im_dokument": 0,
+        "muss_befunde_export": 32,
+        "modellaufrufe": 9
+      },
+      {
+        "fall": "F-01",
+        "mit_rag": false,
+        "bereit": false,
+        "kriterien_offen": 6,
+        "fragen": 4,
+        "wiederholte_fragen": 1,
+        "korrekturen": 1,
+        "rag_themen_genutzt": 0,
+        "nicht_uebernehmen_gefragt": 0,
+        "unbestaetigt_im_dokument": 0,
+        "muss_befunde_export": 32,
+        "modellaufrufe": 7
+      }
+    ],
+    "urteil": "gleichwertig",
+    "gruende": []
+  },
+  "pruefung": {
+    "baseline": [
+      {
+        "fall": "F-02",
+        "mit_rag": true,
+        "bereit": true,
+        "kriterien_offen": 0,
+        "fragen": 4,
+        "wiederholte_fragen": 0,
+        "korrekturen": 0,
+        "rag_themen_genutzt": 0,
+        "nicht_uebernehmen_gefragt": 0,
+        "unbestaetigt_im_dokument": 0,
+        "muss_befunde_export": 0,
+        "modellaufrufe": 7
+      },
+      {
+        "fall": "F-02",
+        "mit_rag": false,
+        "bereit": true,
+        "kriterien_offen": 0,
+        "fragen": 4,
+        "wiederholte_fragen": 0,
+        "korrekturen": 0,
+        "rag_themen_genutzt": 0,
+        "nicht_uebernehmen_gefragt": 0,
+        "unbestaetigt_im_dokument": 0,
+        "muss_befunde_export": 0,
+        "modellaufrufe": 5
+      }
+    ],
+    "kandidat": [
+      {
+        "fall": "F-02",
+        "mit_rag": true,
+        "bereit": true,
+        "kriterien_offen": 0,
+        "fragen": 4,
+        "wiederholte_fragen": 0,
+        "korrekturen": 0,
+        "rag_themen_genutzt": 0,
+        "nicht_uebernehmen_gefragt": 0,
+        "unbestaetigt_im_dokument": 0,
+        "muss_befunde_export": 0,
+        "modellaufrufe": 7
+      },
+      {
+        "fall": "F-02",
+        "mit_rag": false,
+        "bereit": true,
+        "kriterien_offen": 0,
+        "fragen": 4,
+        "wiederholte_fragen": 0,
+        "korrekturen": 0,
+        "rag_themen_genutzt": 0,
+        "nicht_uebernehmen_gefragt": 0,
+        "unbestaetigt_im_dokument": 0,
+        "muss_befunde_export": 0,
+        "modellaufrufe": 5
+      }
+    ],
+    "urteil": "gleichwertig",
+    "gruende": []
+  },
+  "urteil": "gleichwertig"
+}

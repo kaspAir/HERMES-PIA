@@ -86,9 +86,12 @@ def _bereich(a):
     return "sonstiges"
 
 
-def _eintrag(a, revision, nachrichten_nach_id):
-    neu = a.get("revision_neu") == revision and revision > 0
-    geaendert = (not neu and a.get("revision_geaendert") == revision and revision > 0)
+def _eintrag(a, seit, nachrichten_nach_id):
+    """`seit`: Revision, die der letzte Beitrag des Benutzers erzeugt hat.
+    «Neu» heisst neu seit diesem Beitrag – auch, was die Schritte danach
+    (Vorschläge, Themen) angelegt haben."""
+    neu = (a.get("revision_neu") or 0) >= seit > 0
+    geaendert = (not neu and (a.get("revision_geaendert") or 0) >= seit > 0)
     original = nachrichten_nach_id.get(a.get("nachricht_id"))
     hinweise = []
     if a.get("bezug") == "gesamtvorhaben":
@@ -126,12 +129,14 @@ def anzeige(zustand, session, answers, kriterien, reife, rag_stand=None):
     """Das vollständige Lesemodell der Erkenntnisanzeige."""
     rev = zustand.revision
     nach_id = {n["id"]: n for n in zustand.nachrichten}
+    beitraege = [n for n in zustand.nachrichten if n["rolle"] == "benutzer" and n.get("revision")]
+    seit = beitraege[-1]["revision"] if beitraege else rev
 
     gruppen = {key: {"key": key, "titel": titel, "eintraege": []} for key, titel, _ in BEREICHE}
     gruppen["sonstiges"] = {"key": "sonstiges", "titel": "Weitere Angaben", "eintraege": []}
     offen = []
     for a in zustand.aktive:
-        e = _eintrag(a, rev, nach_id)
+        e = _eintrag(a, seit, nach_id)
         # Offene Fragen, Interpretationen und Vorschläge stehen OBEN und nur
         # dort – nicht zwischen bestätigten Angaben versteckt (Auftrag 8.2) und
         # nicht doppelt. Nach der Bestätigung wandern sie in ihren Bereich.
@@ -144,7 +149,7 @@ def anzeige(zustand, session, answers, kriterien, reife, rag_stand=None):
     for kf in zustand.offene_konflikte:
         konflikte.append({"id": kf["id"], "beschreibung": kf["beschreibung"],
                           "aussagen": kf["aussagen"], "status_text": "Widerspruch – offen",
-                          "neu": kf.get("revision_erkannt") == rev and rev > 0})
+                          "neu": (kf.get("revision_erkannt") or 0) >= seit > 0})
 
     themen = []
     for t in zustand.themen:
@@ -158,7 +163,7 @@ def anzeige(zustand, session, answers, kriterien, reife, rag_stand=None):
             "uebertragbarkeit": t["uebertragbarkeit"],
             "begruendung": t["begruendung"], "n_projekte": t["n_projekte"],
             "ziele": [{"abschnitt": z, "kapitel": KAPITEL.get(z, z)} for z in t["pia_ziele"]],
-            "quellen_anzahl": len(t["quellen"]), "neu": t.get("revision") == rev and rev > 0,
+            "quellen_anzahl": len(t["quellen"]), "neu": (t.get("revision") or 0) >= seit > 0,
         })
 
     blocker = [{"id": e["id"], "beschreibung": e["beschreibung"],

@@ -34,7 +34,9 @@ profil:
     - version: "1.1.0"
       inhalt: >
         An die Ausgabeprüfung angeglichen: K-SM-1 erforderlich (D-011), K-RI-2
-        mit Verantwortung und Termin (D-071), neu K-ZI-3 beide Zielarten (D-030).
+        mit Verantwortung und Termin (D-071). Bewusst KEIN Kriterium «beide
+        Zielarten»: die Vorlage verlangt es nicht (Auftrag AT17); D-030 ist
+        seither ein Hinweis.
     - version: "1.0.0"
       inhalt: "Erste Fassung."
 
@@ -99,19 +101,6 @@ kriterien:
     pruefung: { art: zeilenfelder, spalten: [kategorie, messgroesse, prioritaet] }
     aktion: konkretisieren
     vorlagenfrage: "Woran wird das Erreichen dieses Ziels gemessen, und wie wichtig ist es?"
-
-  - id: K-ZI-3
-    abschnitt: ziele
-    gewicht: erforderlich
-    # Herkunft ist die Invariante D-030 (Muss), NICHT die Vorlage: die Vorlage
-    # verlangt keine Ziele je Kategorie (vorlagenzuordnung.yaml, Kap. 2.1).
-    # Der Widerspruch ist offen und fachlich zu entscheiden; bis dahin folgt
-    # das Profil der Ausgabeprüfung, damit «bereit» auch herunterladbar ist.
-    herkunft: invariante
-    beschreibung: "Es gibt mindestens ein Systemziel und ein Vorgehensziel"
-    pruefung: { art: werte_vorhanden, spalte: kategorie, werte: [Systemziel, Vorgehensziel] }
-    aktion: erkunden
-    vorlagenfrage: "Was soll das künftige System oder die künftige Lösung leisten – und was muss die Initialisierung selbst erarbeiten?"
 
   - id: K-RB-1
     abschnitt: rahmenbedingungen

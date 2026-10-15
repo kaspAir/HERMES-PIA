@@ -1,13 +1,17 @@
 """Abschlussprüfung und vorlagentreuer Export des adaptiven Interviews.
 
-Zugeordnete Akzeptanzfälle:
-  AT18  Abschlussprüfung: fertigstellen nur ohne Blocker, nur für den
-        geprüften Stand; eine spätere Änderung setzt den Status zurück
-  AT19  Vorlagentreue: keine Beispiele, Protokolle nur mit tatsächlichen
-        Vorgängen, Deckblattstatus nie «geprüft»/«abgenommen», Kap. 5 über
-        neun Monate mit Fortsetzungstabelle
-  AT20  Vorschläge des Systems stehen erst nach Übernahme im Dokument
-  AT22  Export idempotent, ohne Modellaufruf, Vorschau = Export, langer Inhalt
+Zugeordnete Akzeptanzfälle (Nummern wie im Entwicklungsauftrag v1.0):
+  AT04  Annahmen bleiben als solche sichtbar – auch im Abschlussbericht
+  AT17  echte Vollständigkeit: was die Ausgabeprüfung anhält, ist nicht «bereit»
+  AT18  Vorlagenabdeckung: Deckblatt, 0.1–0.5, 1–8, acht Terminzeilen,
+        Enddatum, Risikospalten, drei Protokolle
+  AT19  Zahlen und Monate: Kap. 5 über neun Monate, Summen, Risikozahl
+  AT20  Vorschlag und Freigabe: Systemvorschläge erst nach Übernahme im
+        Dokument; Export erzeugt keine Prüf-, Abnahme- oder Freigabeeinträge
+  AT21  Revision: Fertigstellen nur für den geprüften Stand; spätere
+        Änderung setzt zurück
+  AT22  DOCX-Qualität: idempotent, ohne Modellaufruf, Vorschau = Export,
+        lange Inhalte, keine Beispiele
   AT25  Ende-zu-Ende: ein vollständiger Fall wird herunterladbar, ein Entwurf
         trägt seine offenen Punkte im Dokument
 
@@ -78,12 +82,12 @@ def entwurf(app):
 
 # ---- AT18 – Abschlussprüfung --------------------------------------------------- #
 
-def test_at18_vollstaendiger_fall_ist_bereit_zur_pruefung(vollstaendig):
+def test_at25_vollstaendiger_fall_ist_bereit_zur_pruefung(vollstaendig):
     reife = vollstaendig["ansicht"]["erkannt"]["reife"]
     assert reife["zustand"] == "bereit_zur_pruefung" and reife["blocker"] == 0
 
 
-def test_at18_fertigstellen_nur_fuer_den_geprueften_stand(app, vollstaendig):
+def test_at21_fertigstellen_nur_fuer_den_geprueften_stand(app, vollstaendig):
     c = _anmelden(app, vollstaendig["org"])
     sid = vollstaendig["sid"]
     r = _post(c, f"/interview/{sid}/abschluss", {"aktion": "pruefen"})
@@ -101,7 +105,7 @@ def test_at18_fertigstellen_nur_fuer_den_geprueften_stand(app, vollstaendig):
     assert ok.status_code == 200 and ok.get_json()["pia_status"] == "fertiggestellt"
 
 
-def test_at18_entwurf_mit_blockern_laesst_sich_nicht_fertigstellen(app, entwurf):
+def test_at25_entwurf_mit_blockern_laesst_sich_nicht_fertigstellen(app, entwurf):
     c = _anmelden(app, entwurf["org"])
     sid = entwurf["sid"]
     bericht = _post(c, f"/interview/{sid}/abschluss", {"aktion": "pruefen"}).get_json()["abschluss"]
@@ -111,7 +115,7 @@ def test_at18_entwurf_mit_blockern_laesst_sich_nicht_fertigstellen(app, entwurf)
     assert app.interview_service.get_session(sid).pia_status != "fertiggestellt"
 
 
-def test_at18_aenderung_nach_fertigstellung_setzt_den_status_zurueck(app, vollstaendig):
+def test_at21_aenderung_nach_fertigstellung_setzt_den_status_zurueck(app, vollstaendig):
     d, sid = vollstaendig["d"], vollstaendig["sid"]
     d.abschluss(sid, "fertigstellen")
     assert app.interview_service.get_session(sid).pia_status == "fertiggestellt"
@@ -122,7 +126,7 @@ def test_at18_aenderung_nach_fertigstellung_setzt_den_status_zurueck(app, vollst
     assert app.interview_service.get_session(sid).pia_status == "laufend"
 
 
-def test_at18_abschlussbericht_nennt_annahmen_und_korrekturen(entwurf):
+def test_at04_abschlussbericht_nennt_annahmen_und_korrekturen(entwurf):
     d, sid = entwurf["d"], entwurf["sid"]
     bericht = d.abschluss(sid, "pruefen")["abschluss"]
     # F-01: «Support endet Ende 2027» ist eine Annahme, das Enddatum wurde korrigiert.
@@ -145,7 +149,7 @@ def _steuerelement(roh, alias):
     return None
 
 
-def test_at19_deckblattstatus_folgt_nur_tatsaechlichen_vorgaengen(app, vollstaendig):
+def test_at20_deckblattstatus_folgt_nur_tatsaechlichen_vorgaengen(app, vollstaendig):
     sid = vollstaendig["sid"]
     roh, _ = _erzeuge(app, sid)
     assert _steuerelement(roh, "Dokument Status") == "in Arbeit"
@@ -154,7 +158,7 @@ def test_at19_deckblattstatus_folgt_nur_tatsaechlichen_vorgaengen(app, vollstaen
     assert _steuerelement(roh, "Dokument Status") == "fertiggestellt"
 
 
-def test_at19_protokolle_enthalten_nur_tatsaechliche_vorgaenge(app, vollstaendig):
+def test_at20_protokolle_enthalten_nur_tatsaechliche_vorgaenge(app, vollstaendig):
     roh, _ = _erzeuge(app, vollstaendig["sid"])
     tabellen = [t for t in _tabellen(roh) if t[0][:2] == ["Version", "Name"]]
     aenderung, pruefung, freigabe = tabellen
@@ -166,7 +170,7 @@ def test_at19_protokolle_enthalten_nur_tatsaechliche_vorgaenge(app, vollstaendig
         assert not any(re.match(r"\d\d\.\d\d\.\d{4}", z[2]) for z in t[1:])
 
 
-def test_at19_keine_beispiele_und_keine_dokumentbefunde(app, vollstaendig):
+def test_at22_keine_beispiele_und_keine_dokumentbefunde(app, vollstaendig):
     roh, _ = _erzeuge(app, vollstaendig["sid"])
     text = _text(roh)
     assert "Jurist" not in text                     # ausgeblendete Beispielzeile der Vorlage
@@ -199,6 +203,29 @@ def test_at19_risiken_mit_vorlagennummer_und_risikozahl(app, vollstaendig):
     # python-docx übergeht Zellen in Inhaltssteuerelementen (EW, AG) – daher
     # über den Inhalt statt über die Spaltennummer.
     assert risiken[1][0] == "PR01" and "6" in risiken[1]
+
+
+def test_at18_die_vorlage_ist_vollstaendig_abgebildet(app, vollstaendig):
+    roh, _ = _erzeuge(app, vollstaendig["sid"])
+    d = Document(io.BytesIO(roh))
+    titel = [p.text.strip() for p in d.paragraphs if p.style.name.lower().startswith(("heading", "h"))]
+    text = _text(roh)
+    for kapitel in ("Ziel und Zweck des Dokuments", "Referenzierte Dokumente", "Mitgeltende Unterlagen",
+                    "Definitionen und Abkürzungen", "Vorgaben, Methoden und Werkzeuge", "Ausgangslage",
+                    "Ziele der Phase Initialisierung", "Rahmenbedingungen", "Personalaufwand",
+                    "Sachmittel", "Kosten (in CHF inkl. MwSt.)", "Ergebnisse und Termine",
+                    "Projektorganisation und Personal", "Kommunikation", "Risiken",
+                    "Dokument-Protokoll"):
+        assert kapitel in text, kapitel
+    termine = next(t for t in _tabellen(roh) if t[0][0] == "Nr." and "Liefertermin" in t[0][2])
+    assert len(termine) - 1 == 8
+    assert "Geplantes Enddatum der Phase Initialisierung: 31.01.2028" in text
+    risiken = next(t for t in _tabellen(roh) if "Risikobeschreibung" in t[0])
+    for spalte in ("Risikozahl", "Massnahmen", "Verantwortung", "Termin"):
+        assert spalte in risiken[0]
+    assert len([t for t in _tabellen(roh) if t[0][:2] == ["Version", "Name"]]) == 3
+    assert _steuerelement(roh, "Dokument Status") is not None
+    assert titel                                   # Überschriften tragen Formatvorlagen
 
 
 # ---- AT20 – Vorschläge erst nach Übernahme ------------------------------------- #
@@ -306,7 +333,7 @@ def test_at25_entwurf_traegt_seine_luecken_und_wird_vor_der_ausgabe_angehalten(a
     assert "Offene Punkte" in text
 
 
-def test_at18_muss_befunde_der_ausgabepruefung_blockieren_den_abschluss(app, entwurf):
+def test_at17_muss_befunde_der_ausgabepruefung_blockieren_den_abschluss(app, entwurf):
     """Profil und Ausgabeprüfung dürfen nicht auseinanderfallen: was der
     Download anhalten würde, steht schon in der Abschlussprüfung."""
     c = _anmelden(app, entwurf["org"])
